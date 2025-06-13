@@ -20,16 +20,18 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/crossplane/provider-template/internal/controller/config"
-	"github.com/crossplane/provider-template/internal/controller/mytype"
+	"github.com/crossplane/provider-osbprovider/internal/controller/config"
+	"github.com/crossplane/provider-osbprovider/internal/controller/servicebinding"
+	"github.com/crossplane/provider-osbprovider/internal/controller/serviceinstance"
 )
 
-// Setup creates all Template controllers with the supplied logger and adds them to
+// Setup creates all OsbProvider controllers with the supplied logger and adds them to
 // the supplied manager.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func(ctrl.Manager, controller.Options) error{
 		config.Setup,
-		mytype.Setup,
+		servicebinding.Setup,
+		serviceinstance.Setup,
 	} {
 		if err := setup(mgr, o); err != nil {
 			return err
