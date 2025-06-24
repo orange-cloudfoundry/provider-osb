@@ -1,10 +1,10 @@
 apiVersion: meta.pkg.crossplane.io/v1alpha1
 kind: Provider
 metadata:
-  name: provider-osbprovider
+  name: provider-osb
   annotations:
     meta.crossplane.io/maintainer: Crossplane Maintainers <info@crossplane.io>
-    meta.crossplane.io/source: github.com/crossplane/provider-osbprovider
+    meta.crossplane.io/source: github.com/orange-cloudfoundry/provider-osb
     meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: |
-      A osbprovider that can be used to create Crossplane providers.
+      A OSB that can be used to create Crossplane providers.

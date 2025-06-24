@@ -20,12 +20,12 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/crossplane/provider-osbprovider/internal/controller/config"
-	"github.com/crossplane/provider-osbprovider/internal/controller/servicebinding"
-	"github.com/crossplane/provider-osbprovider/internal/controller/serviceinstance"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/config"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/servicebinding"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/serviceinstance"
 )
 
-// Setup creates all OsbProvider controllers with the supplied logger and adds them to
+// Setup creates all OSB controllers with the supplied logger and adds them to
 // the supplied manager.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func(ctrl.Manager, controller.Options) error{

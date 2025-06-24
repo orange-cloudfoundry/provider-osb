@@ -20,30 +20,29 @@ import (
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 )
 
 // ServiceInstanceParameters are the configurable fields of a ServiceInstance.
 type ServiceInstanceParameters struct {
-	Kind     string       `json:"kind"`
-	Metadata Metadata     `json:"metadata"`
-	Spec     InstanceSpec `json:"spec"`
-	Status   string       `json:"status"`
-}
-
-type InstanceSpec struct {
-	Application     string          `json:"application,omitempty"`
-	ApplicationData ApplicationData `json:"applicationData,omitempty"`
-	PlanId          int             `json:"planId"`
-	Context         map[string]any  `json:"context,omitempty"`
-	Parameters      map[string]any  `json:"parameters,omitempty"`
+	Application     *string                        `json:"application,omitempty"`
+	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
+	PlanId          *int                           `json:"planId"`
+	Context         common.KubernetesContextObject `json:"context,omitempty"`
+	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
 }
 
 // ServiceInstanceObservation are the observable fields of a ServiceInstance.
 type ServiceInstanceObservation struct {
-	ObservableField string `json:"observableField,omitempty"`
+	Application     *string                        `json:"application,omitempty"`
+	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
+	PlanId          *int                           `json:"planId"`
+	Context         common.KubernetesContextObject `json:"context,omitempty"`
+	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
 }
 
 // A ServiceInstanceSpec defines the desired state of a ServiceInstance.
@@ -66,7 +65,7 @@ type ServiceInstanceStatus struct {
 // +kubebuilder:printcolumn:name="EXTERNAL-NAME",type="string",JSONPath=".metadata.annotations.crossplane\\.io/external-name"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,osbprovider}
+// +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,osb}
 type ServiceInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -20,58 +20,36 @@ import (
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 )
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
 type ServiceBindingParameters struct {
-	Kind     string      `json:"kind"`
-	Metadata Metadata    `json:"metadata"`
-	Spec     BindingSpec `json:"spec"`
-	Status   string      `json:"status"`
-}
-
-type Metadata struct {
-	Annotations map[string]string `json:"annotations"`
-	Name        string            `json:"name"`
-}
-
-type BindingSpec struct {
-	Application     *string          `json:"application,omitempty"`
-	ApplicationData *ApplicationData `json:"applicationData,omitempty"`
-	Instance        *string          `json:"instance"`
-	InstanceData    InstanceData     `json:"instanceData"`
-	SecretName      *string          `json:"secretName"`
-	Context         map[string]any   `json:"context,omitempty"`
-	Parameters      map[string]any   `json:"parameters,omitempty"`
-	Route           *string          `json:"route,omitempty"`
-}
-
-type ApplicationData struct {
-	BrokerURL   string      `json:"brokerURL"`
-	Credentials Credentials `json:"credentials"`
-	Name        string      `json:"Name"`
-}
-
-type Credentials struct {
-	SecretName     string `json:"secretName"`
-	HardcodedCreds struct {
-		User     string `json:"user"`
-		Password string `json:"password"`
-	} `json:"hardcodedCreds"`
-}
-
-type InstanceData struct {
-	InstanceId *string `json:"instanceId"`
-	PlanId     *string `json:"planId"`
-	ServiceId  *string `json:"serviceId"`
+	Application     *string                        `json:"application,omitempty"`
+	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
+	Instance        *string                        `json:"instance,omitempty"`
+	InstanceData    *common.InstanceData           `json:"instanceData,omitempty"`
+	SecretName      *string                        `json:"secretName,omitempty"`
+	Context         common.KubernetesContextObject `json:"context,omitempty"`
+	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
+	Route           *string                        `json:"route,omitempty"`
 }
 
 // ServiceBindingObservation are the observable fields of a ServiceBinding.
 type ServiceBindingObservation struct {
-	ObservableField string `json:"observableField,omitempty"`
+	Application     *string                        `json:"application,omitempty"`
+	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
+	Instance        *string                        `json:"instance,omitempty"`
+	InstanceData    *common.InstanceData           `json:"instanceData,omitempty"`
+	SecretName      *string                        `json:"secretName,omitempty"`
+	Context         common.KubernetesContextObject `json:"context,omitempty"`
+	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
+	Route           *string                        `json:"route,omitempty"`
 }
 
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
@@ -94,7 +72,7 @@ type ServiceBindingStatus struct {
 // +kubebuilder:printcolumn:name="EXTERNAL-NAME",type="string",JSONPath=".metadata.annotations.crossplane\\.io/external-name"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,osbprovider}
+// +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,osb}
 type ServiceBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

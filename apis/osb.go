@@ -14,21 +14,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package apis contains Kubernetes API for the OsbProvider provider.
+// Package apis contains Kubernetes API for the Osb provider.
 package apis
 
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
-	kaastool "github.com/crossplane/provider-osbprovider/apis/kaastool/v1alpha1"
-	osbproviderv1alpha1 "github.com/crossplane/provider-osbprovider/apis/v1alpha1"
+	bindingv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
+	instancev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
+	templatev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 )
 
 func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
 	AddToSchemes = append(AddToSchemes,
-		osbproviderv1alpha1.SchemeBuilder.AddToScheme,
-		kaastool.SchemeBuilder.AddToScheme,
+		instancev1alpha1.SchemeBuilder.AddToScheme,
+		bindingv1alpha1.SchemeBuilder.AddToScheme,
+		templatev1alpha1.SchemeBuilder.AddToScheme,
 	)
 }
 

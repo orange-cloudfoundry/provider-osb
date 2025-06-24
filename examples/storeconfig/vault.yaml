@@ -1,4 +1,4 @@
-apiVersion: osbprovider.crossplane.io/v1alpha1
+apiVersion: osb.crossplane.io/v1alpha1
 kind: StoreConfig
 metadata:
   name: vault

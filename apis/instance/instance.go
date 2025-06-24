@@ -14,5 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package kaastool contains group kaastool API versions
-package kaastool
+// Package instance contains group instance API versions
+package instance

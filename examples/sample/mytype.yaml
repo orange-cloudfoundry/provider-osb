@@ -1,4 +1,4 @@
-apiVersion: sample.osbprovider.crossplane.io/v1alpha1
+apiVersion: sample.osb.crossplane.io/v1alpha1
 kind: MyType
 metadata:
   name: example

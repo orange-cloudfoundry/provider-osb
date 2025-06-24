@@ -12,7 +12,7 @@ type: Opaque
 data:
   # credentials: BASE64ENCODED_PROVIDER_CREDS
 ---
-apiVersion: osbprovider.crossplane.io/v1alpha1
+apiVersion: osb.crossplane.io/v1alpha1
 kind: ProviderConfig
 metadata:
   name: example

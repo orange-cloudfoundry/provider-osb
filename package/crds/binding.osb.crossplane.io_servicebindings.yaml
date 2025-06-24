@@ -4,18 +4,18 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.5
-  name: serviceinstances.kaastool.osbprovider.crossplane.io
+  name: servicebindings.binding.osb.crossplane.io
 spec:
-  group: kaastool.osbprovider.crossplane.io
+  group: binding.osb.crossplane.io
   names:
     categories:
     - crossplane
     - managed
-    - osbprovider
-    kind: ServiceInstance
-    listKind: ServiceInstanceList
-    plural: serviceinstances
-    singular: serviceinstance
+    - osb
+    kind: ServiceBinding
+    listKind: ServiceBindingList
+    plural: servicebindings
+    singular: servicebinding
   scope: Cluster
   versions:
   - additionalPrinterColumns:
@@ -34,7 +34,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ServiceInstance is an example API type.
+        description: A ServiceBinding is an example API type.
         properties:
           apiVersion:
             description: |-
@@ -54,7 +54,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: A ServiceInstanceSpec defines the desired state of a ServiceInstance.
+            description: A ServiceBindingSpec defines the desired state of a ServiceBinding.
             properties:
               deletionPolicy:
                 default: Delete
@@ -71,13 +71,93 @@ spec:
                 - Delete
                 type: string
               forProvider:
-                description: ServiceInstanceParameters are the configurable fields
-                  of a ServiceInstance.
+                description: ServiceBindingParameters are the configurable fields
+                  of a ServiceBinding.
                 properties:
-                  configurableField:
+                  application:
                     type: string
-                required:
-                - configurableField
+                  applicationData:
+                    description: ApplicationData represents the schema for an Application
+                      MR
+                    properties:
+                      Name:
+                        type: string
+                      brokerURL:
+                        type: string
+                      credentials:
+                        description: Credentials is a struct to hold credentials used
+                          to contact the service brokers
+                        properties:
+                          hardcodedCreds:
+                            description: HardcodedCreds represents the info needed
+                              for credentials that are hardcoded
+                            properties:
+                              password:
+                                type: string
+                              user:
+                                type: string
+                            required:
+                            - password
+                            - user
+                            type: object
+                          secretName:
+                            type: string
+                        type: object
+                    required:
+                    - Name
+                    - brokerURL
+                    type: object
+                  context:
+                    description: |-
+                      KubernetesContextObject represents the context object for kubernetes in the OSB spec
+                      cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
+                    properties:
+                      cluster_id:
+                        type: string
+                      instance_annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      instance_name:
+                        type: string
+                      namespace:
+                        type: string
+                      namespace_annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      platform:
+                        type: string
+                    required:
+                    - cluster_id
+                    - instance_name
+                    - namespace
+                    - platform
+                    type: object
+                  instance:
+                    type: string
+                  instanceData:
+                    description: Instance Data represents the schema for a ServiceInstance
+                      MR
+                    properties:
+                      instanceId:
+                        type: string
+                      planId:
+                        type: string
+                      serviceId:
+                        type: string
+                    required:
+                    - instanceId
+                    - planId
+                    - serviceId
+                    type: object
+                  parameters:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  route:
+                    type: string
+                  secretName:
+                    type: string
                 type: object
               managementPolicies:
                 default:
@@ -247,14 +327,96 @@ spec:
             - forProvider
             type: object
           status:
-            description: A ServiceInstanceStatus represents the observed state of
-              a ServiceInstance.
+            description: A ServiceBindingStatus represents the observed state of a
+              ServiceBinding.
             properties:
               atProvider:
-                description: ServiceInstanceObservation are the observable fields
-                  of a ServiceInstance.
+                description: ServiceBindingObservation are the observable fields of
+                  a ServiceBinding.
                 properties:
-                  observableField:
+                  application:
+                    type: string
+                  applicationData:
+                    description: ApplicationData represents the schema for an Application
+                      MR
+                    properties:
+                      Name:
+                        type: string
+                      brokerURL:
+                        type: string
+                      credentials:
+                        description: Credentials is a struct to hold credentials used
+                          to contact the service brokers
+                        properties:
+                          hardcodedCreds:
+                            description: HardcodedCreds represents the info needed
+                              for credentials that are hardcoded
+                            properties:
+                              password:
+                                type: string
+                              user:
+                                type: string
+                            required:
+                            - password
+                            - user
+                            type: object
+                          secretName:
+                            type: string
+                        type: object
+                    required:
+                    - Name
+                    - brokerURL
+                    type: object
+                  context:
+                    description: |-
+                      KubernetesContextObject represents the context object for kubernetes in the OSB spec
+                      cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
+                    properties:
+                      cluster_id:
+                        type: string
+                      instance_annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      instance_name:
+                        type: string
+                      namespace:
+                        type: string
+                      namespace_annotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      platform:
+                        type: string
+                    required:
+                    - cluster_id
+                    - instance_name
+                    - namespace
+                    - platform
+                    type: object
+                  instance:
+                    type: string
+                  instanceData:
+                    description: Instance Data represents the schema for a ServiceInstance
+                      MR
+                    properties:
+                      instanceId:
+                        type: string
+                      planId:
+                        type: string
+                      serviceId:
+                        type: string
+                    required:
+                    - instanceId
+                    - planId
+                    - serviceId
+                    type: object
+                  parameters:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  route:
+                    type: string
+                  secretName:
                     type: string
                 type: object
               conditions:

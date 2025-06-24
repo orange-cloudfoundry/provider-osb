@@ -1,7 +1,7 @@
 # ====================================================================================
 # Setup Project
-PROJECT_NAME := provider-osbprovider
-PROJECT_REPO := github.com/crossplane/$(PROJECT_NAME)
+PROJECT_NAME := provider-osb
+PROJECT_REPO := github.com/orange-cloudfoundry/$(PROJECT_NAME)
 
 PLATFORMS ?= linux_amd64 linux_arm64
 -include build/makelib/common.mk
@@ -31,7 +31,7 @@ GOLANGCILINT_VERSION = 2.1.2
 # ====================================================================================
 # Setup Images
 
-IMAGES = provider-osbprovider
+IMAGES = provider-osb
 -include build/makelib/imagelight.mk
 
 # ====================================================================================
@@ -41,12 +41,12 @@ XPKG_REG_ORGS ?= xpkg.upbound.io/crossplane
 # NOTE(hasheddan): skip promoting on xpkg.upbound.io as channel tags are
 # inferred.
 XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/crossplane
-XPKGS = provider-osbprovider
+XPKGS = provider-osb
 -include build/makelib/xpkg.mk
 
 # NOTE(hasheddan): we force image building to happen prior to xpkg build so that
 # we ensure image is present in daemon.
-xpkg.build.provider-osbprovider: do.build.images
+xpkg.build.provider-osb: do.build.images
 
 fallthrough: submodules
 	@echo Initial setup complete. Running make again . . .
@@ -94,9 +94,9 @@ dev: $(KIND) $(KUBECTL)
 	@$(KUBECTL) cluster-info --context kind-$(PROJECT_NAME)-dev
 	@$(INFO) Installing Crossplane CRDs
 	@$(KUBECTL) apply --server-side -k https://github.com/crossplane/crossplane//cluster?ref=master
-	@$(INFO) Installing Provider OsbProvider CRDs
+	@$(INFO) Installing Provider Osb CRDs
 	@$(KUBECTL) apply -R -f package/crds
-	@$(INFO) Starting Provider OsbProvider controllers
+	@$(INFO) Starting Provider Osb controllers
 	@$(GO) run cmd/provider/main.go --debug
 
 dev-clean: $(KIND) $(KUBECTL)
@@ -121,7 +121,7 @@ $(GOMPLATE):
 
 export GOMPLATE
 
-# This target prepares repo for your provider by replacing all "osbprovider"
+# This target prepares repo for your provider by replacing all "osb"
 # occurrences with your provider name.
 # This target can only be run once, if you want to rerun for some reason,
 # consider stashing/resetting your git state.

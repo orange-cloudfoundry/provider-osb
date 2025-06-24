@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.16.5
-  name: providerconfigs.osbprovider.crossplane.io
+  name: providerconfigs.osb.crossplane.io
 spec:
-  group: osbprovider.crossplane.io
+  group: osb.crossplane.io
   names:
     kind: ProviderConfig
     listKind: ProviderConfigList
@@ -25,7 +25,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ProviderConfig configures a OsbProvider provider.
+        description: A ProviderConfig configures a OSB provider.
         properties:
           apiVersion:
             description: |-
@@ -34,6 +34,8 @@ spec:
               may reject unrecognized values.
               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
+          disable_async:
+            type: boolean
           kind:
             description: |-
               Kind is a string value representing the REST resource this object represents.
@@ -161,6 +163,7 @@ spec:
                 type: integer
             type: object
         required:
+        - disable_async
         - spec
         type: object
     served: true
