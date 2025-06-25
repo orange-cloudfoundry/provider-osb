@@ -1,5 +1,5 @@
 /*
-Copyright 2025 The Crossplane Authors.
+Copyright 2022 The Crossplane Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,8 +20,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/crossplane/crossplane-runtime/pkg/feature"
-
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -33,7 +31,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
@@ -65,7 +62,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		cps = append(cps, connection.NewDetailsManager(mgr.GetClient(), apisv1alpha1.StoreConfigGroupVersionKind))
 	}
 
-	opts := []managed.ReconcilerOption{
+	r := managed.NewReconciler(mgr,
+		resource.ManagedKind(v1alpha1.ServiceInstanceGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
 			kube:         mgr.GetClient(),
 			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
@@ -73,28 +71,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
-		managed.WithConnectionPublishers(cps...),
-		managed.WithManagementPolicies(),
-	}
-
-	if o.Features.Enabled(feature.EnableAlphaChangeLogs) {
-		opts = append(opts, managed.WithChangeLogger(o.ChangeLogOptions.ChangeLogger))
-	}
-
-	if o.MetricOptions != nil {
-		opts = append(opts, managed.WithMetricRecorder(o.MetricOptions.MRMetrics))
-	}
-
-	if o.MetricOptions != nil && o.MetricOptions.MRStateMetrics != nil {
-		stateMetricsRecorder := statemetrics.NewMRStateRecorder(
-			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1alpha1.ServiceInstanceList{}, o.MetricOptions.PollStateMetricInterval,
-		)
-		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return errors.Wrap(err, "cannot register MR state metrics recorder for kind v1alpha1.ServiceInstanceList")
-		}
-	}
-
-	r := managed.NewReconciler(mgr, resource.ManagedKind(v1alpha1.ServiceInstanceGroupVersionKind), opts...)
+		managed.WithConnectionPublishers(cps...))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).

@@ -23,23 +23,20 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 )
-
-// ApplicationParameters are the configurable fields of a Application.
-type ApplicationParameters struct {
-	ConfigurableField string `json:"configurableField"`
-}
 
 // ApplicationObservation are the observable fields of a Application.
 type ApplicationObservation struct {
-	ConfigurableField string `json:"configurableField"`
-	ObservableField   string `json:"observableField,omitempty"`
+	BrokerURL   string              `json:"brokerURL"`
+	Credentials *common.Credentials `json:"credentials,omitempty"`
+	Name        string              `json:"Name"`
 }
 
 // A ApplicationSpec defines the desired state of a Application.
 type ApplicationSpec struct {
 	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       ApplicationParameters `json:"forProvider"`
+	ForProvider       common.ApplicationData `json:"forProvider"`
 }
 
 // A ApplicationStatus represents the observed state of a Application.

@@ -29,18 +29,18 @@ import (
 
 // ServiceInstanceParameters are the configurable fields of a ServiceInstance.
 type ServiceInstanceParameters struct {
-	Application     *string                        `json:"application,omitempty"`
+	Application     string                         `json:"application,omitempty"`
 	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	PlanId          *int                           `json:"planId"`
+	PlanId          int                            `json:"planId"`
 	Context         common.KubernetesContextObject `json:"context,omitempty"`
 	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
 }
 
 // ServiceInstanceObservation are the observable fields of a ServiceInstance.
 type ServiceInstanceObservation struct {
-	Application     *string                        `json:"application,omitempty"`
+	Application     string                         `json:"application,omitempty"`
 	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	PlanId          *int                           `json:"planId"`
+	PlanId          int                            `json:"planId"`
 	Context         common.KubernetesContextObject `json:"context,omitempty"`
 	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
 }

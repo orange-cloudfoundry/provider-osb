@@ -30,26 +30,26 @@ import (
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
 type ServiceBindingParameters struct {
-	Application     *string                        `json:"application,omitempty"`
+	Application     string                         `json:"application,omitempty"`
 	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	Instance        *string                        `json:"instance,omitempty"`
+	Instance        string                         `json:"instance,omitempty"`
 	InstanceData    *common.InstanceData           `json:"instanceData,omitempty"`
-	SecretName      *string                        `json:"secretName,omitempty"`
+	SecretName      string                         `json:"secretName,omitempty"`
 	Context         common.KubernetesContextObject `json:"context,omitempty"`
 	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
-	Route           *string                        `json:"route,omitempty"`
+	Route           string                         `json:"route,omitempty"`
 }
 
 // ServiceBindingObservation are the observable fields of a ServiceBinding.
 type ServiceBindingObservation struct {
-	Application     *string                        `json:"application,omitempty"`
+	Application     string                         `json:"application,omitempty"`
 	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	Instance        *string                        `json:"instance,omitempty"`
+	Instance        string                         `json:"instance,omitempty"`
 	InstanceData    *common.InstanceData           `json:"instanceData,omitempty"`
-	SecretName      *string                        `json:"secretName,omitempty"`
+	SecretName      string                         `json:"secretName,omitempty"`
 	Context         common.KubernetesContextObject `json:"context,omitempty"`
 	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
-	Route           *string                        `json:"route,omitempty"`
+	Route           string                         `json:"route,omitempty"`
 }
 
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.

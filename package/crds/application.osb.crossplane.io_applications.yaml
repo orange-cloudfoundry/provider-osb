@@ -71,13 +71,35 @@ spec:
                 - Delete
                 type: string
               forProvider:
-                description: ApplicationParameters are the configurable fields of
-                  a Application.
+                description: ApplicationData represents the schema for an Application
+                  MR
                 properties:
-                  configurableField:
+                  Name:
                     type: string
+                  brokerURL:
+                    type: string
+                  credentials:
+                    description: Credentials is a struct to hold credentials used
+                      to contact the service brokers
+                    properties:
+                      hardcodedCreds:
+                        description: HardcodedCreds represents the info needed for
+                          credentials that are hardcoded
+                        properties:
+                          password:
+                            type: string
+                          user:
+                            type: string
+                        required:
+                        - password
+                        - user
+                        type: object
+                      secretName:
+                        type: string
+                    type: object
                 required:
-                - configurableField
+                - Name
+                - brokerURL
                 type: object
               managementPolicies:
                 default:
@@ -253,12 +275,32 @@ spec:
                 description: ApplicationObservation are the observable fields of a
                   Application.
                 properties:
-                  configurableField:
+                  Name:
                     type: string
-                  observableField:
+                  brokerURL:
                     type: string
+                  credentials:
+                    description: Credentials is a struct to hold credentials used
+                      to contact the service brokers
+                    properties:
+                      hardcodedCreds:
+                        description: HardcodedCreds represents the info needed for
+                          credentials that are hardcoded
+                        properties:
+                          password:
+                            type: string
+                          user:
+                            type: string
+                        required:
+                        - password
+                        - user
+                        type: object
+                      secretName:
+                        type: string
+                    type: object
                 required:
-                - configurableField
+                - Name
+                - brokerURL
                 type: object
               conditions:
                 description: Conditions of the resource.
