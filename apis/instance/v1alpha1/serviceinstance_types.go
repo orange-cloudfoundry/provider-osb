@@ -20,35 +20,24 @@ import (
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 )
 
-// ServiceInstanceParameters are the configurable fields of a ServiceInstance.
-type ServiceInstanceParameters struct {
-	Application     string                         `json:"application,omitempty"`
-	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	PlanId          int                            `json:"planId"`
-	Context         common.KubernetesContextObject `json:"context,omitempty"`
-	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
-}
-
 // ServiceInstanceObservation are the observable fields of a ServiceInstance.
+// TODO manage observations
 type ServiceInstanceObservation struct {
-	Application     string                         `json:"application,omitempty"`
-	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	PlanId          int                            `json:"planId"`
-	Context         common.KubernetesContextObject `json:"context,omitempty"`
-	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
+	ApplicationRef      *common.NamespacedName  `json:"application,omitempty"`
+	ApplicationData     *common.ApplicationData `json:"applicationData,omitempty"`
+	common.InstanceData `json:",inline"`
 }
 
 // A ServiceInstanceSpec defines the desired state of a ServiceInstance.
 type ServiceInstanceSpec struct {
 	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       ServiceInstanceParameters `json:"forProvider"`
+	ForProvider       common.InstanceData `json:"forProvider"`
 }
 
 // A ServiceInstanceStatus represents the observed state of a ServiceInstance.

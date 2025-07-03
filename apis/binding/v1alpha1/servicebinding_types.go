@@ -30,23 +30,22 @@ import (
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
 type ServiceBindingParameters struct {
-	Application     string                         `json:"application,omitempty"`
+	ApplicationRef  *common.NamespacedName         `json:"application,omitempty"`
 	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	Instance        string                         `json:"instance,omitempty"`
+	InstanceRef     *common.NamespacedName         `json:"instance,omitempty"`
 	InstanceData    *common.InstanceData           `json:"instanceData,omitempty"`
-	SecretName      string                         `json:"secretName,omitempty"`
 	Context         common.KubernetesContextObject `json:"context,omitempty"`
 	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
 	Route           string                         `json:"route,omitempty"`
 }
 
 // ServiceBindingObservation are the observable fields of a ServiceBinding.
+// TODO manage observations
 type ServiceBindingObservation struct {
-	Application     string                         `json:"application,omitempty"`
+	ApplicationRef  *common.NamespacedName         `json:"application,omitempty"`
 	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	Instance        string                         `json:"instance,omitempty"`
+	InstanceRef     *common.NamespacedName         `json:"instance,omitempty"`
 	InstanceData    *common.InstanceData           `json:"instanceData,omitempty"`
-	SecretName      string                         `json:"secretName,omitempty"`
 	Context         common.KubernetesContextObject `json:"context,omitempty"`
 	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
 	Route           string                         `json:"route,omitempty"`

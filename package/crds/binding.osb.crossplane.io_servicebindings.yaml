@@ -75,20 +75,28 @@ spec:
                   of a ServiceBinding.
                 properties:
                   application:
-                    type: string
-                  applicationData:
-                    description: ApplicationData represents the schema for an Application
-                      MR
+                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
+                      since it does not have json tags
                     properties:
-                      Name:
+                      name:
                         type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  applicationData:
+                    description: |-
+                      ApplicationData represents the schema for an Application MR
+                      It should be only a ref and never re-specified in ApplicationData
+                    properties:
                       brokerURL:
                         type: string
                       credentials:
                         description: Credentials is a struct to hold credentials used
                           to contact the service brokers
                         properties:
-                          hardcodedCreds:
+                          hardcoded_creds:
                             description: HardcodedCreds represents the info needed
                               for credentials that are hardcoded
                             properties:
@@ -100,12 +108,17 @@ spec:
                             - password
                             - user
                             type: object
-                          secretName:
+                          secred_name:
                             type: string
                         type: object
+                      guid:
+                        type: string
+                      name:
+                        type: string
                     required:
-                    - Name
                     - brokerURL
+                    - guid
+                    - name
                     type: object
                   context:
                     description: |-
@@ -135,13 +148,98 @@ spec:
                     - platform
                     type: object
                   instance:
-                    type: string
+                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
+                      since it does not have json tags
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
                   instanceData:
                     description: Instance Data represents the schema for a ServiceInstance
                       MR
                     properties:
+                      application:
+                        description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
+                          since it does not have json tags
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      applicationData:
+                        description: |-
+                          ApplicationData represents the schema for an Application MR
+                          It should be only a ref and never re-specified in ApplicationData
+                        properties:
+                          brokerURL:
+                            type: string
+                          credentials:
+                            description: Credentials is a struct to hold credentials
+                              used to contact the service brokers
+                            properties:
+                              hardcoded_creds:
+                                description: HardcodedCreds represents the info needed
+                                  for credentials that are hardcoded
+                                properties:
+                                  password:
+                                    type: string
+                                  user:
+                                    type: string
+                                required:
+                                - password
+                                - user
+                                type: object
+                              secred_name:
+                                type: string
+                            type: object
+                          guid:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - brokerURL
+                        - guid
+                        - name
+                        type: object
+                      context:
+                        description: |-
+                          KubernetesContextObject represents the context object for kubernetes in the OSB spec
+                          cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
+                        properties:
+                          cluster_id:
+                            type: string
+                          instance_annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          instance_name:
+                            type: string
+                          namespace:
+                            type: string
+                          namespace_annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          platform:
+                            type: string
+                        required:
+                        - cluster_id
+                        - instance_name
+                        - namespace
+                        - platform
+                        type: object
                       instanceId:
                         type: string
+                      parameters:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
                       planId:
                         type: string
                       serviceId:
@@ -155,8 +253,6 @@ spec:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   route:
-                    type: string
-                  secretName:
                     type: string
                 type: object
               managementPolicies:
@@ -335,20 +431,28 @@ spec:
                   a ServiceBinding.
                 properties:
                   application:
-                    type: string
-                  applicationData:
-                    description: ApplicationData represents the schema for an Application
-                      MR
+                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
+                      since it does not have json tags
                     properties:
-                      Name:
+                      name:
                         type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  applicationData:
+                    description: |-
+                      ApplicationData represents the schema for an Application MR
+                      It should be only a ref and never re-specified in ApplicationData
+                    properties:
                       brokerURL:
                         type: string
                       credentials:
                         description: Credentials is a struct to hold credentials used
                           to contact the service brokers
                         properties:
-                          hardcodedCreds:
+                          hardcoded_creds:
                             description: HardcodedCreds represents the info needed
                               for credentials that are hardcoded
                             properties:
@@ -360,12 +464,17 @@ spec:
                             - password
                             - user
                             type: object
-                          secretName:
+                          secred_name:
                             type: string
                         type: object
+                      guid:
+                        type: string
+                      name:
+                        type: string
                     required:
-                    - Name
                     - brokerURL
+                    - guid
+                    - name
                     type: object
                   context:
                     description: |-
@@ -395,13 +504,98 @@ spec:
                     - platform
                     type: object
                   instance:
-                    type: string
+                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
+                      since it does not have json tags
+                    properties:
+                      name:
+                        type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
                   instanceData:
                     description: Instance Data represents the schema for a ServiceInstance
                       MR
                     properties:
+                      application:
+                        description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
+                          since it does not have json tags
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      applicationData:
+                        description: |-
+                          ApplicationData represents the schema for an Application MR
+                          It should be only a ref and never re-specified in ApplicationData
+                        properties:
+                          brokerURL:
+                            type: string
+                          credentials:
+                            description: Credentials is a struct to hold credentials
+                              used to contact the service brokers
+                            properties:
+                              hardcoded_creds:
+                                description: HardcodedCreds represents the info needed
+                                  for credentials that are hardcoded
+                                properties:
+                                  password:
+                                    type: string
+                                  user:
+                                    type: string
+                                required:
+                                - password
+                                - user
+                                type: object
+                              secred_name:
+                                type: string
+                            type: object
+                          guid:
+                            type: string
+                          name:
+                            type: string
+                        required:
+                        - brokerURL
+                        - guid
+                        - name
+                        type: object
+                      context:
+                        description: |-
+                          KubernetesContextObject represents the context object for kubernetes in the OSB spec
+                          cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
+                        properties:
+                          cluster_id:
+                            type: string
+                          instance_annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          instance_name:
+                            type: string
+                          namespace:
+                            type: string
+                          namespace_annotations:
+                            additionalProperties:
+                              type: string
+                            type: object
+                          platform:
+                            type: string
+                        required:
+                        - cluster_id
+                        - instance_name
+                        - namespace
+                        - platform
+                        type: object
                       instanceId:
                         type: string
+                      parameters:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
                       planId:
                         type: string
                       serviceId:
@@ -415,8 +609,6 @@ spec:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   route:
-                    type: string
-                  secretName:
                     type: string
                 type: object
               conditions:

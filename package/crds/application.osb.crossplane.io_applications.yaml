@@ -71,18 +71,17 @@ spec:
                 - Delete
                 type: string
               forProvider:
-                description: ApplicationData represents the schema for an Application
-                  MR
+                description: |-
+                  ApplicationData represents the schema for an Application MR
+                  It should be only a ref and never re-specified in ApplicationData
                 properties:
-                  Name:
-                    type: string
                   brokerURL:
                     type: string
                   credentials:
                     description: Credentials is a struct to hold credentials used
                       to contact the service brokers
                     properties:
-                      hardcodedCreds:
+                      hardcoded_creds:
                         description: HardcodedCreds represents the info needed for
                           credentials that are hardcoded
                         properties:
@@ -94,12 +93,17 @@ spec:
                         - password
                         - user
                         type: object
-                      secretName:
+                      secred_name:
                         type: string
                     type: object
+                  guid:
+                    type: string
+                  name:
+                    type: string
                 required:
-                - Name
                 - brokerURL
+                - guid
+                - name
                 type: object
               managementPolicies:
                 default:
@@ -283,7 +287,7 @@ spec:
                     description: Credentials is a struct to hold credentials used
                       to contact the service brokers
                     properties:
-                      hardcodedCreds:
+                      hardcoded_creds:
                         description: HardcodedCreds represents the info needed for
                           credentials that are hardcoded
                         properties:
@@ -295,7 +299,7 @@ spec:
                         - password
                         - user
                         type: object
-                      secretName:
+                      secred_name:
                         type: string
                     type: object
                 required:

@@ -29,6 +29,10 @@ import (
 type ProviderConfigSpec struct {
 	// Credentials required to authenticate to this provider.
 	Credentials ProviderCredentials `json:"credentials"`
+
+	// BrokerURL to send OSB requests to
+	// TODO add kubebuilder validation annotation for URI format
+	BrokerURL string `json:"broker_url"`
 }
 
 // ProviderCredentials required to authenticate.

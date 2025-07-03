@@ -8,13 +8,13 @@ require (
 	github.com/crossplane/crossplane-runtime v1.20.0
 	github.com/crossplane/crossplane-tools v0.0.0-20240522174801-1ad3d4c87f21
 	github.com/google/go-cmp v0.6.0
+	github.com/orange-cloudfoundry/go-open-service-broker-client/v2 v2.0.0-20250701131927-7d32f8d20f57
 	github.com/pkg/errors v0.9.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	k8s.io/apimachinery v0.31.2
 	k8s.io/client-go v0.31.2
 	sigs.k8s.io/controller-runtime v0.19.0
 	sigs.k8s.io/controller-tools v0.16.5
-	sigs.k8s.io/go-open-service-broker-client/v2 v2.0.0-20210928082444-d912fc53f8bd
 )
 
 require (

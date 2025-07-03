@@ -16,26 +16,59 @@ limitations under the License.
 
 package common
 
+import (
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+// And it makes `make generate` fail
+type NamespacedName struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
+// String returns the general purpose string representation
+func (n NamespacedName) String() string {
+	return n.Namespace + "/" + n.Name
+}
+
+func (n NamespacedName) ToObjectKey() client.ObjectKey {
+	return client.ObjectKey{
+		Name:      n.Name,
+		Namespace: n.Namespace,
+	}
+}
+
 // ApplicationData represents the schema for an Application MR
+// TODO: replace brokerUrl and credentials to a ref to ProviderConfig
+// It should be only a ref and never re-specified in ApplicationData
 type ApplicationData struct {
 	BrokerURL   string       `json:"brokerURL"`
 	Credentials *Credentials `json:"credentials,omitempty"`
-	Name        string       `json:"Name"`
+	Name        string       `json:"name"`
+	Guid        string       `json:"guid"`
 }
 
 // Instance Data represents the schema for a ServiceInstance MR
 type InstanceData struct {
-	InstanceId string `json:"instanceId"`
-	PlanId     string `json:"planId"`
-	ServiceId  string `json:"serviceId"`
+	ApplicationRef  *NamespacedName         `json:"application,omitempty"`
+	ApplicationData *ApplicationData        `json:"applicationData,omitempty"`
+	InstanceId      string                  `json:"instanceId"`
+	PlanId          string                  `json:"planId"`
+	ServiceId       string                  `json:"serviceId"`
+	Context         KubernetesContextObject `json:"context,omitempty"`
+	Parameters      runtime.RawExtension    `json:"parameters,omitempty"`
 }
 
+// TODO remove in favor of crossplane's writeConnectionDetailsToRef
 // Credentials is a struct to hold credentials used to contact the service brokers
 type Credentials struct {
-	SecretName     string          `json:"secretName,omitempty"`
-	HardcodedCreds *HardcodedCreds `json:"hardcodedCreds,omitempty"`
+	SecretName     string          `json:"secred_name,omitempty"`
+	HardcodedCreds *HardcodedCreds `json:"hardcoded_creds,omitempty"`
 }
 
+// TODO remove in favor of crossplane's writeConnectionDetailsToRef
 // HardcodedCreds represents the info needed for credentials that are hardcoded
 type HardcodedCreds struct {
 	User     string `json:"user"`

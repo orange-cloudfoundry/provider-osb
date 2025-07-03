@@ -27,6 +27,7 @@ import (
 )
 
 // ApplicationObservation are the observable fields of a Application.
+// TODO manage observations
 type ApplicationObservation struct {
 	BrokerURL   string              `json:"brokerURL"`
 	Credentials *common.Credentials `json:"credentials,omitempty"`

@@ -71,24 +71,32 @@ spec:
                 - Delete
                 type: string
               forProvider:
-                description: ServiceInstanceParameters are the configurable fields
-                  of a ServiceInstance.
+                description: Instance Data represents the schema for a ServiceInstance
+                  MR
                 properties:
                   application:
-                    type: string
-                  applicationData:
-                    description: ApplicationData represents the schema for an Application
-                      MR
+                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
+                      since it does not have json tags
                     properties:
-                      Name:
+                      name:
                         type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  applicationData:
+                    description: |-
+                      ApplicationData represents the schema for an Application MR
+                      It should be only a ref and never re-specified in ApplicationData
+                    properties:
                       brokerURL:
                         type: string
                       credentials:
                         description: Credentials is a struct to hold credentials used
                           to contact the service brokers
                         properties:
-                          hardcodedCreds:
+                          hardcoded_creds:
                             description: HardcodedCreds represents the info needed
                               for credentials that are hardcoded
                             properties:
@@ -100,12 +108,17 @@ spec:
                             - password
                             - user
                             type: object
-                          secretName:
+                          secred_name:
                             type: string
                         type: object
+                      guid:
+                        type: string
+                      name:
+                        type: string
                     required:
-                    - Name
                     - brokerURL
+                    - guid
+                    - name
                     type: object
                   context:
                     description: |-
@@ -134,13 +147,19 @@ spec:
                     - namespace
                     - platform
                     type: object
+                  instanceId:
+                    type: string
                   parameters:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   planId:
-                    type: integer
+                    type: string
+                  serviceId:
+                    type: string
                 required:
+                - instanceId
                 - planId
+                - serviceId
                 type: object
               managementPolicies:
                 default:
@@ -318,20 +337,28 @@ spec:
                   of a ServiceInstance.
                 properties:
                   application:
-                    type: string
-                  applicationData:
-                    description: ApplicationData represents the schema for an Application
-                      MR
+                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
+                      since it does not have json tags
                     properties:
-                      Name:
+                      name:
                         type: string
+                      namespace:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  applicationData:
+                    description: |-
+                      ApplicationData represents the schema for an Application MR
+                      It should be only a ref and never re-specified in ApplicationData
+                    properties:
                       brokerURL:
                         type: string
                       credentials:
                         description: Credentials is a struct to hold credentials used
                           to contact the service brokers
                         properties:
-                          hardcodedCreds:
+                          hardcoded_creds:
                             description: HardcodedCreds represents the info needed
                               for credentials that are hardcoded
                             properties:
@@ -343,12 +370,17 @@ spec:
                             - password
                             - user
                             type: object
-                          secretName:
+                          secred_name:
                             type: string
                         type: object
+                      guid:
+                        type: string
+                      name:
+                        type: string
                     required:
-                    - Name
                     - brokerURL
+                    - guid
+                    - name
                     type: object
                   context:
                     description: |-
@@ -377,13 +409,19 @@ spec:
                     - namespace
                     - platform
                     type: object
+                  instanceId:
+                    type: string
                   parameters:
                     type: object
                     x-kubernetes-preserve-unknown-fields: true
                   planId:
-                    type: integer
+                    type: string
+                  serviceId:
+                    type: string
                 required:
+                - instanceId
                 - planId
+                - serviceId
                 type: object
               conditions:
                 description: Conditions of the resource.

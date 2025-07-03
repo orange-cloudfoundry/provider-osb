@@ -49,6 +49,9 @@ spec:
           spec:
             description: A ProviderConfigSpec defines the desired state of a ProviderConfig.
             properties:
+              broker_url:
+                description: BrokerURL to send OSB requests to
+                type: string
               credentials:
                 description: Credentials required to authenticate to this provider.
                 properties:
@@ -106,6 +109,7 @@ spec:
                 - source
                 type: object
             required:
+            - broker_url
             - credentials
             type: object
           status:
