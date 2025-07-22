@@ -75,8 +75,9 @@ spec:
                   MR
                 properties:
                   application:
-                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
-                      since it does not have json tags
+                    description: |-
+                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                      And it makes `make generate` fail
                     properties:
                       name:
                         type: string
@@ -337,8 +338,9 @@ spec:
                   of a ServiceInstance.
                 properties:
                   application:
-                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
-                      since it does not have json tags
+                    description: |-
+                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                      And it makes `make generate` fail
                     properties:
                       name:
                         type: string

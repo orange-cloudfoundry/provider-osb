@@ -75,8 +75,9 @@ spec:
                   of a ServiceBinding.
                 properties:
                   application:
-                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
-                      since it does not have json tags
+                    description: |-
+                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                      And it makes `make generate` fail
                     properties:
                       name:
                         type: string
@@ -148,8 +149,9 @@ spec:
                     - platform
                     type: object
                   instance:
-                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
-                      since it does not have json tags
+                    description: |-
+                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                      And it makes `make generate` fail
                     properties:
                       name:
                         type: string
@@ -163,8 +165,9 @@ spec:
                       MR
                     properties:
                       application:
-                        description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
-                          since it does not have json tags
+                        description: |-
+                          NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                          And it makes `make generate` fail
                         properties:
                           name:
                             type: string
@@ -250,7 +253,6 @@ spec:
                     - serviceId
                     type: object
                   parameters:
-                    type: object
                     x-kubernetes-preserve-unknown-fields: true
                   route:
                     type: string
@@ -431,8 +433,9 @@ spec:
                   a ServiceBinding.
                 properties:
                   application:
-                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
-                      since it does not have json tags
+                    description: |-
+                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                      And it makes `make generate` fail
                     properties:
                       name:
                         type: string
@@ -504,8 +507,9 @@ spec:
                     - platform
                     type: object
                   instance:
-                    description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
-                      since it does not have json tags
+                    description: |-
+                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                      And it makes `make generate` fail
                     properties:
                       name:
                         type: string
@@ -519,8 +523,9 @@ spec:
                       MR
                     properties:
                       application:
-                        description: NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types
-                          since it does not have json tags
+                        description: |-
+                          NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                          And it makes `make generate` fail
                         properties:
                           name:
                             type: string
@@ -606,7 +611,6 @@ spec:
                     - serviceId
                     type: object
                   parameters:
-                    type: object
                     x-kubernetes-preserve-unknown-fields: true
                   route:
                     type: string

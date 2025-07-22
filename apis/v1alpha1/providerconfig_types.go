@@ -23,16 +23,21 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 )
 
 // A ProviderConfigSpec defines the desired state of a ProviderConfig.
 type ProviderConfigSpec struct {
 	// Credentials required to authenticate to this provider.
-	Credentials ProviderCredentials `json:"credentials"`
+	Credentials ProviderCredentials `json:"credentials,omitempty"`
 
 	// BrokerURL to send OSB requests to
 	// TODO add kubebuilder validation annotation for URI format
 	BrokerURL string `json:"broker_url"`
+
+	// OriginatingIdentityExtraData represents the extra data present in the Originating-Identity header
+	// from the OSB spec.
+	OriginatingIdentityExtraData common.KubernetesOSBOriginatingIdentityExtra `json:"originating_identity_extra_data,omitempty"`
 }
 
 // ProviderCredentials required to authenticate.

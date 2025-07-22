@@ -20,35 +20,36 @@ import (
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 )
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
 type ServiceBindingParameters struct {
-	ApplicationRef  *common.NamespacedName         `json:"application,omitempty"`
-	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	InstanceRef     *common.NamespacedName         `json:"instance,omitempty"`
-	InstanceData    *common.InstanceData           `json:"instanceData,omitempty"`
-	Context         common.KubernetesContextObject `json:"context,omitempty"`
-	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
-	Route           string                         `json:"route,omitempty"`
+	ApplicationRef  *common.NamespacedName      `json:"application,omitempty"`
+	ApplicationData *common.ApplicationData     `json:"applicationData,omitempty"`
+	InstanceRef     *common.NamespacedName      `json:"instance,omitempty"`
+	InstanceData    *common.InstanceData        `json:"instanceData,omitempty"`
+	Context         common.KubernetesOSBContext `json:"context,omitempty"`
+	Parameters      *apiextensions.JSON         `json:"parameters,omitempty"`
+	Route           string                      `json:"route,omitempty"`
+	// TODO manage additional attributes
 }
 
 // ServiceBindingObservation are the observable fields of a ServiceBinding.
 // TODO manage observations
 type ServiceBindingObservation struct {
-	ApplicationRef  *common.NamespacedName         `json:"application,omitempty"`
-	ApplicationData *common.ApplicationData        `json:"applicationData,omitempty"`
-	InstanceRef     *common.NamespacedName         `json:"instance,omitempty"`
-	InstanceData    *common.InstanceData           `json:"instanceData,omitempty"`
-	Context         common.KubernetesContextObject `json:"context,omitempty"`
-	Parameters      runtime.RawExtension           `json:"parameters,omitempty"`
-	Route           string                         `json:"route,omitempty"`
+	ApplicationRef  *common.NamespacedName      `json:"application,omitempty"`
+	ApplicationData *common.ApplicationData     `json:"applicationData,omitempty"`
+	InstanceRef     *common.NamespacedName      `json:"instance,omitempty"`
+	InstanceData    *common.InstanceData        `json:"instanceData,omitempty"`
+	Context         common.KubernetesOSBContext `json:"context,omitempty"`
+	Parameters      *apiextensions.JSON         `json:"parameters,omitempty"`
+	Route           string                      `json:"route,omitempty"`
 }
 
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
