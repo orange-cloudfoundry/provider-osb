@@ -117,6 +117,11 @@ func withAnnotations(binding v1alpha1.ServiceBinding, annotations map[string]str
 	return &binding
 }
 
+func withLastOperationState(binding v1alpha1.ServiceBinding, state osb.LastOperationState) *v1alpha1.ServiceBinding {
+	binding.Status.AtProvider.LastOperationState = state
+	return &binding
+}
+
 func encodeCredentials(creds map[string][]byte) map[string][]byte {
 	res := make(map[string][]byte, len(creds))
 	for k, v := range creds {
@@ -157,7 +162,9 @@ func TestObserve(t *testing.T) {
 		},
 		"NotResourceExists": {
 			args: args{
-				mg: basicBinding,
+				// We are testing the asynchronous way, since a succeeded or failed last operation
+				// should not impact the workflow in any way
+				mg: withLastOperationState(*basicBinding, osb.StateSucceeded),
 			},
 
 			fields: fields{
@@ -194,11 +201,13 @@ func TestObserve(t *testing.T) {
 		},
 		"NotResourceUpToDate": {
 			args: args{
-				mg: basicBinding,
+				// We are testing the asynchronous way, since a succeeded or failed last operation
+				// should not impact the workflow in any way
+				mg: withLastOperationState(*basicBinding, osb.StateSucceeded),
 			},
 			fields: fields{
 				client: &osbfake.FakeClient{
-					// TODO refacto all this
+					// TODO put all this in a function
 					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
 						syslogDrainUrl := basicBinding.ObjectMeta.Annotations[syslogDrainURLAnnotation] + "-new" // changed from broker
 
@@ -254,7 +263,9 @@ func TestObserve(t *testing.T) {
 		},
 		"ResourceUpToDateCredentialsChanged": {
 			args: args{
-				mg: basicBinding,
+				// We are testing the asynchronous way, since a succeeded or failed last operation
+				// should not impact the workflow in any way
+				mg: withLastOperationState(*basicBinding, osb.StateSucceeded),
 			},
 			fields: fields{
 				client: &osbfake.FakeClient{
@@ -313,7 +324,9 @@ func TestObserve(t *testing.T) {
 		},
 		"ResourceUpToDate": {
 			args: args{
-				mg: basicBinding,
+				// We are testing the asynchronous way, since a succeeded or failed last operation
+				// should not impact the workflow in any way
+				mg: withLastOperationState(*basicBinding, osb.StateSucceeded),
 			},
 			fields: fields{
 				client: &osbfake.FakeClient{
@@ -341,7 +354,7 @@ func TestObserve(t *testing.T) {
 							return nil, errors.Wrap(err, "Failed parsing parameters ")
 						}
 
-						// TODO refacto this specific part
+						// TODO put this specific part in a function
 						credentials := make(map[string]any, len(basicCredentials))
 						for k, v := range basicCredentials {
 							credentials[k] = v
@@ -371,15 +384,26 @@ func TestObserve(t *testing.T) {
 				},
 			},
 		},
-		"ResourceExistsAsyncNotSupported": {
+		"ResourceHasPendingLastOperationStillInProgress": {
 			args: args{
-				mg: withAnnotations(*basicBinding, map[string]string{
-					util.AsyncAnnotation: "true",
-				}),
+				mg: withLastOperationState(*basicBinding, osb.StateInProgress),
+			},
+			fields: fields{
+				client: &osbfake.FakeClient{
+					PollBindingLastOperationReaction: &osbfake.PollBindingLastOperationReaction{
+						Response: &osb.LastOperationResponse{
+							State: osb.StateInProgress,
+						},
+					},
+				},
 			},
 			want: want{
-				o:   managed.ExternalObservation{},
-				err: errors.New("Async requests are not supported yet."),
+				// Requeue without doing anything, since an operation is still in progress
+				o: managed.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: true,
+				},
+				err: nil,
 			},
 		},
 		// TODO add test cases for specific errors
@@ -431,24 +455,6 @@ func TestCreate(t *testing.T) {
 				err: errors.New(errNotServiceBinding),
 			},
 		},
-		"AsyncNotSupported": {
-			args: args{
-				mg: basicBinding,
-			},
-			fields: fields{
-				client: &osbfake.FakeClient{
-					BindReaction: &osbfake.BindReaction{
-						Response: &osb.BindResponse{
-							Async: true,
-						},
-					},
-				},
-			},
-			want: want{
-				o:   managed.ExternalCreation{},
-				err: errors.New("Async requests are not supported yet."),
-			},
-		},
 		"ErrorCreate": {
 			args: args{
 				mg: basicBinding,
@@ -472,7 +478,7 @@ func TestCreate(t *testing.T) {
 			fields: fields{
 				client: &osbfake.FakeClient{
 					BindReaction: osbfake.DynamicBindReaction(func(req *osb.BindRequest) (*osb.BindResponse, error) {
-						// TODO refacto this code
+						// TODO put this code in a function
 						credentials := make(map[string]any, len(basicCredentials))
 						for k, v := range basicCredentials {
 							credentials[k] = v
@@ -488,6 +494,28 @@ func TestCreate(t *testing.T) {
 			want: want{
 				o: managed.ExternalCreation{
 					ConnectionDetails: encodeCredentials(basicCredentials),
+				},
+			},
+		},
+		"AsyncCreate": {
+			args: args{
+				mg: basicBinding,
+			},
+			fields: fields{
+				client: &osbfake.FakeClient{
+					BindReaction: &osbfake.BindReaction{
+						Response: &osb.BindResponse{
+							Async: true,
+						},
+					},
+				},
+			},
+			want: want{
+				// no credentials, because async
+				o: managed.ExternalCreation{
+					AdditionalDetails: managed.AdditionalDetails{
+						"async": "true",
+					},
 				},
 			},
 		},
@@ -655,24 +683,6 @@ func TestDelete(t *testing.T) {
 				err: errors.New(errNotServiceBinding),
 			},
 		},
-		"AsyncNotSupported": {
-			args: args{
-				mg: basicBinding,
-			},
-			fields: fields{
-				client: &osbfake.FakeClient{
-					UnbindReaction: osbfake.DynamicUnbindReaction(func(*osb.UnbindRequest) (*osb.UnbindResponse, error) {
-						return &osb.UnbindResponse{
-							Async: true,
-						}, nil
-					}),
-				},
-			},
-			want: want{
-				o:   managed.ExternalDelete{},
-				err: errors.New("Async requests are not supported yet."),
-			},
-		},
 		"Success": {
 			args: args{
 				mg: basicBinding,
@@ -690,6 +700,29 @@ func TestDelete(t *testing.T) {
 				o: managed.ExternalDelete{},
 			},
 		},
+		"AsyncDelete": {
+			args: args{
+				mg: basicBinding,
+			},
+			fields: fields{
+				client: &osbfake.FakeClient{
+					UnbindReaction: &osbfake.UnbindReaction{
+						Response: &osb.UnbindResponse{
+							Async: true,
+						},
+					},
+				},
+			},
+			want: want{
+				// no credentials, because async
+				o: managed.ExternalDelete{
+					AdditionalDetails: managed.AdditionalDetails{
+						"async": "true",
+					},
+				},
+			},
+		},
+		// TODO add more test cases
 	}
 
 	for name, tc := range cases {

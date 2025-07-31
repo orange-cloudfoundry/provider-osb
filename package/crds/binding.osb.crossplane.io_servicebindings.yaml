@@ -123,7 +123,7 @@ spec:
                     type: object
                   context:
                     description: |-
-                      KubernetesContextObject represents the context object for kubernetes in the OSB spec
+                      KubernetesOSBContext represents the context object for kubernetes in the OSB spec
                       cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                     properties:
                       cluster_id:
@@ -213,7 +213,7 @@ spec:
                         type: object
                       context:
                         description: |-
-                          KubernetesContextObject represents the context object for kubernetes in the OSB spec
+                          KubernetesOSBContext represents the context object for kubernetes in the OSB spec
                           cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                         properties:
                           cluster_id:
@@ -481,7 +481,7 @@ spec:
                     type: object
                   context:
                     description: |-
-                      KubernetesContextObject represents the context object for kubernetes in the OSB spec
+                      KubernetesOSBContext represents the context object for kubernetes in the OSB spec
                       cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                     properties:
                       cluster_id:
@@ -571,7 +571,7 @@ spec:
                         type: object
                       context:
                         description: |-
-                          KubernetesContextObject represents the context object for kubernetes in the OSB spec
+                          KubernetesOSBContext represents the context object for kubernetes in the OSB spec
                           cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                         properties:
                           cluster_id:
@@ -610,9 +610,25 @@ spec:
                     - planId
                     - serviceId
                     type: object
+                  last_operation_description:
+                    type: string
+                  last_operation_key:
+                    description: |-
+                      OperationKey is an extra identifier from the broker in order to provide extra
+                      identifiers for asynchronous operations.
+                    type: string
+                  last_operation_polled_time:
+                    type: string
+                  last_operation_state:
+                    description: |-
+                      LastOperationState is a typedef representing the state of an ongoing
+                      operation for an instance.
+                    type: string
                   parameters:
                     x-kubernetes-preserve-unknown-fields: true
                   route:
+                    type: string
+                  uuid:
                     type: string
                 type: object
               conditions:

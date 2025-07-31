@@ -108,9 +108,13 @@ spec:
                 required:
                 - source
                 type: object
+              originating_identity_extra_data:
+                description: |-
+                  OriginatingIdentityExtraData represents the extra data present in the Originating-Identity header
+                  from the OSB spec.
+                x-kubernetes-preserve-unknown-fields: true
             required:
             - broker_url
-            - credentials
             type: object
           status:
             description: A ProviderConfigStatus reflects the observed state of a ProviderConfig.

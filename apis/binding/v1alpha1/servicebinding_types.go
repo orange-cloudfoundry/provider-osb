@@ -26,6 +26,8 @@ import (
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
+	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
@@ -43,13 +45,18 @@ type ServiceBindingParameters struct {
 // ServiceBindingObservation are the observable fields of a ServiceBinding.
 // TODO manage observations
 type ServiceBindingObservation struct {
-	ApplicationRef  *common.NamespacedName      `json:"application,omitempty"`
-	ApplicationData *common.ApplicationData     `json:"applicationData,omitempty"`
-	InstanceRef     *common.NamespacedName      `json:"instance,omitempty"`
-	InstanceData    *common.InstanceData        `json:"instanceData,omitempty"`
-	Context         common.KubernetesOSBContext `json:"context,omitempty"`
-	Parameters      *apiextensions.JSON         `json:"parameters,omitempty"`
-	Route           string                      `json:"route,omitempty"`
+	ApplicationRef           *common.NamespacedName      `json:"application,omitempty"`
+	ApplicationData          *common.ApplicationData     `json:"applicationData,omitempty"`
+	InstanceRef              *common.NamespacedName      `json:"instance,omitempty"`
+	InstanceData             *common.InstanceData        `json:"instanceData,omitempty"`
+	Context                  common.KubernetesOSBContext `json:"context,omitempty"`
+	Parameters               *apiextensions.JSON         `json:"parameters,omitempty"`
+	Route                    string                      `json:"route,omitempty"`
+	Uuid                     string                      `json:"uuid,omitempty"`
+	LastOperationState       osb.LastOperationState      `json:"last_operation_state,omitempty"`
+	LastOperationKey         osb.OperationKey            `json:"last_operation_key,omitempty"`
+	LastOperationDescription string                      `json:"last_operation_description,omitempty"`
+	LastOperationPolledTime  string                      `json:"last_operation_polled_time,omitempty"`
 }
 
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
