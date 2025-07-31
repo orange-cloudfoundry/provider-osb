@@ -19,6 +19,7 @@ package servicebinding
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -478,16 +479,47 @@ func TestCreate(t *testing.T) {
 			fields: fields{
 				client: &osbfake.FakeClient{
 					BindReaction: osbfake.DynamicBindReaction(func(req *osb.BindRequest) (*osb.BindResponse, error) {
-						// TODO put this code in a function
+						syslogDrainUrl := basicBinding.ObjectMeta.Annotations[syslogDrainURLAnnotation]
+
+						volumeMountsFromAnnotation := basicBinding.ObjectMeta.Annotations[volumeMountsAnnotation]
+						var volumeMounts []osb.VolumeMount
+						fmt.Printf("\n\n\n------\n%+v\n\n\n", basicBinding.ObjectMeta)
+						err := json.Unmarshal([]byte(volumeMountsFromAnnotation), &volumeMounts)
+						if err != nil {
+							return nil, errors.Wrap(err, "Failed parsing volume mounts")
+						}
+
+						endpointsFromAnnotation := basicBinding.ObjectMeta.Annotations[endpointsAnnotation]
+						var endpoints []osb.Endpoint
+						err = json.Unmarshal([]byte(endpointsFromAnnotation), &endpoints)
+						if err != nil {
+							return nil, errors.Wrap(err, "Failed parsing endpoints")
+						}
+
+						parametersBytes := basicBinding.Spec.ForProvider.Parameters.Raw
+						var parameters map[string]any
+						err = json.Unmarshal(parametersBytes, &parameters)
+						if err != nil {
+							return nil, errors.Wrap(err, "Failed parsing parameters")
+						}
+
 						credentials := make(map[string]any, len(basicCredentials))
 						for k, v := range basicCredentials {
 							credentials[k] = v
 						}
 
-						return &osb.BindResponse{
-							Async:       false,
-							Credentials: credentials,
-						}, nil
+						res := &osb.BindResponse{
+							Credentials:     credentials,
+							SyslogDrainURL:  &syslogDrainUrl,
+							VolumeMounts:    volumeMounts,
+							Endpoints:       &endpoints,
+							RouteServiceURL: &basicBinding.Spec.ForProvider.Route,
+							Metadata: &osb.BindingMetadata{
+								ExpiresAt:   basicBinding.ObjectMeta.Annotations[expiresAtAnnotation],
+								RenewBefore: basicBinding.ObjectMeta.Annotations[renewBeforeAnnotation],
+							},
+						}
+						return res, nil
 					}),
 				},
 			},

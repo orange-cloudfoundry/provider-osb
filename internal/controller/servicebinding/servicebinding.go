@@ -69,9 +69,10 @@ const (
 
 	errAddReferenceFinalizer = "cannot add finalizer to referenced resource"
 
-	errCannotParseCredentials  = "cannot parse credentials"
-	errGetBindingRequestFailed = "GetBinding request failed"
-	errGetDataFromBinding      = "cannot get data from service binding"
+	errCannotParseCredentials = "cannot parse credentials"
+	errGetDataFromBinding     = "cannot get data from service binding"
+	errRequestFailed          = "OSB %s request failed"
+	errParseMarshall          = "error while marshalling or parsing %s"
 
 	bindingMetadataPrefix = "binding." + util.MetadataPrefix
 
@@ -256,7 +257,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				}
 			}
 			// Other errors should be considered as failures
-			return managed.ExternalObservation{}, errors.Wrap(err, "error while polling last operation")
+			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "PollBindingLastOperation"))
 		}
 
 		// Set polled operation data in resource status
@@ -292,7 +293,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				}, nil
 			}
 		}
-		return managed.ExternalObservation{}, errors.Wrap(err, errGetBindingRequestFailed)
+		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetBinding"))
 	}
 
 	// Marshall credentials from response
@@ -310,7 +311,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	if resp.Metadata.RenewBefore != "" {
 		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
 		if err != nil {
-			return managed.ExternalObservation{}, errors.Wrap(err, "error while parsing renewBefore time")
+			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time"))
 		}
 		// TODO do it if an auto renew feature flag is enabled
 		// else issue a warning on the resource if should be renewed, and different warning if expired
@@ -319,7 +320,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			// We count on the next reconciliation to update renew_before and expires_at
 			creds, err := c.triggerRotation(cr, bindingData)
 			if err != nil {
-				return managed.ExternalObservation{}, errors.Wrap(err, "error while rotating binding credentials")
+				return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "RotateBinding"))
 			}
 			// We update creds only if the function returned credentials
 			// i.e. the operations was synchronous and successful
@@ -331,7 +332,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	isEqual, err := compareBindingResponseToCR(resp, cr)
 	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errGetBindingRequestFailed)
+		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetBinding"))
 	}
 
 	// If local CR is different from external resource, trigger update
@@ -423,7 +424,7 @@ func getCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 	for k, v := range resp.Credentials {
 		credsBytes, err := json.Marshal(v)
 		if err != nil {
-			return map[string][]byte{}, errors.Wrap(err, "error while Marshalling credentials")
+			return map[string][]byte{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "credentials from response"))
 		}
 		creds[k] = credsBytes
 	}
@@ -445,24 +446,26 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	spec := cr.Spec.ForProvider
 
+	// Convert spec.Context of type common.KubernetesOSBContext to map[string]any
 	requestContextBytes, err := json.Marshal(spec.Context)
 	if err != nil {
-		return managed.ExternalCreation{}, err
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context from ServiceBinding"))
 	}
 	var requestContext map[string]any
 	err = json.Unmarshal(requestContextBytes, &requestContext)
 	if err != nil {
-		return managed.ExternalCreation{}, err
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to bytes from ServiceBinding"))
 	}
 
+	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
 	requestParamsBytes, err := json.Marshal(spec.Parameters)
 	if err != nil {
-		return managed.ExternalCreation{}, err
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from ServiceBinding"))
 	}
 	var requestParams map[string]any
 	err = json.Unmarshal(requestParamsBytes, &requestParams)
 	if err != nil {
-		return managed.ExternalCreation{}, err
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
 	}
 
 	newUuid := string(uuid.NewUUID())
@@ -491,7 +494,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	resp, err := c.client.Bind(&bindRequest)
 
 	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, "Bind request failed")
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind"))
 	}
 	if resp == nil {
 		return managed.ExternalCreation{}, fmt.Errorf(errNoResponse, bindRequest)
@@ -512,36 +515,51 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		}, nil
 	}
 
-	// Set annotations for endpoints, volumes, syslog drain urls
-	endpointsBytes, err := json.Marshal(resp.Endpoints)
-	if err != nil {
-		return managed.ExternalCreation{}, err
-	}
-
-	volumeMountsBytes, err := json.Marshal(resp.VolumeMounts)
-	if err != nil {
-		return managed.ExternalCreation{}, err
-	}
-
-	syslogDrainURLBytes, err := json.Marshal(resp.SyslogDrainURL)
-	if err != nil {
-		return managed.ExternalCreation{}, err
-	}
-
-	meta.AddAnnotations(cr, map[string]string{
-		endpointsAnnotation:      string(endpointsBytes),
-		volumeMountsAnnotation:   string(volumeMountsBytes),
-		syslogDrainURLAnnotation: string(syslogDrainURLBytes),
-	})
-
 	creds, err := getCredsFromResponse(resp)
 	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, "could not parse credentials from response")
+		return managed.ExternalCreation{}, err
 	}
+
+	// Set annotations for endpoints, volumes, syslog drain urls
+	updateBindingAnnotationsFromResponse(resp.Endpoints, resp.VolumeMounts, resp.SyslogDrainURL, cr)
 
 	return managed.ExternalCreation{
 		ConnectionDetails: creds,
 	}, nil
+}
+
+func updateBindingAnnotationsFromResponse(endpoints *[]osb.Endpoint, volumeMounts []osb.VolumeMount, syslogDrainURL *string, binding *v1alpha1.ServiceBinding) error {
+	endpointsBytes := []byte{}
+	volumeMountsBytes := []byte{}
+	syslogDrainURLString := ""
+
+	var err error = nil
+
+	if endpoints != nil {
+		endpointsBytes, err = json.Marshal(endpoints)
+		if err != nil {
+			return errors.Wrap(err, fmt.Sprintf(errParseMarshall, "endpoints from response"))
+		}
+	}
+
+	if volumeMounts != nil {
+		volumeMountsBytes, err = json.Marshal(volumeMounts)
+		if err != nil {
+			return errors.Wrap(err, fmt.Sprintf(errParseMarshall, "volume mounts from response"))
+		}
+	}
+
+	if syslogDrainURL != nil {
+		syslogDrainURLString = *syslogDrainURL
+	}
+
+	meta.AddAnnotations(binding, map[string]string{
+		endpointsAnnotation:      string(endpointsBytes),
+		volumeMountsAnnotation:   string(volumeMountsBytes),
+		syslogDrainURLAnnotation: syslogDrainURLString,
+	})
+
+	return err
 }
 
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
@@ -568,32 +586,22 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	resp, err := c.client.GetBinding(req)
 	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, errGetBindingRequestFailed)
+		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetBinding"))
 	}
 
+	// Update ServiceBinding values
 	paramsJson, err := json.Marshal(resp.Parameters)
 	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, "Error marshalling binding parameters")
+		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from response"))
 	}
-
 	cr.Spec.ForProvider.Parameters = &apiextensions.JSON{Raw: paramsJson}
-	cr.Spec.ForProvider.Route = *resp.RouteServiceURL
 
-	endpointsBytes, err := json.Marshal(resp.Endpoints)
-	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, "Error marshalling binding endpoints")
+	if resp.RouteServiceURL != nil {
+		cr.Spec.ForProvider.Route = *resp.RouteServiceURL
 	}
 
-	volumeMountsBytes, err := json.Marshal(resp.VolumeMounts)
-	if err != nil {
-		return managed.ExternalUpdate{}, err
-	}
-
-	meta.AddAnnotations(cr, map[string]string{
-		endpointsAnnotation:      string(endpointsBytes),
-		volumeMountsAnnotation:   string(volumeMountsBytes),
-		syslogDrainURLAnnotation: *resp.SyslogDrainURL,
-	})
+	// Set annotations for endpoints, volumes, syslog drain urls
+	updateBindingAnnotationsFromResponse(resp.Endpoints, resp.VolumeMounts, resp.SyslogDrainURL, cr)
 
 	// If it is async, the Observe() function will manage the ConnectionDetails instead.
 	return managed.ExternalUpdate{}, nil
@@ -632,7 +640,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	if resp.Async {
-		// If the creation was asynchronous, add an annotation
+		// If the creation was asynchronous, add a finalizer
 		if resp.OperationKey != nil {
 			cr.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
@@ -777,35 +785,3 @@ func (c *external) getDataFromServiceBinding(ctx context.Context, spec v1alpha1.
 }
 
 type callbackFn func(*v1alpha1.ServiceBinding, *osb.GetBindingResponse) error
-
-func (c *external) pollLastOperation(
-	numberOfRepetition,
-	delay int,
-	request osb.BindingLastOperationRequest,
-	cr *v1alpha1.ServiceBinding,
-	callbackFunc callbackFn,
-) error {
-	for i := 0; i < numberOfRepetition; i++ {
-		resp, err := c.client.PollBindingLastOperation(&request)
-		if err != nil {
-			return fmt.Errorf(errTechnical, err.Error())
-		}
-		switch resp.State {
-		case osb.StateInProgress:
-			time.Sleep(time.Duration(delay))
-		case osb.StateFailed:
-			return fmt.Errorf("error: binding operation failed for binding id : %s, instance id : %s, after %d repetition. Failure error : %s", request.BindingID, request.InstanceID, i, *resp.Description)
-		case osb.StateSucceeded:
-			req := osb.GetBindingRequest{
-				InstanceID: request.InstanceID,
-				BindingID:  request.BindingID,
-			}
-			resp, err := c.client.GetBinding(&req)
-			if err != nil {
-
-			}
-			return callbackFunc(cr, resp)
-		}
-	}
-	return errors.Errorf("error: max calls reached for last operation, please try again later")
-}
