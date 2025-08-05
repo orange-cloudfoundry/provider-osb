@@ -22,11 +22,9 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"slices"
 	"time"
 
 	"github.com/pkg/errors"
-	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
@@ -78,13 +76,6 @@ const (
 
 	objFinalizerName       = bindingMetadataPrefix + "/service-binding"
 	asyncDeletionFinalizer = bindingMetadataPrefix + "/async-deletion"
-
-	endpointsAnnotation      = bindingMetadataPrefix + "/endpoints"
-	syslogDrainURLAnnotation = bindingMetadataPrefix + "/syslog-drain-url"
-	volumeMountsAnnotation   = bindingMetadataPrefix + "/volume-mounts"
-	expiresAtAnnotation      = bindingMetadataPrefix + "/expires-at"
-	renewBeforeAnnotation    = bindingMetadataPrefix + "/renew-before"
-	bindingIdAnnotation      = bindingMetadataPrefix + "/binding-id"
 )
 
 var (
@@ -241,7 +232,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 		resp, err := c.client.PollBindingLastOperation(lastOpReq)
 
-		// Manage errors
+		// Manage errors // TODO factorize
 		if err != nil {
 			// HTTP error 410 means that the resource was deleted by the broker
 			// so if the resource on the cluster was effectively deleted,
@@ -277,12 +268,12 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// get binding from broker
 	req := &osb.GetBindingRequest{
 		InstanceID: bindingData.instanceData.InstanceId,
-		BindingID:  cr.ObjectMeta.Annotations[bindingIdAnnotation],
+		BindingID:  cr.Status.AtProvider.Uuid,
 	}
 
 	resp, err := c.client.GetBinding(req)
 
-	// Manage errors
+	// Manage errors // TODO factorize
 	if err != nil {
 		// Handle HTTP errors
 		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
@@ -294,6 +285,18 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			}
 		}
 		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetBinding"))
+	}
+
+	// Set observed fields values in cr.Status.AtProvider
+	if err = c.setResponseDataInStatus(cr, responseData{
+		Parameters:      resp.Parameters,
+		Endpoints:       resp.Endpoints,
+		VolumeMounts:    resp.VolumeMounts,
+		RouteServiceURL: resp.RouteServiceURL,
+		SyslogDrainURL:  resp.SyslogDrainURL,
+		Metadata:        resp.Metadata,
+	}); err != nil {
+		return managed.ExternalObservation{}, err
 	}
 
 	// Marshall credentials from response
@@ -309,6 +312,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	// Manage binding rotation
 	if resp.Metadata.RenewBefore != "" {
+		// TODO put this in update function
 		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time"))
@@ -330,17 +334,69 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		}
 	}
 
-	isEqual, err := compareBindingResponseToCR(resp, cr)
+	isEqual, err := compareToObserved(cr)
 	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetBinding"))
+		return managed.ExternalObservation{}, err
+	}
+	if !isEqual {
+		return managed.ExternalObservation{}, errors.Wrap(err, "bindings cannot be updated")
 	}
 
-	// If local CR is different from external resource, trigger update
 	return managed.ExternalObservation{
 		ResourceExists:    true,
-		ResourceUpToDate:  isEqual,
+		ResourceUpToDate:  true,
 		ConnectionDetails: credentialsJson,
 	}, nil
+}
+
+type responseData struct {
+	Parameters      map[string]any
+	Endpoints       *[]osb.Endpoint
+	VolumeMounts    *[]osb.VolumeMount
+	RouteServiceURL *string
+	SyslogDrainURL  *string
+	Metadata        *osb.BindingMetadata
+}
+
+// set AtProviderGet updates the Observed status of a ServiceBinding according to
+// a response we got from a GET request to an OSB broker
+func (c *external) setResponseDataInStatus(cr *v1alpha1.ServiceBinding, data responseData) error {
+	params, err := json.Marshal(data.Parameters)
+	if err != nil {
+		return errors.New(fmt.Sprintf(errParseMarshall, "parameters from response"))
+	}
+
+	endpoints, err := json.Marshal(data.Endpoints)
+	if err != nil {
+		return errors.New(fmt.Sprintf(errParseMarshall, "endpoints from response"))
+	}
+
+	volumeMounts, err := json.Marshal(data.VolumeMounts)
+	if err != nil {
+		return errors.New(fmt.Sprintf(errParseMarshall, "volume mounts from response"))
+	}
+
+	return c.setAtProvider(cr, v1alpha1.ServiceBindingObservation{
+		// Update attributes from response data
+		Parameters:      common.SerializableParameters(params),
+		RouteServiceURL: data.RouteServiceURL,
+		Endpoints:       v1alpha1.SerializableEndpoints(endpoints),
+		VolumeMounts:    v1alpha1.SerializableVolumeMounts(volumeMounts),
+		SyslogDrainURL:  data.SyslogDrainURL,
+		Metadata:        data.Metadata,
+		// Do not change these attributes
+		Uuid:                     cr.Status.AtProvider.Uuid,
+		LastOperationState:       cr.Status.AtProvider.LastOperationState,
+		LastOperationKey:         cr.Status.AtProvider.LastOperationKey,
+		LastOperationDescription: cr.Status.AtProvider.LastOperationDescription,
+		LastOperationPolledTime:  cr.Status.AtProvider.LastOperationPolledTime,
+	})
+}
+
+func (c *external) setAtProvider(cr *v1alpha1.ServiceBinding, observation v1alpha1.ServiceBindingObservation) error {
+	cr.Status.AtProvider = observation
+	// TODO add some checks here
+	return nil
 }
 
 func (c *external) triggerRotation(cr *v1alpha1.ServiceBinding, data bindingData) (map[string][]byte, error) {
@@ -348,7 +404,7 @@ func (c *external) triggerRotation(cr *v1alpha1.ServiceBinding, data bindingData
 		InstanceID:           data.instanceData.InstanceId,
 		BindingID:            string(uuid.NewUUID()),
 		AcceptsIncomplete:    true, // TODO use config param for this
-		PredecessorBindingID: cr.ObjectMeta.Annotations[bindingIdAnnotation],
+		PredecessorBindingID: cr.Status.AtProvider.Uuid,
 		OriginatingIdentity:  &c.originatingIdentity,
 	})
 	if err != nil {
@@ -367,54 +423,13 @@ func (c *external) triggerRotation(cr *v1alpha1.ServiceBinding, data bindingData
 	return nil, nil
 }
 
-func compareBindingResponseToCR(resp *osb.GetBindingResponse, cr *v1alpha1.ServiceBinding) (bool, error) {
-	metadata := cr.ObjectMeta.Annotations
-
+func compareToObserved(cr *v1alpha1.ServiceBinding) (bool, error) {
 	// We do not compare credentials, as this logic is managed by creds rotation.
 	// We do not compare bindingmetadata either, since the only metadata in binding objects
 	// is related to binding rotation (renew_before and expires_at)
 
-	// Compare endpoints
-	endpointsFromCRRaw := []byte(metadata[endpointsAnnotation])
-	var endpointsFromCR []osb.Endpoint
-	err := json.Unmarshal(endpointsFromCRRaw, &endpointsFromCR)
-	if err != nil {
-		return false, fmt.Errorf(errTechnical, err.Error())
-	}
-
-	// Structs with slices are not comparable, so we have to use a custom comparison function
-	// DeepEqual couldve worked too, but we don't want to care about the order of the elements
-	if !slices.EqualFunc(endpointsFromCR, *resp.Endpoints, util.EndpointEqual) {
-		return false, nil
-	}
-
-	// Compare volume mounts
-	volumeMountsFromCRRaw := []byte(metadata[volumeMountsAnnotation])
-	var volumeMountsFromCR []osb.VolumeMount
-	err = json.Unmarshal(volumeMountsFromCRRaw, &volumeMountsFromCR)
-	if err != nil {
-		return false, fmt.Errorf(errTechnical, err.Error())
-	}
-
-	// Structs with slices are not comparable, so we have to use a custom comparison function
-	// Though it only calls reflect.DeepEqual
-	if !slices.EqualFunc(volumeMountsFromCR, resp.VolumeMounts, util.VolumeMountEqual) {
-		return false, nil
-	}
-
-	// Compare parameters
-	parametersFromCRRaw := cr.Spec.ForProvider.Parameters.Raw
-	var parametersFromCR map[string]any
-	err = json.Unmarshal(parametersFromCRRaw, &parametersFromCR)
-	if err != nil {
-		return false, fmt.Errorf(errTechnical, err.Error())
-	}
-
-	if !reflect.DeepEqual(resp.Parameters, parametersFromCR) {
-		return false, nil
-	}
-
-	return cr.Spec.ForProvider.Route == *resp.RouteServiceURL && metadata[syslogDrainURLAnnotation] == *resp.SyslogDrainURL, nil
+	// TODO add context and route to test if these were updated and return false
+	return reflect.DeepEqual(cr.Status.AtProvider.Parameters, cr.Spec.ForProvider.Parameters), nil
 }
 
 func getCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
@@ -458,21 +473,15 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
-	requestParamsBytes, err := json.Marshal(spec.Parameters)
-	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from ServiceBinding"))
-	}
 	var requestParams map[string]any
-	err = json.Unmarshal(requestParamsBytes, &requestParams)
+	err = json.Unmarshal([]byte(spec.Parameters), &requestParams)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
 	}
 
 	newUuid := string(uuid.NewUUID())
 
-	meta.AddAnnotations(cr, map[string]string{
-		bindingIdAnnotation: newUuid,
-	})
+	cr.Status.AtProvider.Uuid = newUuid
 
 	bindRequest := osb.BindRequest{
 		BindingID:  newUuid,
@@ -520,88 +529,39 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, err
 	}
 
-	// Set annotations for endpoints, volumes, syslog drain urls
-	updateBindingAnnotationsFromResponse(resp.Endpoints, resp.VolumeMounts, resp.SyslogDrainURL, cr)
+	// Set values for endpoints, volumes, syslog drain urls
+	// Avoid rewriting parameters since they are not included in the response
+	params, err := cr.Status.AtProvider.Parameters.ToParameters()
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from resource status"))
+	}
+
+	c.setResponseDataInStatus(cr, responseData{
+		Parameters:      params,
+		Endpoints:       resp.Endpoints,
+		VolumeMounts:    resp.VolumeMounts,
+		RouteServiceURL: resp.RouteServiceURL,
+		SyslogDrainURL:  resp.SyslogDrainURL,
+		Metadata:        resp.Metadata,
+	})
 
 	return managed.ExternalCreation{
 		ConnectionDetails: creds,
 	}, nil
 }
 
-func updateBindingAnnotationsFromResponse(endpoints *[]osb.Endpoint, volumeMounts []osb.VolumeMount, syslogDrainURL *string, binding *v1alpha1.ServiceBinding) error {
-	endpointsBytes := []byte{}
-	volumeMountsBytes := []byte{}
-	syslogDrainURLString := ""
-
-	var err error = nil
-
-	if endpoints != nil {
-		endpointsBytes, err = json.Marshal(endpoints)
-		if err != nil {
-			return errors.Wrap(err, fmt.Sprintf(errParseMarshall, "endpoints from response"))
-		}
-	}
-
-	if volumeMounts != nil {
-		volumeMountsBytes, err = json.Marshal(volumeMounts)
-		if err != nil {
-			return errors.Wrap(err, fmt.Sprintf(errParseMarshall, "volume mounts from response"))
-		}
-	}
-
-	if syslogDrainURL != nil {
-		syslogDrainURLString = *syslogDrainURL
-	}
-
-	meta.AddAnnotations(binding, map[string]string{
-		endpointsAnnotation:      string(endpointsBytes),
-		volumeMountsAnnotation:   string(volumeMountsBytes),
-		syslogDrainURLAnnotation: syslogDrainURLString,
-	})
-
-	return err
-}
-
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
 	// Calling this function means that the resources on the cluster and from the broker are different.
-	// Anything that is changed should trigger a resync by pulling info from the broker and
-	// updating the MR accordingly. Updates to bindings are not possible in the OSB spec, so we
-	// always assume that the difference comes from the broker and not from the user, and anything
-	// that was changed from within the cluster should be overridden.
-	cr, ok := mg.(*v1alpha1.ServiceBinding)
+	// Anything that is changed should trigger an error, since bindings are never updatable.
+	// The only situation when calling this function is valid is when
+	// the service binding's should be rotated
+
+	_, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errNotServiceBinding)
 	}
 
-	bindingData, err := c.getDataFromServiceBinding(ctx, cr.Spec.ForProvider)
-	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, errGetDataFromBinding)
-	}
-
-	// get binding from broker
-	req := &osb.GetBindingRequest{
-		InstanceID: bindingData.instanceData.InstanceId,
-		BindingID:  cr.ObjectMeta.Annotations[bindingIdAnnotation],
-	}
-
-	resp, err := c.client.GetBinding(req)
-	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetBinding"))
-	}
-
-	// Update ServiceBinding values
-	paramsJson, err := json.Marshal(resp.Parameters)
-	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from response"))
-	}
-	cr.Spec.ForProvider.Parameters = &apiextensions.JSON{Raw: paramsJson}
-
-	if resp.RouteServiceURL != nil {
-		cr.Spec.ForProvider.Route = *resp.RouteServiceURL
-	}
-
-	// Set annotations for endpoints, volumes, syslog drain urls
-	updateBindingAnnotationsFromResponse(resp.Endpoints, resp.VolumeMounts, resp.SyslogDrainURL, cr)
+	// TODO rotate bindings here
 
 	// If it is async, the Observe() function will manage the ConnectionDetails instead.
 	return managed.ExternalUpdate{}, nil
@@ -624,7 +584,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	reqUnbind := osb.UnbindRequest{
 		InstanceID:          bindingData.instanceData.InstanceId,
-		BindingID:           cr.ObjectMeta.Annotations[bindingIdAnnotation],
+		BindingID:           cr.Status.AtProvider.Uuid,
 		AcceptsIncomplete:   true, // TODO based on async configuration
 		ServiceID:           spec.InstanceData.ServiceId,
 		PlanID:              spec.InstanceData.PlanId,
@@ -658,7 +618,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 }
 
 func (c *external) Disconnect(ctx context.Context) error {
-	// TODO implem disconnect
+	// unimplemented
 	return nil
 }
 

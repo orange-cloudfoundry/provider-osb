@@ -17,6 +17,7 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"encoding/json"
 	"reflect"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,38 +26,65 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
-	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
 type ServiceBindingParameters struct {
-	ApplicationRef  *common.NamespacedName      `json:"application,omitempty"`
-	ApplicationData *common.ApplicationData     `json:"applicationData,omitempty"`
-	InstanceRef     *common.NamespacedName      `json:"instance,omitempty"`
-	InstanceData    *common.InstanceData        `json:"instanceData,omitempty"`
-	Context         common.KubernetesOSBContext `json:"context,omitempty"`
-	Parameters      *apiextensions.JSON         `json:"parameters,omitempty"`
-	Route           string                      `json:"route,omitempty"`
+	ApplicationRef  *common.NamespacedName        `json:"application,omitempty"`
+	ApplicationData *common.ApplicationData       `json:"applicationData,omitempty"`
+	InstanceRef     *common.NamespacedName        `json:"instance,omitempty"`
+	InstanceData    *common.InstanceData          `json:"instanceData,omitempty"`
+	Context         common.KubernetesOSBContext   `json:"context,omitempty"`
+	Parameters      common.SerializableParameters `json:"parameters,omitempty"`
+	Route           string                        `json:"route,omitempty"`
 	// TODO manage additional attributes
 }
 
 // ServiceBindingObservation are the observable fields of a ServiceBinding.
-// TODO manage observations
 type ServiceBindingObservation struct {
-	ApplicationRef           *common.NamespacedName      `json:"application,omitempty"`
-	ApplicationData          *common.ApplicationData     `json:"applicationData,omitempty"`
-	InstanceRef              *common.NamespacedName      `json:"instance,omitempty"`
-	InstanceData             *common.InstanceData        `json:"instanceData,omitempty"`
-	Context                  common.KubernetesOSBContext `json:"context,omitempty"`
-	Parameters               *apiextensions.JSON         `json:"parameters,omitempty"`
-	Route                    string                      `json:"route,omitempty"`
-	Uuid                     string                      `json:"uuid,omitempty"`
-	LastOperationState       osb.LastOperationState      `json:"last_operation_state,omitempty"`
-	LastOperationKey         osb.OperationKey            `json:"last_operation_key,omitempty"`
-	LastOperationDescription string                      `json:"last_operation_description,omitempty"`
-	LastOperationPolledTime  string                      `json:"last_operation_polled_time,omitempty"`
+	// TODO add context and route to test if these were updated and return error if so
+	Parameters               common.SerializableParameters `json:"parameters,omitempty"`
+	RouteServiceURL          *string                       `json:"route_service_url,omitempty"`
+	Endpoints                SerializableEndpoints         `json:"endpoints,omitempty"`
+	VolumeMounts             SerializableVolumeMounts      `json:"volume_mounts,omitempty"`
+	SyslogDrainURL           *string                       `json:"syslog_drain_url,omitempty"`
+	Metadata                 *osb.BindingMetadata          `json:"metadata,omitempty"`
+	Uuid                     string                        `json:"uuid,omitempty"`
+	LastOperationState       osb.LastOperationState        `json:"last_operation_state,omitempty"`
+	LastOperationKey         osb.OperationKey              `json:"last_operation_key,omitempty"`
+	LastOperationDescription string                        `json:"last_operation_description,omitempty"`
+	LastOperationPolledTime  string                        `json:"last_operation_polled_time,omitempty"`
+}
+
+type SerializableVolumeMounts string
+
+func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) {
+	if v == nil || string([]byte(*v)) == "" {
+		return &[]osb.VolumeMount{}, nil
+	}
+	res := &[]osb.VolumeMount{}
+	err := json.Unmarshal([]byte(*v), &res)
+	return res, err
+}
+
+type SerializableEndpoints string
+
+func (v *SerializableEndpoints) ToEndpoints() (*[]osb.Endpoint, error) {
+	if v == nil || string([]byte(*v)) == "" {
+		return &[]osb.Endpoint{}, nil
+	}
+	res := &[]osb.Endpoint{}
+	err := json.Unmarshal([]byte(*v), &res)
+	return res, err
+}
+
+func (v *SerializableEndpoints) String() string {
+	if v == nil {
+		return ""
+	}
+	return string(*v)
 }
 
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
@@ -108,3 +136,5 @@ var (
 func init() {
 	SchemeBuilder.Register(&ServiceBinding{}, &ServiceBindingList{})
 }
+
+// TODO add GetName() funciton returning the observed uuid

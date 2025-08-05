@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"slices"
+	"time"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
@@ -61,6 +62,11 @@ func EndpointEqual(e1, e2 osb.Endpoint) bool {
 
 func VolumeMountEqual(e1, e2 osb.VolumeMount) bool {
 	return reflect.DeepEqual(e1, e2)
+}
+
+func TimeNow() *string {
+	res := time.Now().Format(Iso8601dateFormat)
+	return &res
 }
 
 func decodeB64StringToBasicAuthConfig(s string) (osb.BasicAuthConfig, error) {

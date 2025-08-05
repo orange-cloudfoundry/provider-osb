@@ -241,8 +241,7 @@ spec:
                       instanceId:
                         type: string
                       parameters:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
+                        type: string
                       planId:
                         type: string
                       serviceId:
@@ -253,7 +252,7 @@ spec:
                     - serviceId
                     type: object
                   parameters:
-                    x-kubernetes-preserve-unknown-fields: true
+                    type: string
                   route:
                     type: string
                 type: object
@@ -432,184 +431,8 @@ spec:
                 description: ServiceBindingObservation are the observable fields of
                   a ServiceBinding.
                 properties:
-                  application:
-                    description: |-
-                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
-                      And it makes `make generate` fail
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  applicationData:
-                    description: |-
-                      ApplicationData represents the schema for an Application MR
-                      It should be only a ref and never re-specified in ApplicationData
-                    properties:
-                      brokerURL:
-                        type: string
-                      credentials:
-                        description: Credentials is a struct to hold credentials used
-                          to contact the service brokers
-                        properties:
-                          hardcoded_creds:
-                            description: HardcodedCreds represents the info needed
-                              for credentials that are hardcoded
-                            properties:
-                              password:
-                                type: string
-                              user:
-                                type: string
-                            required:
-                            - password
-                            - user
-                            type: object
-                          secred_name:
-                            type: string
-                        type: object
-                      guid:
-                        type: string
-                      name:
-                        type: string
-                    required:
-                    - brokerURL
-                    - guid
-                    - name
-                    type: object
-                  context:
-                    description: |-
-                      KubernetesOSBContext represents the context object for kubernetes in the OSB spec
-                      cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
-                    properties:
-                      cluster_id:
-                        type: string
-                      instance_annotations:
-                        additionalProperties:
-                          type: string
-                        type: object
-                      instance_name:
-                        type: string
-                      namespace:
-                        type: string
-                      namespace_annotations:
-                        additionalProperties:
-                          type: string
-                        type: object
-                      platform:
-                        type: string
-                    required:
-                    - cluster_id
-                    - instance_name
-                    - namespace
-                    - platform
-                    type: object
-                  instance:
-                    description: |-
-                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
-                      And it makes `make generate` fail
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  instanceData:
-                    description: Instance Data represents the schema for a ServiceInstance
-                      MR
-                    properties:
-                      application:
-                        description: |-
-                          NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
-                          And it makes `make generate` fail
-                        properties:
-                          name:
-                            type: string
-                          namespace:
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      applicationData:
-                        description: |-
-                          ApplicationData represents the schema for an Application MR
-                          It should be only a ref and never re-specified in ApplicationData
-                        properties:
-                          brokerURL:
-                            type: string
-                          credentials:
-                            description: Credentials is a struct to hold credentials
-                              used to contact the service brokers
-                            properties:
-                              hardcoded_creds:
-                                description: HardcodedCreds represents the info needed
-                                  for credentials that are hardcoded
-                                properties:
-                                  password:
-                                    type: string
-                                  user:
-                                    type: string
-                                required:
-                                - password
-                                - user
-                                type: object
-                              secred_name:
-                                type: string
-                            type: object
-                          guid:
-                            type: string
-                          name:
-                            type: string
-                        required:
-                        - brokerURL
-                        - guid
-                        - name
-                        type: object
-                      context:
-                        description: |-
-                          KubernetesOSBContext represents the context object for kubernetes in the OSB spec
-                          cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
-                        properties:
-                          cluster_id:
-                            type: string
-                          instance_annotations:
-                            additionalProperties:
-                              type: string
-                            type: object
-                          instance_name:
-                            type: string
-                          namespace:
-                            type: string
-                          namespace_annotations:
-                            additionalProperties:
-                              type: string
-                            type: object
-                          platform:
-                            type: string
-                        required:
-                        - cluster_id
-                        - instance_name
-                        - namespace
-                        - platform
-                        type: object
-                      instanceId:
-                        type: string
-                      parameters:
-                        type: object
-                        x-kubernetes-preserve-unknown-fields: true
-                      planId:
-                        type: string
-                      serviceId:
-                        type: string
-                    required:
-                    - instanceId
-                    - planId
-                    - serviceId
-                    type: object
+                  endpoints:
+                    type: string
                   last_operation_description:
                     type: string
                   last_operation_key:
@@ -624,11 +447,22 @@ spec:
                       LastOperationState is a typedef representing the state of an ongoing
                       operation for an instance.
                     type: string
+                  metadata:
+                    properties:
+                      expires_at:
+                        type: string
+                      renew_before:
+                        type: string
+                    type: object
                   parameters:
-                    x-kubernetes-preserve-unknown-fields: true
-                  route:
+                    type: string
+                  route_service_url:
+                    type: string
+                  syslog_drain_url:
                     type: string
                   uuid:
+                    type: string
+                  volume_mounts:
                     type: string
                 type: object
               conditions:

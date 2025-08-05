@@ -151,8 +151,7 @@ spec:
                   instanceId:
                     type: string
                   parameters:
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
+                    type: string
                   planId:
                     type: string
                   serviceId:
@@ -414,8 +413,7 @@ spec:
                   instanceId:
                     type: string
                   parameters:
-                    type: object
-                    x-kubernetes-preserve-unknown-fields: true
+                    type: string
                   planId:
                     type: string
                   serviceId:

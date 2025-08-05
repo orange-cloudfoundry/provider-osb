@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -55,13 +54,24 @@ type ApplicationData struct {
 
 // Instance Data represents the schema for a ServiceInstance MR
 type InstanceData struct {
-	ApplicationRef  *NamespacedName      `json:"application,omitempty"`
-	ApplicationData *ApplicationData     `json:"applicationData,omitempty"`
-	InstanceId      string               `json:"instanceId"`
-	PlanId          string               `json:"planId"`
-	ServiceId       string               `json:"serviceId"`
-	Context         KubernetesOSBContext `json:"context,omitempty"`
-	Parameters      runtime.RawExtension `json:"parameters,omitempty"`
+	ApplicationRef  *NamespacedName        `json:"application,omitempty"`
+	ApplicationData *ApplicationData       `json:"applicationData,omitempty"`
+	InstanceId      string                 `json:"instanceId"`
+	PlanId          string                 `json:"planId"`
+	ServiceId       string                 `json:"serviceId"`
+	Context         KubernetesOSBContext   `json:"context,omitempty"`
+	Parameters      SerializableParameters `json:"parameters,omitempty"`
+}
+
+type SerializableParameters string
+
+func (v *SerializableParameters) ToParameters() (map[string]any, error) {
+	if v == nil || string([]byte(*v)) == "" {
+		return map[string]any{}, nil
+	}
+	res := map[string]any{}
+	err := json.Unmarshal([]byte(*v), &res)
+	return res, err
 }
 
 // TODO remove in favor of crossplane's writeConnectionDetailsToRef
