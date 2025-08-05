@@ -114,7 +114,7 @@ func (in *ServiceBindingParameters) DeepCopyInto(out *ServiceBindingParameters) 
 	if in.ApplicationData != nil {
 		in, out := &in.ApplicationData, &out.ApplicationData
 		*out = new(common.ApplicationData)
-		(*in).DeepCopyInto(*out)
+		**out = **in
 	}
 	if in.InstanceRef != nil {
 		in, out := &in.InstanceRef, &out.InstanceRef

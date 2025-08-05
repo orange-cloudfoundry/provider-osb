@@ -65,62 +65,61 @@ var (
 	}
 )
 
-var basicParameters common.SerializableParameters = common.SerializableParameters("{\"param1\":\"value1\"}")
-
-var basicBinding = &v1alpha1.ServiceBinding{
-	TypeMeta: metav1.TypeMeta{
-		APIVersion: v1alpha1.SchemeGroupVersion.String(),
-		Kind:       v1alpha1.ServiceBindingKind,
-	},
-	ObjectMeta: metav1.ObjectMeta{
-		Name:      "basic-binding",
-		Namespace: "basic-namespace",
-	},
-	Spec: v1alpha1.ServiceBindingSpec{
-		ForProvider: v1alpha1.ServiceBindingParameters{
-			Context: common.KubernetesOSBContext{
-				Platform:             "basic-platform",
-				Namespace:            "basic-namespace",
-				NamespaceAnnotations: map[string]string{},
-				InstanceAnnotations:  map[string]string{},
-				ClusterId:            "basic-cluster",
-				InstanceName:         "basic-instance",
+var (
+	basicParameters      common.SerializableParameters = common.SerializableParameters("{\"param1\":\"value1\"}")
+	basicRouteServiceURL                               = "basic-route-service-url"
+	basicSyslogDrainURL                                = "basic-syslog-drain-url"
+	basicBinding                                       = &v1alpha1.ServiceBinding{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: v1alpha1.SchemeGroupVersion.String(),
+			Kind:       v1alpha1.ServiceBindingKind,
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "basic-binding",
+			Namespace: "basic-namespace",
+		},
+		Spec: v1alpha1.ServiceBindingSpec{
+			ForProvider: v1alpha1.ServiceBindingParameters{
+				Context: common.KubernetesOSBContext{
+					Platform:             "basic-platform",
+					Namespace:            "basic-namespace",
+					NamespaceAnnotations: map[string]string{},
+					InstanceAnnotations:  map[string]string{},
+					ClusterId:            "basic-cluster",
+					InstanceName:         "basic-instance",
+				},
+				Parameters: basicParameters,
+				Route:      "basic-route",
+				InstanceData: &common.InstanceData{
+					PlanId:     "basic-plan",
+					ServiceId:  "basic-service",
+					InstanceId: "basic-instance",
+				},
+				ApplicationData: &common.ApplicationData{
+					Name: "basic-application",
+				},
 			},
-			Parameters: basicParameters,
-			Route:      "basic-route",
-			InstanceData: &common.InstanceData{
-				PlanId:     "basic-plan",
-				ServiceId:  "basic-service",
-				InstanceId: "basic-instance",
-			},
-			ApplicationData: &common.ApplicationData{
-				Name: "basic-application",
+			ResourceSpec: xpv1.ResourceSpec{
+				ProviderConfigReference: &xpv1.Reference{
+					Name: "basic-providerconfig",
+				},
+				ManagementPolicies: xpv1.ManagementPolicies{xpv1.ManagementActionAll},
 			},
 		},
-		ResourceSpec: xpv1.ResourceSpec{
-			ProviderConfigReference: &xpv1.Reference{
-				Name: "basic-providerconfig",
-			},
-			ManagementPolicies: xpv1.ManagementPolicies{xpv1.ManagementActionAll},
+	}
+	basicObservation = v1alpha1.ServiceBindingObservation{
+		Parameters:      common.SerializableParameters("{\"param1\":\"value1\"}"),
+		RouteServiceURL: &basicRouteServiceURL,
+		Endpoints:       v1alpha1.SerializableEndpoints("[{\"host\":\"basic-host-1\",\"ports\":[443,8080],\"protocol\":\"tcp\"},{\"host\":\"basic-host-2\",\"ports\":[443],\"protocol\":\"udp\"}]"),
+		VolumeMounts:    v1alpha1.SerializableVolumeMounts("[{\"driver\":\"basic-driver\",\"container_dir\":\"basic-dir\",\"mode\":\"basic-mode\",\"device_type\":\"basic-device-type\",\"device\":{\"volume_id\":\"basic-volume\"}}]"),
+		SyslogDrainURL:  &basicSyslogDrainURL,
+		Metadata: &osb.BindingMetadata{
+			ExpiresAt:   time.Now().AddDate(0, 0, 7).Format(util.Iso8601dateFormat), // expires in 7 days
+			RenewBefore: time.Now().AddDate(0, 0, 6).Format(util.Iso8601dateFormat), // renew before 6 days
 		},
-	},
-}
-
-var basicRouteServiceURL = "basic-route-service-url"
-var basicSyslogDrainURL = "basic-syslog-drain-url"
-
-var basicObservation = v1alpha1.ServiceBindingObservation{
-	Parameters:      common.SerializableParameters("{\"param1\":\"value1\"}"),
-	RouteServiceURL: &basicRouteServiceURL,
-	Endpoints:       v1alpha1.SerializableEndpoints("[{\"host\":\"basic-host-1\",\"ports\":[443,8080],\"protocol\":\"tcp\"},{\"host\":\"basic-host-2\",\"ports\":[443],\"protocol\":\"udp\"}]"),
-	VolumeMounts:    v1alpha1.SerializableVolumeMounts("[{\"driver\":\"basic-driver\",\"container_dir\":\"basic-dir\",\"mode\":\"basic-mode\",\"device_type\":\"basic-device-type\",\"device\":{\"volume_id\":\"basic-volume\"}}]"),
-	SyslogDrainURL:  &basicSyslogDrainURL,
-	Metadata: &osb.BindingMetadata{
-		ExpiresAt:   time.Now().AddDate(0, 0, 7).Format(util.Iso8601dateFormat), // expires in 7 days
-		RenewBefore: time.Now().AddDate(0, 0, 6).Format(util.Iso8601dateFormat), // renew before 6 days
-	},
-	Uuid: "basicUuid",
-}
+		Uuid: "basicUuid",
+	}
+)
 
 func withAnnotations(binding v1alpha1.ServiceBinding, annotations map[string]string) *v1alpha1.ServiceBinding {
 	binding.ObjectMeta.Annotations = annotations
@@ -137,12 +136,52 @@ func withObservation(binding v1alpha1.ServiceBinding, observation v1alpha1.Servi
 	return &binding
 }
 
-func encodeCredentials(creds map[string][]byte) map[string][]byte {
+func encodeCredentialsBase64(creds map[string][]byte) map[string][]byte {
 	res := make(map[string][]byte, len(creds))
 	for k, v := range creds {
 		res[k] = []byte("\"" + b64.StdEncoding.EncodeToString(v) + "\"")
 	}
 	return res
+}
+
+func generateResponse[T osb.GetBindingResponse | osb.BindResponse](resp *T, creds map[string][]byte) error {
+	credentials := make(map[string]any, len(creds))
+	for k, v := range creds {
+		credentials[k] = v
+	}
+
+	endpoints, err := basicObservation.Endpoints.ToEndpoints()
+	if err != nil {
+		return err
+	}
+
+	volumeMounts, err := basicObservation.VolumeMounts.ToVolumeMounts()
+	if err != nil {
+		return err
+	}
+
+	if getBindingResp, ok := any(resp).(*osb.GetBindingResponse); ok {
+		parameters, err := basicParameters.ToParameters()
+		if err != nil {
+			return err
+		}
+		getBindingResp.Credentials = credentials
+		getBindingResp.Endpoints = endpoints
+		getBindingResp.Parameters = parameters
+		getBindingResp.VolumeMounts = volumeMounts
+		getBindingResp.Metadata = basicObservation.Metadata
+		getBindingResp.RouteServiceURL = &basicRouteServiceURL
+		getBindingResp.SyslogDrainURL = &basicSyslogDrainURL
+	}
+	if bindResp, ok := any(resp).(*osb.BindResponse); ok {
+		bindResp.Credentials = credentials
+		bindResp.Endpoints = endpoints
+		bindResp.VolumeMounts = volumeMounts
+		bindResp.Metadata = basicObservation.Metadata
+		bindResp.RouteServiceURL = &basicRouteServiceURL
+		bindResp.SyslogDrainURL = &basicSyslogDrainURL
+	}
+	return nil
 }
 
 func TestObserve(t *testing.T) {
@@ -223,45 +262,9 @@ func TestObserve(t *testing.T) {
 			fields: fields{
 				client: &osbfake.FakeClient{
 					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
-						// TODO put this in function
-						syslogDrainUrl := basicSyslogDrainURL
-
-						volumeMountsFromObservation := basicObservation.VolumeMounts
-						volumeMounts, err := volumeMountsFromObservation.ToVolumeMounts()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing volume mounts")
-						}
-
-						endpointsFromObservation := basicObservation.Endpoints
-						endpoints, err := endpointsFromObservation.ToEndpoints()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing endpoints")
-						}
-
-						parametersFromObservation := basicObservation.Parameters
-						parameters, err := parametersFromObservation.ToParameters()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing parameters ")
-						}
-
-						credentials := make(map[string]any, len(updatedCredentials)) // updated credentials
-						for k, v := range updatedCredentials {
-							credentials[k] = v
-						}
-
-						res := &osb.GetBindingResponse{
-							Credentials:     credentials,
-							SyslogDrainURL:  &syslogDrainUrl,
-							VolumeMounts:    volumeMounts,
-							Endpoints:       endpoints,
-							RouteServiceURL: &basicBinding.Spec.ForProvider.Route,
-							Parameters:      parameters,
-							Metadata: &osb.BindingMetadata{
-								ExpiresAt:   basicObservation.Metadata.ExpiresAt,
-								RenewBefore: basicObservation.Metadata.RenewBefore,
-							},
-						}
-						return res, nil
+						resp := &osb.GetBindingResponse{}
+						err := generateResponse(resp, updatedCredentials)
+						return resp, err
 					}),
 				},
 			},
@@ -269,7 +272,7 @@ func TestObserve(t *testing.T) {
 				o: managed.ExternalObservation{
 					ResourceExists:    true,
 					ResourceUpToDate:  true,
-					ConnectionDetails: encodeCredentials(updatedCredentials),
+					ConnectionDetails: encodeCredentialsBase64(updatedCredentials),
 				},
 			},
 		},
@@ -282,45 +285,9 @@ func TestObserve(t *testing.T) {
 			fields: fields{
 				client: &osbfake.FakeClient{
 					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
-						// TODO put this in function
-						syslogDrainUrl := basicSyslogDrainURL
-
-						volumeMountsFromObservation := basicObservation.VolumeMounts
-						volumeMounts, err := volumeMountsFromObservation.ToVolumeMounts()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing volume mounts")
-						}
-
-						endpointsFromObservation := basicObservation.Endpoints
-						endpoints, err := endpointsFromObservation.ToEndpoints()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing endpoints")
-						}
-
-						parametersFromObservation := basicObservation.Parameters
-						parameters, err := parametersFromObservation.ToParameters()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing parameters ")
-						}
-
-						credentials := make(map[string]any, len(basicCredentials))
-						for k, v := range basicCredentials {
-							credentials[k] = v
-						}
-
-						res := &osb.GetBindingResponse{
-							Credentials:     credentials,
-							SyslogDrainURL:  &syslogDrainUrl,
-							VolumeMounts:    volumeMounts,
-							Endpoints:       endpoints,
-							RouteServiceURL: &basicBinding.Spec.ForProvider.Route,
-							Parameters:      parameters,
-							Metadata: &osb.BindingMetadata{
-								ExpiresAt:   basicObservation.Metadata.ExpiresAt,
-								RenewBefore: basicObservation.Metadata.RenewBefore,
-							},
-						}
-						return res, nil
+						resp := &osb.GetBindingResponse{}
+						err := generateResponse(resp, basicCredentials)
+						return resp, err
 					}),
 				},
 			},
@@ -328,7 +295,7 @@ func TestObserve(t *testing.T) {
 				o: managed.ExternalObservation{
 					ResourceExists:    true,
 					ResourceUpToDate:  true,
-					ConnectionDetails: encodeCredentials(basicCredentials),
+					ConnectionDetails: encodeCredentialsBase64(basicCredentials),
 				},
 			},
 		},
@@ -426,44 +393,15 @@ func TestCreate(t *testing.T) {
 			fields: fields{
 				client: &osbfake.FakeClient{
 					BindReaction: osbfake.DynamicBindReaction(func(req *osb.BindRequest) (*osb.BindResponse, error) {
-						// TODO put this in function
-						syslogDrainUrl := basicSyslogDrainURL
-
-						volumeMountsFromObservation := basicObservation.VolumeMounts
-						volumeMounts, err := volumeMountsFromObservation.ToVolumeMounts()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing volume mounts")
-						}
-
-						endpointsFromObservation := basicObservation.Endpoints
-						endpoints, err := endpointsFromObservation.ToEndpoints()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing endpoints")
-						}
-
-						credentials := make(map[string]any, len(basicCredentials))
-						for k, v := range basicCredentials {
-							credentials[k] = v
-						}
-
-						res := &osb.BindResponse{
-							Credentials:     credentials,
-							SyslogDrainURL:  &syslogDrainUrl,
-							VolumeMounts:    volumeMounts,
-							Endpoints:       endpoints,
-							RouteServiceURL: &basicBinding.Spec.ForProvider.Route,
-							Metadata: &osb.BindingMetadata{
-								ExpiresAt:   basicObservation.Metadata.ExpiresAt,
-								RenewBefore: basicObservation.Metadata.RenewBefore,
-							},
-						}
-						return res, nil
+						resp := &osb.BindResponse{}
+						err := generateResponse(resp, basicCredentials)
+						return resp, err
 					}),
 				},
 			},
 			want: want{
 				o: managed.ExternalCreation{
-					ConnectionDetails: encodeCredentials(basicCredentials),
+					ConnectionDetails: encodeCredentialsBase64(basicCredentials),
 				},
 			},
 		},
@@ -542,51 +480,17 @@ func TestUpdate(t *testing.T) {
 			},
 			fields: fields{
 				client: &osbfake.FakeClient{
-					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
-						// TODO put this in function
-						syslogDrainUrl := basicSyslogDrainURL
-
-						volumeMountsFromObservation := basicObservation.VolumeMounts
-						volumeMounts, err := volumeMountsFromObservation.ToVolumeMounts()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing volume mounts")
-						}
-
-						endpointsFromObservation := basicObservation.Endpoints
-						endpoints, err := endpointsFromObservation.ToEndpoints()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing endpoints")
-						}
-
-						parametersFromObservation := basicObservation.Parameters
-						parameters, err := parametersFromObservation.ToParameters()
-						if err != nil {
-							return nil, errors.Wrap(err, "Failed parsing parameters ")
-						}
-
-						credentials := make(map[string]any, len(basicCredentials))
-						for k, v := range basicCredentials {
-							credentials[k] = v
-						}
-
-						res := &osb.GetBindingResponse{
-							Credentials:     credentials,
-							SyslogDrainURL:  &syslogDrainUrl,
-							VolumeMounts:    volumeMounts,
-							Endpoints:       endpoints,
-							RouteServiceURL: &basicBinding.Spec.ForProvider.Route,
-							Parameters:      parameters,
-							Metadata: &osb.BindingMetadata{
-								ExpiresAt:   basicObservation.Metadata.ExpiresAt,
-								RenewBefore: basicObservation.Metadata.RenewBefore,
-							},
-						}
-						return res, nil
+					RotateBindingReaction: osbfake.DynamicRotateBindingReaction(func(_ *osb.RotateBindingRequest) (*osb.BindResponse, error) {
+						resp := &osb.BindResponse{}
+						err := generateResponse(resp, updatedCredentials)
+						return resp, err
 					}),
 				},
 			},
 			want: want{
-				o: managed.ExternalUpdate{},
+				o: managed.ExternalUpdate{
+					ConnectionDetails: encodeCredentialsBase64(updatedCredentials),
+				},
 			},
 		},
 	}
@@ -641,11 +545,11 @@ func TestDelete(t *testing.T) {
 			},
 			fields: fields{
 				client: &osbfake.FakeClient{
-					UnbindReaction: osbfake.DynamicUnbindReaction(func(*osb.UnbindRequest) (*osb.UnbindResponse, error) {
-						return &osb.UnbindResponse{
+					UnbindReaction: &osbfake.UnbindReaction{
+						Response: &osb.UnbindResponse{
 							Async: false,
-						}, nil
-					}),
+						},
+					},
 				},
 			},
 			want: want{

@@ -46,10 +46,9 @@ func (n NamespacedName) ToObjectKey() client.ObjectKey {
 // TODO: replace brokerUrl and credentials to a ref to ProviderConfig
 // It should be only a ref and never re-specified in ApplicationData
 type ApplicationData struct {
-	BrokerURL   string       `json:"brokerURL"`
-	Credentials *Credentials `json:"credentials,omitempty"`
-	Name        string       `json:"name"`
-	Guid        string       `json:"guid"`
+	BrokerURL string `json:"brokerURL"`
+	Name      string `json:"name"`
+	Guid      string `json:"guid"`
 }
 
 // Instance Data represents the schema for a ServiceInstance MR
@@ -72,20 +71,6 @@ func (v *SerializableParameters) ToParameters() (map[string]any, error) {
 	res := map[string]any{}
 	err := json.Unmarshal([]byte(*v), &res)
 	return res, err
-}
-
-// TODO remove in favor of crossplane's writeConnectionDetailsToRef
-// Credentials is a struct to hold credentials used to contact the service brokers
-type Credentials struct {
-	SecretName     string          `json:"secred_name,omitempty"`
-	HardcodedCreds *HardcodedCreds `json:"hardcoded_creds,omitempty"`
-}
-
-// TODO remove in favor of crossplane's writeConnectionDetailsToRef
-// HardcodedCreds represents the info needed for credentials that are hardcoded
-type HardcodedCreds struct {
-	User     string `json:"user"`
-	Password string `json:"password"`
 }
 
 // KubernetesOSBContext represents the context object for kubernetes in the OSB spec

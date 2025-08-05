@@ -232,7 +232,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 		resp, err := c.client.PollBindingLastOperation(lastOpReq)
 
-		// Manage errors // TODO factorize
+		// Manage errors
 		if err != nil {
 			// HTTP error 410 means that the resource was deleted by the broker
 			// so if the resource on the cluster was effectively deleted,
@@ -255,8 +255,10 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		cr.Status.AtProvider.LastOperationState = resp.State
 		if resp.Description != nil {
 			cr.Status.AtProvider.LastOperationDescription = *resp.Description
+		} else {
+			cr.Status.AtProvider.LastOperationDescription = ""
 		}
-		cr.Status.AtProvider.LastOperationPolledTime = time.Now().Format(util.Iso8601dateFormat)
+		cr.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
 
 		// Requeue, waiting for operation treatment
 		return managed.ExternalObservation{
@@ -273,7 +275,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	resp, err := c.client.GetBinding(req)
 
-	// Manage errors // TODO factorize
+	// Manage errors
 	if err != nil {
 		// Handle HTTP errors
 		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
@@ -312,25 +314,19 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	// Manage binding rotation
 	if resp.Metadata.RenewBefore != "" {
-		// TODO put this in update function
 		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time"))
 		}
 		// TODO do it if an auto renew feature flag is enabled
 		// else issue a warning on the resource if should be renewed, and different warning if expired
+
+		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
 		if renewBeforeTime.Before(time.Now()) {
-			// Trigger binding rotation.
-			// We count on the next reconciliation to update renew_before and expires_at
-			creds, err := c.triggerRotation(cr, bindingData)
-			if err != nil {
-				return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "RotateBinding"))
-			}
-			// We update creds only if the function returned credentials
-			// i.e. the operations was synchronous and successful
-			if creds != nil {
-				credentialsJson = creds
-			}
+			return managed.ExternalObservation{
+				ResourceExists:   true,
+				ResourceUpToDate: false,
+			}, nil
 		}
 	}
 
@@ -347,104 +343,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		ResourceUpToDate:  true,
 		ConnectionDetails: credentialsJson,
 	}, nil
-}
-
-type responseData struct {
-	Parameters      map[string]any
-	Endpoints       *[]osb.Endpoint
-	VolumeMounts    *[]osb.VolumeMount
-	RouteServiceURL *string
-	SyslogDrainURL  *string
-	Metadata        *osb.BindingMetadata
-}
-
-// set AtProviderGet updates the Observed status of a ServiceBinding according to
-// a response we got from a GET request to an OSB broker
-func (c *external) setResponseDataInStatus(cr *v1alpha1.ServiceBinding, data responseData) error {
-	params, err := json.Marshal(data.Parameters)
-	if err != nil {
-		return errors.New(fmt.Sprintf(errParseMarshall, "parameters from response"))
-	}
-
-	endpoints, err := json.Marshal(data.Endpoints)
-	if err != nil {
-		return errors.New(fmt.Sprintf(errParseMarshall, "endpoints from response"))
-	}
-
-	volumeMounts, err := json.Marshal(data.VolumeMounts)
-	if err != nil {
-		return errors.New(fmt.Sprintf(errParseMarshall, "volume mounts from response"))
-	}
-
-	return c.setAtProvider(cr, v1alpha1.ServiceBindingObservation{
-		// Update attributes from response data
-		Parameters:      common.SerializableParameters(params),
-		RouteServiceURL: data.RouteServiceURL,
-		Endpoints:       v1alpha1.SerializableEndpoints(endpoints),
-		VolumeMounts:    v1alpha1.SerializableVolumeMounts(volumeMounts),
-		SyslogDrainURL:  data.SyslogDrainURL,
-		Metadata:        data.Metadata,
-		// Do not change these attributes
-		Uuid:                     cr.Status.AtProvider.Uuid,
-		LastOperationState:       cr.Status.AtProvider.LastOperationState,
-		LastOperationKey:         cr.Status.AtProvider.LastOperationKey,
-		LastOperationDescription: cr.Status.AtProvider.LastOperationDescription,
-		LastOperationPolledTime:  cr.Status.AtProvider.LastOperationPolledTime,
-	})
-}
-
-func (c *external) setAtProvider(cr *v1alpha1.ServiceBinding, observation v1alpha1.ServiceBindingObservation) error {
-	cr.Status.AtProvider = observation
-	// TODO add some checks here
-	return nil
-}
-
-func (c *external) triggerRotation(cr *v1alpha1.ServiceBinding, data bindingData) (map[string][]byte, error) {
-	resp, err := c.client.RotateBinding(&osb.RotateBindingRequest{
-		InstanceID:           data.instanceData.InstanceId,
-		BindingID:            string(uuid.NewUUID()),
-		AcceptsIncomplete:    true, // TODO use config param for this
-		PredecessorBindingID: cr.Status.AtProvider.Uuid,
-		OriginatingIdentity:  &c.originatingIdentity,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// We only return ConnectionDetails in case the operation is synchronous.
-	if !resp.Async {
-		creds, err := getCredsFromResponse(resp)
-		if err != nil {
-			return nil, err
-		}
-
-		return creds, nil
-	}
-	return nil, nil
-}
-
-func compareToObserved(cr *v1alpha1.ServiceBinding) (bool, error) {
-	// We do not compare credentials, as this logic is managed by creds rotation.
-	// We do not compare bindingmetadata either, since the only metadata in binding objects
-	// is related to binding rotation (renew_before and expires_at)
-
-	// TODO add context and route to test if these were updated and return false
-	return reflect.DeepEqual(cr.Status.AtProvider.Parameters, cr.Spec.ForProvider.Parameters), nil
-}
-
-func getCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
-	// Serialize credentials
-	creds := make(map[string][]byte, len(resp.Credentials))
-
-	for k, v := range resp.Credentials {
-		credsBytes, err := json.Marshal(v)
-		if err != nil {
-			return map[string][]byte{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "credentials from response"))
-		}
-		creds[k] = credsBytes
-	}
-
-	return creds, nil
 }
 
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
@@ -556,15 +454,28 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	// The only situation when calling this function is valid is when
 	// the service binding's should be rotated
 
-	_, ok := mg.(*v1alpha1.ServiceBinding)
+	cr, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errNotServiceBinding)
 	}
 
-	// TODO rotate bindings here
+	// Prepare binding rtation request
+	bindingData, err := c.getDataFromServiceBinding(ctx, cr.Spec.ForProvider)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, errGetDataFromBinding)
+	}
+
+	// Trigger binding rotation.
+	// We count on the next reconciliation to update renew_before and expires_at
+	creds, err := c.triggerRotation(cr, bindingData)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "RotateBinding"))
+	}
 
 	// If it is async, the Observe() function will manage the ConnectionDetails instead.
-	return managed.ExternalUpdate{}, nil
+	return managed.ExternalUpdate{
+		ConnectionDetails: creds,
+	}, nil
 }
 
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
@@ -744,4 +655,106 @@ func (c *external) getDataFromServiceBinding(ctx context.Context, spec v1alpha1.
 	return bindingData{*instanceData, *appData}, nil
 }
 
-type callbackFn func(*v1alpha1.ServiceBinding, *osb.GetBindingResponse) error
+type responseData struct {
+	Parameters      map[string]any
+	Endpoints       *[]osb.Endpoint
+	VolumeMounts    *[]osb.VolumeMount
+	RouteServiceURL *string
+	SyslogDrainURL  *string
+	Metadata        *osb.BindingMetadata
+}
+
+func (c *external) setResponseDataInStatus(cr *v1alpha1.ServiceBinding, data responseData) error {
+	params, err := json.Marshal(data.Parameters)
+	if err != nil {
+		return errors.New(fmt.Sprintf(errParseMarshall, "parameters from response"))
+	}
+
+	endpoints, err := json.Marshal(data.Endpoints)
+	if err != nil {
+		return errors.New(fmt.Sprintf(errParseMarshall, "endpoints from response"))
+	}
+
+	volumeMounts, err := json.Marshal(data.VolumeMounts)
+	if err != nil {
+		return errors.New(fmt.Sprintf(errParseMarshall, "volume mounts from response"))
+	}
+
+	return c.setAtProvider(cr, v1alpha1.ServiceBindingObservation{
+		// Update attributes from response data
+		Parameters:      common.SerializableParameters(params),
+		RouteServiceURL: data.RouteServiceURL,
+		Endpoints:       v1alpha1.SerializableEndpoints(endpoints),
+		VolumeMounts:    v1alpha1.SerializableVolumeMounts(volumeMounts),
+		SyslogDrainURL:  data.SyslogDrainURL,
+		Metadata:        data.Metadata,
+		// Do not change these attributes
+		Uuid:                     cr.Status.AtProvider.Uuid,
+		LastOperationState:       cr.Status.AtProvider.LastOperationState,
+		LastOperationKey:         cr.Status.AtProvider.LastOperationKey,
+		LastOperationDescription: cr.Status.AtProvider.LastOperationDescription,
+		LastOperationPolledTime:  cr.Status.AtProvider.LastOperationPolledTime,
+	})
+}
+
+func (c *external) setAtProvider(cr *v1alpha1.ServiceBinding, observation v1alpha1.ServiceBindingObservation) error {
+	cr.Status.AtProvider = observation
+	// TODO add some checks here
+	return nil
+}
+
+func (c *external) triggerRotation(cr *v1alpha1.ServiceBinding, data bindingData) (map[string][]byte, error) {
+	resp, err := c.client.RotateBinding(&osb.RotateBindingRequest{
+		InstanceID:           data.instanceData.InstanceId,
+		BindingID:            string(uuid.NewUUID()),
+		AcceptsIncomplete:    true, // TODO use config param for this
+		PredecessorBindingID: cr.Status.AtProvider.Uuid,
+		OriginatingIdentity:  &c.originatingIdentity,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// We only return ConnectionDetails in case the operation is synchronous.
+	if !resp.Async {
+		creds, err := getCredsFromResponse(resp)
+		if err != nil {
+			return nil, err
+		}
+		return creds, nil
+	} else {
+		// In asynchronous workflow, just update LastOperation status
+		if resp.OperationKey != nil {
+			cr.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+		cr.Status.AtProvider.LastOperationState = osb.StateInProgress
+		cr.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
+		cr.Status.AtProvider.LastOperationDescription = ""
+	}
+
+	return nil, nil
+}
+
+func compareToObserved(cr *v1alpha1.ServiceBinding) (bool, error) {
+	// We do not compare credentials, as this logic is managed by creds rotation.
+	// We do not compare bindingmetadata either, since the only metadata in binding objects
+	// is related to binding rotation (renew_before and expires_at)
+
+	// TODO add context and route to test if these were updated and return false
+	return reflect.DeepEqual(cr.Status.AtProvider.Parameters, cr.Spec.ForProvider.Parameters), nil
+}
+
+func getCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
+	// Serialize credentials
+	creds := make(map[string][]byte, len(resp.Credentials))
+
+	for k, v := range resp.Credentials {
+		credsBytes, err := json.Marshal(v)
+		if err != nil {
+			return map[string][]byte{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "credentials from response"))
+		}
+		creds[k] = credsBytes
+	}
+
+	return creds, nil
+}

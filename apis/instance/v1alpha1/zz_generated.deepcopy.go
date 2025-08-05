@@ -83,7 +83,7 @@ func (in *ServiceInstanceObservation) DeepCopyInto(out *ServiceInstanceObservati
 	if in.ApplicationData != nil {
 		in, out := &in.ApplicationData, &out.ApplicationData
 		*out = new(common.ApplicationData)
-		(*in).DeepCopyInto(*out)
+		**out = **in
 	}
 	in.InstanceData.DeepCopyInto(&out.InstanceData)
 }

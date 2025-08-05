@@ -93,25 +93,6 @@ spec:
                     properties:
                       brokerURL:
                         type: string
-                      credentials:
-                        description: Credentials is a struct to hold credentials used
-                          to contact the service brokers
-                        properties:
-                          hardcoded_creds:
-                            description: HardcodedCreds represents the info needed
-                              for credentials that are hardcoded
-                            properties:
-                              password:
-                                type: string
-                              user:
-                                type: string
-                            required:
-                            - password
-                            - user
-                            type: object
-                          secred_name:
-                            type: string
-                        type: object
                       guid:
                         type: string
                       name:
@@ -183,25 +164,6 @@ spec:
                         properties:
                           brokerURL:
                             type: string
-                          credentials:
-                            description: Credentials is a struct to hold credentials
-                              used to contact the service brokers
-                            properties:
-                              hardcoded_creds:
-                                description: HardcodedCreds represents the info needed
-                                  for credentials that are hardcoded
-                                properties:
-                                  password:
-                                    type: string
-                                  user:
-                                    type: string
-                                required:
-                                - password
-                                - user
-                                type: object
-                              secred_name:
-                                type: string
-                            type: object
                           guid:
                             type: string
                           name:
