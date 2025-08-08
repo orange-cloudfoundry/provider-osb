@@ -121,8 +121,8 @@ var (
 	}
 )
 
-func withAnnotations(binding v1alpha1.ServiceBinding, annotations map[string]string) *v1alpha1.ServiceBinding {
-	binding.ObjectMeta.Annotations = annotations
+func withMetadata(binding v1alpha1.ServiceBinding, metadata *osb.BindingMetadata) *v1alpha1.ServiceBinding {
+	binding.Status.AtProvider.Metadata = metadata
 	return &binding
 }
 
@@ -276,6 +276,54 @@ func TestObserve(t *testing.T) {
 				},
 			},
 		},
+		"ResourceHasPendingLastOperationStillInProgress": {
+			args: args{
+				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osb.StateInProgress),
+			},
+			fields: fields{
+				client: &osbfake.FakeClient{
+					PollBindingLastOperationReaction: &osbfake.PollBindingLastOperationReaction{
+						Response: &osb.LastOperationResponse{
+							State: osb.StateInProgress,
+						},
+					},
+				},
+			},
+			want: want{
+				// Requeue without doing anything, since an operation is still in progress
+				o: managed.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: true,
+				},
+				err: nil,
+			},
+		},
+		"ResourceExistsCredentialsShouldBeRotated": {
+			args: args{
+				mg: withObservation(*basicBinding, basicObservation),
+			},
+			fields: fields{
+				client: &osbfake.FakeClient{
+					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
+						resp := &osb.GetBindingResponse{}
+						err := generateResponse(resp, basicCredentials)
+						// Set renewbefore date to yesterday
+						resp.Metadata = &osb.BindingMetadata{
+							RenewBefore: time.Now().AddDate(0, 0, -1).Format(util.Iso8601dateFormat),
+							ExpiresAt:   time.Now().AddDate(0, 0, 7).Format(util.Iso8601dateFormat),
+						}
+						return resp, err
+					}),
+				},
+			},
+			want: want{
+				o: managed.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: false,
+				},
+				err: nil,
+			},
+		},
 		"ResourceUpToDate": {
 			args: args{
 				// We are testing the asynchronous way, since a succeeded or failed last operation
@@ -299,30 +347,6 @@ func TestObserve(t *testing.T) {
 				},
 			},
 		},
-		"ResourceHasPendingLastOperationStillInProgress": {
-			args: args{
-				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osb.StateInProgress),
-			},
-			fields: fields{
-				client: &osbfake.FakeClient{
-					PollBindingLastOperationReaction: &osbfake.PollBindingLastOperationReaction{
-						Response: &osb.LastOperationResponse{
-							State: osb.StateInProgress,
-						},
-					},
-				},
-			},
-			want: want{
-				// Requeue without doing anything, since an operation is still in progress
-				o: managed.ExternalObservation{
-					ResourceExists:   true,
-					ResourceUpToDate: true,
-				},
-				err: nil,
-			},
-		},
-		// TODO add test cases for specific errors
-		// TODO add test case for binding rotation
 	}
 
 	for name, tc := range cases {
@@ -427,7 +451,6 @@ func TestCreate(t *testing.T) {
 				},
 			},
 		},
-		// TODO add test cases for originating identity header
 	}
 
 	for name, tc := range cases {
@@ -474,7 +497,7 @@ func TestUpdate(t *testing.T) {
 				err: errors.New(errNotServiceBinding),
 			},
 		},
-		"SuccessUpdate": {
+		"SuccessUpdateBindingRotation": {
 			args: args{
 				mg: basicBinding,
 			},
@@ -578,7 +601,6 @@ func TestDelete(t *testing.T) {
 				},
 			},
 		},
-		// TODO add more test cases
 	}
 
 	for name, tc := range cases {

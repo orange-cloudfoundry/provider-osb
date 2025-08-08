@@ -7,10 +7,12 @@ import (
 	"slices"
 	"time"
 
+	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 	"github.com/pkg/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -125,6 +127,22 @@ func MakeOriginatingIdentityFromValue(val common.KubernetesOSBOriginatingIdentit
 		Platform: OriginatingIdentityPlatformName,
 		Value:    string(value),
 	}, nil
+}
+
+func AddFinalizerIfNotExists(obj metav1.Object, finalizerName string) bool {
+	if !meta.FinalizerExists(obj, finalizerName) {
+		meta.AddFinalizer(obj, finalizerName)
+		return true
+	}
+	return false
+}
+
+func RemoveFinalizerIfExists(obj metav1.Object, finalizerName string) bool {
+	if meta.FinalizerExists(obj, finalizerName) {
+		meta.RemoveFinalizer(obj, finalizerName)
+		return true
+	}
+	return false
 }
 
 // TODO: actually implement an no op client, since the osb.fake client

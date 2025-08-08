@@ -26,7 +26,7 @@ import (
 
 	"github.com/pkg/errors"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -65,7 +65,8 @@ const (
 	errTechnical  = "error: technical error encountered : %s"
 	errNoResponse = "no errors but the response sent back was empty for request: %v"
 
-	errAddReferenceFinalizer = "cannot add finalizer to referenced resource"
+	errAddReferenceFinalizer    = "cannot add finalizer to referenced resource"
+	errRemoveReferenceFinalizer = "cannot remove finalizer from referenced resource"
 
 	errCannotParseCredentials = "cannot parse credentials"
 	errGetDataFromBinding     = "cannot get data from service binding"
@@ -74,7 +75,7 @@ const (
 
 	bindingMetadataPrefix = "binding." + util.MetadataPrefix
 
-	objFinalizerName       = bindingMetadataPrefix + "/service-binding"
+	referenceFinalizerName = bindingMetadataPrefix + "/service-binding"
 	asyncDeletionFinalizer = bindingMetadataPrefix + "/async-deletion"
 )
 
@@ -206,28 +207,28 @@ type external struct {
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
-	cr, ok := mg.(*v1alpha1.ServiceBinding)
+	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotServiceBinding)
 	}
 
-	bindingData, err := c.getDataFromServiceBinding(ctx, cr.Spec.ForProvider)
+	bindingData, err := c.getDataFromServiceBinding(ctx, binding.Spec.ForProvider)
 	if err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errGetDataFromBinding)
 	}
 
-	// Manage pending async operations (poll only for "ip progress" state)
-	if cr.Status.AtProvider.LastOperationState == osb.StateInProgress {
+	// Manage pending async operations (poll only for "in progress" state)
+	if binding.Status.AtProvider.LastOperationState == osb.StateInProgress {
 		// TODO use poll delay using resp.pollDelay
 
 		// Poll last operation
 		lastOpReq := &osb.BindingLastOperationRequest{
 			InstanceID:          bindingData.instanceData.InstanceId,
-			BindingID:           cr.Status.AtProvider.Uuid,
+			BindingID:           binding.Status.AtProvider.Uuid,
 			ServiceID:           &bindingData.instanceData.ServiceId,
 			PlanID:              &bindingData.instanceData.PlanId,
 			OriginatingIdentity: &c.originatingIdentity,
-			OperationKey:        &cr.Status.AtProvider.LastOperationKey,
+			OperationKey:        &binding.Status.AtProvider.LastOperationKey,
 		}
 
 		resp, err := c.client.PollBindingLastOperation(lastOpReq)
@@ -238,10 +239,17 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			// so if the resource on the cluster was effectively deleted,
 			// we can remove its finalizer
 			if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-				if httpErr.StatusCode == 410 && meta.WasDeleted(cr) {
-					// Remove finalizer, and return resourceexists: false explicitely
+				if httpErr.StatusCode == 410 && meta.WasDeleted(binding) {
+					// Remove async finalizer from binding
+					if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
+						return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
+					}
+					// Remove reference finalizer from referenced ServiceInstance
+					if err = c.removeRefFinalizer(ctx, binding); err != nil {
+						return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
+					}
+					// return resourceexists: false explicitely
 					// This will trigger the removal of crossplane runtime's finalizers
-					meta.RemoveFinalizer(cr, asyncDeletionFinalizer)
 					return managed.ExternalObservation{
 						ResourceExists: false,
 					}, nil
@@ -252,13 +260,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		}
 
 		// Set polled operation data in resource status
-		cr.Status.AtProvider.LastOperationState = resp.State
+		binding.Status.AtProvider.LastOperationState = resp.State
 		if resp.Description != nil {
-			cr.Status.AtProvider.LastOperationDescription = *resp.Description
+			binding.Status.AtProvider.LastOperationDescription = *resp.Description
 		} else {
-			cr.Status.AtProvider.LastOperationDescription = ""
+			binding.Status.AtProvider.LastOperationDescription = ""
 		}
-		cr.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
+		binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
 
 		// Requeue, waiting for operation treatment
 		return managed.ExternalObservation{
@@ -270,7 +278,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// get binding from broker
 	req := &osb.GetBindingRequest{
 		InstanceID: bindingData.instanceData.InstanceId,
-		BindingID:  cr.Status.AtProvider.Uuid,
+		BindingID:  binding.Status.AtProvider.Uuid,
 	}
 
 	resp, err := c.client.GetBinding(req)
@@ -290,7 +298,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// Set observed fields values in cr.Status.AtProvider
-	if err = c.setResponseDataInStatus(cr, responseData{
+	if err = c.setResponseDataInStatus(binding, responseData{
 		Parameters:      resp.Parameters,
 		Endpoints:       resp.Endpoints,
 		VolumeMounts:    resp.VolumeMounts,
@@ -330,12 +338,23 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		}
 	}
 
-	isEqual, err := compareToObserved(cr)
+	// Compare observed to response
+	// If there is a diff, return an error, since bindings are not updatable
+	isEqual, err := compareToObserved(binding)
 	if err != nil {
-		return managed.ExternalObservation{}, err
+		return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
 	}
 	if !isEqual {
 		return managed.ExternalObservation{}, errors.Wrap(err, "bindings cannot be updated")
+	}
+
+	// Handle the ServiceInstance referenced by this binding, if there is one.
+	// We add a finalizer to prevent deletion of the ServiceInstance while the current
+	// ServiceBinding still exists.
+	// Doing so in the Observe() function enable adding a ServiceInstance
+	// resource after the creation of the ServiceBinding.
+	if err = c.addRefFinalizer(ctx, binding); err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, "error while adding finalizer to referenced instance")
 	}
 
 	return managed.ExternalObservation{
@@ -346,18 +365,18 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 }
 
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
-	cr, ok := mg.(*v1alpha1.ServiceBinding)
+	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errNotServiceBinding)
 	}
 
 	// Prepare binding creation request
-	bindingData, err := c.getDataFromServiceBinding(ctx, cr.Spec.ForProvider)
+	bindingData, err := c.getDataFromServiceBinding(ctx, binding.Spec.ForProvider)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, errGetDataFromBinding)
 	}
 
-	spec := cr.Spec.ForProvider
+	spec := binding.Spec.ForProvider
 
 	// Convert spec.Context of type common.KubernetesOSBContext to map[string]any
 	requestContextBytes, err := json.Marshal(spec.Context)
@@ -365,35 +384,33 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context from ServiceBinding"))
 	}
 	var requestContext map[string]any
-	err = json.Unmarshal(requestContextBytes, &requestContext)
-	if err != nil {
+	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to bytes from ServiceBinding"))
 	}
 
 	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
 	var requestParams map[string]any
-	err = json.Unmarshal([]byte(spec.Parameters), &requestParams)
-	if err != nil {
+	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
 	}
 
 	newUuid := string(uuid.NewUUID())
 
-	cr.Status.AtProvider.Uuid = newUuid
+	binding.Status.AtProvider.Uuid = newUuid
 
 	bindRequest := osb.BindRequest{
 		BindingID:  newUuid,
 		InstanceID: bindingData.instanceData.InstanceId,
 		BindResource: &osb.BindResource{
 			AppGUID: &bindingData.applicationData.Guid,
-			Route:   &cr.Spec.ForProvider.Route,
+			Route:   &binding.Spec.ForProvider.Route,
 		},
 		AcceptsIncomplete:   true, // TODO: add a config flag to enable async requests or not
 		OriginatingIdentity: &c.originatingIdentity,
-		PlanID:              cr.Spec.ForProvider.InstanceData.PlanId,
+		PlanID:              binding.Spec.ForProvider.InstanceData.PlanId,
 		Context:             requestContext,
 		Parameters:          requestParams,
-		ServiceID:           cr.Spec.ForProvider.InstanceData.ServiceId,
+		ServiceID:           binding.Spec.ForProvider.InstanceData.ServiceId,
 		AppGUID:             &bindingData.applicationData.Guid,
 	}
 
@@ -410,10 +427,10 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	if resp.Async {
 		// If the creation was asynchronous, add an annotation
 		if resp.OperationKey != nil {
-			cr.Status.AtProvider.LastOperationKey = *resp.OperationKey
+			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
-		cr.Status.AtProvider.Uuid = newUuid
-		cr.Status.AtProvider.LastOperationState = osb.StateInProgress
+		binding.Status.AtProvider.Uuid = newUuid
+		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
 		return managed.ExternalCreation{
 			// AdditionalDetails is for logs
 			AdditionalDetails: managed.AdditionalDetails{
@@ -429,12 +446,12 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	// Set values for endpoints, volumes, syslog drain urls
 	// Avoid rewriting parameters since they are not included in the response
-	params, err := cr.Status.AtProvider.Parameters.ToParameters()
+	params, err := binding.Status.AtProvider.Parameters.ToParameters()
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from resource status"))
 	}
 
-	c.setResponseDataInStatus(cr, responseData{
+	c.setResponseDataInStatus(binding, responseData{
 		Parameters:      params,
 		Endpoints:       resp.Endpoints,
 		VolumeMounts:    resp.VolumeMounts,
@@ -454,24 +471,25 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	// The only situation when calling this function is valid is when
 	// the service binding's should be rotated
 
-	cr, ok := mg.(*v1alpha1.ServiceBinding)
+	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errNotServiceBinding)
 	}
 
 	// Prepare binding rtation request
-	bindingData, err := c.getDataFromServiceBinding(ctx, cr.Spec.ForProvider)
+	bindingData, err := c.getDataFromServiceBinding(ctx, binding.Spec.ForProvider)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errGetDataFromBinding)
 	}
 
 	// Trigger binding rotation.
 	// We count on the next reconciliation to update renew_before and expires_at
-	creds, err := c.triggerRotation(cr, bindingData)
+	creds, err := c.triggerRotation(binding, bindingData)
 	if err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "RotateBinding"))
 	}
 
+	// nil credentials will not erase the pre-existing ones.
 	// If it is async, the Observe() function will manage the ConnectionDetails instead.
 	return managed.ExternalUpdate{
 		ConnectionDetails: creds,
@@ -479,14 +497,14 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 }
 
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
-	cr, ok := mg.(*v1alpha1.ServiceBinding)
+	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
 		return managed.ExternalDelete{}, errors.New(errNotServiceBinding)
 	}
 
-	fmt.Printf("Deleting: %+v", cr)
+	fmt.Printf("Deleting: %+v", binding)
 
-	spec := cr.Spec.ForProvider
+	spec := binding.Spec.ForProvider
 
 	bindingData, err := c.getDataFromServiceBinding(ctx, spec)
 	if err != nil {
@@ -495,7 +513,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	reqUnbind := osb.UnbindRequest{
 		InstanceID:          bindingData.instanceData.InstanceId,
-		BindingID:           cr.Status.AtProvider.Uuid,
+		BindingID:           binding.Status.AtProvider.Uuid,
 		AcceptsIncomplete:   true, // TODO based on async configuration
 		ServiceID:           spec.InstanceData.ServiceId,
 		PlanID:              spec.InstanceData.PlanId,
@@ -511,12 +529,14 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	if resp.Async {
-		// If the creation was asynchronous, add a finalizer
+		// If the deletion is asynchronous, update status and add a finalizer
 		if resp.OperationKey != nil {
-			cr.Status.AtProvider.LastOperationKey = *resp.OperationKey
+			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
-		cr.Status.AtProvider.LastOperationState = osb.StateInProgress
-		meta.AddFinalizer(cr, asyncDeletionFinalizer)
+		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
+		if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.AddFinalizerIfNotExists); err != nil {
+			return managed.ExternalDelete{}, errors.Wrap(err, errTechnical)
+		}
 		return managed.ExternalDelete{
 			// AdditionalDetails is for logs
 			AdditionalDetails: managed.AdditionalDetails{
@@ -529,32 +549,37 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 }
 
 func (c *external) Disconnect(ctx context.Context) error {
-	// unimplemented
+	// not implemented
 	return nil
 }
 
-type refFinalizerFn func(context.Context, *unstructured.Unstructured, string) error
+type finalizerModFn func(metav1.Object, string) bool
 
-func (c *external) handleRefFinalizer(ctx context.Context, mg *v1alpha1.ServiceBinding, finalizerFn refFinalizerFn, ignoreNotFound bool) error {
-	// Get referenced service instance, if exists
-
-	instanceRef := mg.Spec.ForProvider.InstanceRef
+func (c *external) removeRefFinalizer(ctx context.Context, binding *v1alpha1.ServiceBinding) error {
+	// Remove finalizer from referenced ServiceInstance
+	instanceRef := binding.Spec.ForProvider.InstanceRef
 	if instanceRef != nil {
-		var instanceObject unstructured.Unstructured // should always be of type ServiceInstance
-		err := c.kube.Get(ctx, instanceRef.ToObjectKey(), &instanceObject)
-
-		if err != nil {
-			if !ignoreNotFound || !kerrors.IsNotFound(err) {
-				return errors.Wrap(err, errGetReferencedResource)
-			}
-		}
-
-		finalizerName := bindingMetadataPrefix + string(mg.UID)
-		if err = finalizerFn(ctx, &instanceObject, finalizerName); err != nil {
-			return err
-		}
+		finalizerName := fmt.Sprintf("%s-%s", referenceFinalizerName, binding.Name)
+		return c.handleFinalizer(ctx, binding, finalizerName, util.RemoveFinalizerIfExists)
 	}
+	return nil
+}
 
+func (c *external) addRefFinalizer(ctx context.Context, binding *v1alpha1.ServiceBinding) error {
+	// Add finalizer to referenced ServiceInstance
+	instanceRef := binding.Spec.ForProvider.InstanceRef
+	if instanceRef != nil {
+		finalizerName := fmt.Sprintf("%s-%s", referenceFinalizerName, binding.Name)
+		return c.handleFinalizer(ctx, binding, finalizerName, util.AddFinalizerIfNotExists)
+	}
+	return nil
+}
+
+func (c *external) handleFinalizer(ctx context.Context, obj client.Object, finalizerName string, finalizerMod finalizerModFn) error {
+	// Get referenced service instance, if exists
+	if finalizerMod(obj, finalizerName) {
+		return c.kube.Update(ctx, obj)
+	}
 	return nil
 }
 
@@ -569,8 +594,7 @@ func (c *external) fetchApplicationDataFromBinding(ctx context.Context, spec v1a
 	if spec.ApplicationRef != nil {
 		// Fetch from referenced resource
 		application := applicationv1alpha1.Application{}
-		err := c.kube.Get(ctx, spec.ApplicationRef.ToObjectKey(), &application)
-		if err != nil {
+		if err := c.kube.Get(ctx, spec.ApplicationRef.ToObjectKey(), &application); err != nil {
 			if kerrors.IsNotFound(err) {
 				return nil, errors.New("binding referenced an application which does not exist")
 			}
@@ -590,8 +614,7 @@ func (c *external) fetchApplicationDataFromInstance(ctx context.Context, instanc
 	if instanceSpec.ApplicationRef != nil {
 		// Fetch from referenced resource
 		application := applicationv1alpha1.Application{}
-		err := c.kube.Get(ctx, instanceSpec.ApplicationRef.ToObjectKey(), &application)
-		if err != nil {
+		if err := c.kube.Get(ctx, instanceSpec.ApplicationRef.ToObjectKey(), &application); err != nil {
 			if kerrors.IsNotFound(err) {
 				return nil, errors.New("binding referenced an instance which referenced an application which does not exist")
 			}
@@ -619,8 +642,7 @@ func (c *external) getDataFromServiceBinding(ctx context.Context, spec v1alpha1.
 	if spec.InstanceRef != nil {
 		// Fetch from referenced resource
 		instance := instancev1alpha1.ServiceInstance{}
-		err := c.kube.Get(ctx, spec.InstanceRef.ToObjectKey(), &instance)
-		if err != nil {
+		if err := c.kube.Get(ctx, spec.InstanceRef.ToObjectKey(), &instance); err != nil {
 			if kerrors.IsNotFound(err) {
 				return bindingData{}, errors.New("binding referenced a service instance which does not exist")
 			}
