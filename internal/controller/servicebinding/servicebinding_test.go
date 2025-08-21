@@ -31,6 +31,7 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 	"github.com/pkg/errors"
 
+	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/test"
@@ -77,6 +78,9 @@ var (
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "basic-binding",
 			Namespace: "basic-namespace",
+			Annotations: map[string]string{
+				meta.AnnotationKeyExternalName: "basicUuid",
+			},
 		},
 		Spec: v1alpha1.ServiceBindingSpec{
 			ForProvider: v1alpha1.ServiceBindingParameters{
@@ -117,7 +121,6 @@ var (
 			ExpiresAt:   time.Now().AddDate(0, 0, 7).Format(util.Iso8601dateFormat), // expires in 7 days
 			RenewBefore: time.Now().AddDate(0, 0, 6).Format(util.Iso8601dateFormat), // renew before 6 days
 		},
-		Uuid: "basicUuid",
 	}
 )
 

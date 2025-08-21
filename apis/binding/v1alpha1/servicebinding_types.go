@@ -51,7 +51,6 @@ type ServiceBindingObservation struct {
 	VolumeMounts             SerializableVolumeMounts      `json:"volume_mounts,omitempty"`
 	SyslogDrainURL           *string                       `json:"syslog_drain_url,omitempty"`
 	Metadata                 *osb.BindingMetadata          `json:"metadata,omitempty"`
-	Uuid                     string                        `json:"uuid,omitempty"`
 	LastOperationState       osb.LastOperationState        `json:"last_operation_state,omitempty"`
 	LastOperationKey         osb.OperationKey              `json:"last_operation_key,omitempty"`
 	LastOperationDescription string                        `json:"last_operation_description,omitempty"`

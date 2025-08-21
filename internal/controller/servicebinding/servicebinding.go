@@ -222,10 +222,18 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return c.handleLastOperationInProgress(ctx, binding, bindingData)
 	}
 
+	// If the resource has no external name, it does not exist
+	externalName := meta.GetExternalName(binding)
+	if externalName == "" {
+		return managed.ExternalObservation{
+			ResourceExists: false,
+		}, nil
+	}
+
 	// get binding from broker
 	req := &osb.GetBindingRequest{
 		InstanceID: bindingData.instanceData.InstanceId,
-		BindingID:  binding.Status.AtProvider.Uuid,
+		BindingID:  externalName,
 	}
 
 	resp, err := c.client.GetBinding(req)
@@ -318,7 +326,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 	// Poll last operation
 	lastOpReq := &osb.BindingLastOperationRequest{
 		InstanceID:          bindingData.instanceData.InstanceId,
-		BindingID:           binding.Status.AtProvider.Uuid,
+		BindingID:           meta.GetExternalName(binding),
 		ServiceID:           &bindingData.instanceData.ServiceId,
 		PlanID:              &bindingData.instanceData.PlanId,
 		OriginatingIdentity: &c.originatingIdentity,
@@ -399,12 +407,16 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
 	}
 
-	newUuid := string(uuid.NewUUID())
-
-	binding.Status.AtProvider.Uuid = newUuid
+	bindingUuid := meta.GetExternalName(binding)
+	// Immediately set the binding's external name with a new UUID if it did not have one,
+	// even before creation is a success
+	if meta.GetExternalName(binding) != "" {
+		bindingUuid := string(uuid.NewUUID())
+		meta.SetExternalName(binding, bindingUuid)
+	}
 
 	bindRequest := osb.BindRequest{
-		BindingID:  newUuid,
+		BindingID:  bindingUuid,
 		InstanceID: bindingData.instanceData.InstanceId,
 		BindResource: &osb.BindResource{
 			AppGUID: &bindingData.applicationData.Guid,
@@ -434,7 +446,6 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		if resp.OperationKey != nil {
 			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
-		binding.Status.AtProvider.Uuid = newUuid
 		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
 		return managed.ExternalCreation{
 			// AdditionalDetails is for logs
@@ -520,7 +531,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	reqUnbind := osb.UnbindRequest{
 		InstanceID:          bindingData.instanceData.InstanceId,
-		BindingID:           binding.Status.AtProvider.Uuid,
+		BindingID:           meta.GetExternalName(binding),
 		AcceptsIncomplete:   true, // TODO based on async configuration
 		ServiceID:           spec.InstanceData.ServiceId,
 		PlanID:              spec.InstanceData.PlanId,
@@ -591,7 +602,6 @@ type finalizerModFn func(metav1.Object, string) bool
 // handleFinalizer runs kube.Update(ctx, obj) if the finalizerMod function returns true with finalizerName
 func (c *external) handleFinalizer(ctx context.Context, obj client.Object, finalizerName string, finalizerMod finalizerModFn) error {
 	// Get referenced service instance, if exists
-	fmt.Printf("\nfname: %s\n---\nobj: %+v\n---\nkube: %+v\n---\n", finalizerName, obj, c.kube)
 	if finalizerMod(obj, finalizerName) {
 		return c.kube.Update(ctx, obj)
 	}
@@ -701,7 +711,7 @@ type responseData struct {
 	Metadata        *osb.BindingMetadata
 }
 
-func (c *external) setResponseDataInStatus(cr *v1alpha1.ServiceBinding, data responseData) error {
+func (c *external) setResponseDataInStatus(binding *v1alpha1.ServiceBinding, data responseData) error {
 	params, err := json.Marshal(data.Parameters)
 	if err != nil {
 		return errors.New(fmt.Sprintf(errParseMarshall, "parameters from response"))
@@ -717,7 +727,7 @@ func (c *external) setResponseDataInStatus(cr *v1alpha1.ServiceBinding, data res
 		return errors.New(fmt.Sprintf(errParseMarshall, "volume mounts from response"))
 	}
 
-	return c.setAtProvider(cr, v1alpha1.ServiceBindingObservation{
+	return c.setAtProvider(binding, v1alpha1.ServiceBindingObservation{
 		// Update attributes from response data
 		Parameters:      common.SerializableParameters(params),
 		RouteServiceURL: data.RouteServiceURL,
@@ -726,11 +736,10 @@ func (c *external) setResponseDataInStatus(cr *v1alpha1.ServiceBinding, data res
 		SyslogDrainURL:  data.SyslogDrainURL,
 		Metadata:        data.Metadata,
 		// Do not change these attributes
-		Uuid:                     cr.Status.AtProvider.Uuid,
-		LastOperationState:       cr.Status.AtProvider.LastOperationState,
-		LastOperationKey:         cr.Status.AtProvider.LastOperationKey,
-		LastOperationDescription: cr.Status.AtProvider.LastOperationDescription,
-		LastOperationPolledTime:  cr.Status.AtProvider.LastOperationPolledTime,
+		LastOperationState:       binding.Status.AtProvider.LastOperationState,
+		LastOperationKey:         binding.Status.AtProvider.LastOperationKey,
+		LastOperationDescription: binding.Status.AtProvider.LastOperationDescription,
+		LastOperationPolledTime:  binding.Status.AtProvider.LastOperationPolledTime,
 	})
 }
 
@@ -740,17 +749,22 @@ func (c *external) setAtProvider(cr *v1alpha1.ServiceBinding, observation v1alph
 	return nil
 }
 
-func (c *external) triggerRotation(cr *v1alpha1.ServiceBinding, data bindingData) (map[string][]byte, error) {
+func (c *external) triggerRotation(binding *v1alpha1.ServiceBinding, data bindingData) (map[string][]byte, error) {
+	newUuid := string(uuid.NewUUID())
+
 	resp, err := c.client.RotateBinding(&osb.RotateBindingRequest{
 		InstanceID:           data.instanceData.InstanceId,
-		BindingID:            string(uuid.NewUUID()),
+		BindingID:            newUuid,
 		AcceptsIncomplete:    true, // TODO use config param for this
-		PredecessorBindingID: cr.Status.AtProvider.Uuid,
+		PredecessorBindingID: meta.GetExternalName(binding),
 		OriginatingIdentity:  &c.originatingIdentity,
 	})
 	if err != nil {
 		return nil, err
 	}
+
+	// If the rotate request had no error, we can safely update the external name
+	meta.SetExternalName(binding, newUuid)
 
 	// We only return ConnectionDetails in case the operation is synchronous.
 	if !resp.Async {
@@ -762,11 +776,11 @@ func (c *external) triggerRotation(cr *v1alpha1.ServiceBinding, data bindingData
 	} else {
 		// In asynchronous workflow, just update LastOperation status
 		if resp.OperationKey != nil {
-			cr.Status.AtProvider.LastOperationKey = *resp.OperationKey
+			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
-		cr.Status.AtProvider.LastOperationState = osb.StateInProgress
-		cr.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
-		cr.Status.AtProvider.LastOperationDescription = ""
+		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
+		binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
+		binding.Status.AtProvider.LastOperationDescription = ""
 	}
 
 	return nil, nil
