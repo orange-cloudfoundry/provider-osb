@@ -422,8 +422,6 @@ spec:
                     type: string
                   syslog_drain_url:
                     type: string
-                  uuid:
-                    type: string
                   volume_mounts:
                     type: string
                 type: object

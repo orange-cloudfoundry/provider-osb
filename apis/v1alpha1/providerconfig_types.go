@@ -35,6 +35,8 @@ type ProviderConfigSpec struct {
 	// TODO add kubebuilder validation annotation for URI format
 	BrokerURL string `json:"broker_url"`
 
+	// TODO add OSB client version here
+
 	// OriginatingIdentityExtraData represents the extra data present in the Originating-Identity header
 	// from the OSB spec.
 	OriginatingIdentityExtraData common.KubernetesOSBOriginatingIdentityExtra `json:"originating_identity_extra_data,omitempty"`

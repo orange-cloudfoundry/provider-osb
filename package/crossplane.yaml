@@ -7,4 +7,4 @@ metadata:
     meta.crossplane.io/source: github.com/orange-cloudfoundry/provider-osb
     meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: |
-      A OSB that can be used to create Crossplane providers.
+      A Crossplane provider that can be used to create OSB service instances and bindings.
