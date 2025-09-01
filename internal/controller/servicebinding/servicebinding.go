@@ -341,7 +341,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 		// so if the resource on the cluster was effectively deleted,
 		// we can remove its finalizer
 		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			if httpErr.StatusCode == 410 && meta.WasDeleted(binding) {
+			if httpErr.StatusCode == http.StatusGone && meta.WasDeleted(binding) {
 				// Remove async finalizer from binding
 				if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
 					return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
@@ -564,6 +564,8 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 			},
 		}, nil
 	}
+
+	// TODO delete referenced instance finalizer
 
 	return managed.ExternalDelete{}, nil
 }
