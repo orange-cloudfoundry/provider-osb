@@ -8,7 +8,7 @@ require (
 	github.com/crossplane/crossplane-runtime v1.20.0
 	github.com/crossplane/crossplane-tools v0.0.0-20240522174801-1ad3d4c87f21
 	github.com/google/go-cmp v0.7.0
-	github.com/orange-cloudfoundry/go-open-service-broker-client/v2 v2.0.0-20250707121130-5fb11b610954
+	github.com/orange-cloudfoundry/go-open-service-broker-client/v2 v2.0.0-20250806131410-a9333cb6ba99
 	github.com/pkg/errors v0.9.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	k8s.io/apiextensions-apiserver v0.33.2
