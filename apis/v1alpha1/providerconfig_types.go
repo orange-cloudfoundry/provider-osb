@@ -36,10 +36,10 @@ type ProviderConfigSpec struct {
 	BrokerURL string `json:"broker_url"`
 
 	// OSB version is used to add error management
-	OSBVersion string
+	OSBVersion string `json:"osb_version,omitempty"`
 
-	//Timeout to replace the default one when creating client
-	Timeout int
+	// Timeout to replace the default one when creating client
+	Timeout int `json:"timeout,omitempty"`
 
 	// OriginatingIdentityExtraData represents the extra data present in the Originating-Identity header
 	// from the OSB spec.
