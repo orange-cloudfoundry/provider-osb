@@ -11,6 +11,7 @@ import (
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -92,12 +93,12 @@ func decodeB64StringToBasicAuthConfig(s string) (osb.BasicAuthConfig, error) {
 
 // TODO: take into account controller.options:
 // - to enable OSB client alpha features
-// - to override timeout
-// - to override OSB spec version (?)
-// -> Use ProviderConfig type parameter instead of brokerUrl and creds
-func NewOsbClient(brokerUrl string, creds []byte) (osb.Client, error) {
+func NewOsbClient(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error) {
 	config := osb.DefaultClientConfiguration()
-	config.URL = brokerUrl
+	config.URL = conf.Spec.BrokerURL
+	apiVersions := osb.APIVersions()
+	config.APIVersion = apiVersions[conf.Spec.OSBVersion]
+	config.TimeoutSeconds = conf.Spec.Timeout
 
 	if len(creds) > 0 {
 		credsString := string(creds)

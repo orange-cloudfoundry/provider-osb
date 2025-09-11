@@ -151,7 +151,7 @@ type connector struct {
 	kube                     client.Client
 	usage                    resource.Tracker
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
-	newServiceFn             func(url string, creds []byte) (osb.Client, error)
+	newServiceFn             func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
 }
 
 // Connect typically produces an ExternalClient by:
@@ -181,7 +181,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	// Build osb client
-	osbclient, err := c.newServiceFn(pc.Spec.BrokerURL, creds)
+	osbclient, err := c.newServiceFn(*pc, creds)
 	if err != nil {
 		return nil, errors.Wrap(err, errNewClient)
 	}
