@@ -35,7 +35,11 @@ type ProviderConfigSpec struct {
 	// TODO add kubebuilder validation annotation for URI format
 	BrokerURL string `json:"broker_url"`
 
-	// TODO add OSB client version here
+	// OSB version is used to add error management
+	OSBVersion string `json:"osb_version,omitempty"`
+
+	// Timeout to replace the default one when creating client
+	Timeout int `json:"timeout,omitempty"`
 
 	// OriginatingIdentityExtraData represents the extra data present in the Originating-Identity header
 	// from the OSB spec.
