@@ -113,6 +113,12 @@ spec:
                   OriginatingIdentityExtraData represents the extra data present in the Originating-Identity header
                   from the OSB spec.
                 x-kubernetes-preserve-unknown-fields: true
+              osb_version:
+                description: OSB version is used to add error management
+                type: string
+              timeout:
+                description: Timeout to replace the default one when creating client
+                type: integer
             required:
             - broker_url
             type: object
