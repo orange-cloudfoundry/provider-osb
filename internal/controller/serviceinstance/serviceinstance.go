@@ -52,13 +52,6 @@ const (
 	errRequestFailed = "OSB %s request failed"
 )
 
-// A NoOpService does nothing.
-type NoOpService struct{}
-
-var (
-	newNoOpService = func(_ []byte) (interface{}, error) { return &NoOpService{}, nil }
-)
-
 // Setup adds a controller that reconciles ServiceInstance managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ServiceInstanceGroupKind)
