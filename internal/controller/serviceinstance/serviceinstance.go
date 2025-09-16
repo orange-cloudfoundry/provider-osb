@@ -19,6 +19,8 @@ package serviceinstance
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"reflect"
 
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -32,8 +34,11 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
+	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 )
 
@@ -43,14 +48,8 @@ const (
 	errGetPC              = "cannot get ProviderConfig"
 	errGetCreds           = "cannot get credentials"
 
-	errNewClient = "cannot create new Service"
-)
-
-// A NoOpService does nothing.
-type NoOpService struct{}
-
-var (
-	newNoOpService = func(_ []byte) (interface{}, error) { return &NoOpService{}, nil }
+	errNewClient     = "cannot create new Service"
+	errRequestFailed = "OSB %s request failed"
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -67,7 +66,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		managed.WithExternalConnecter(&connector{
 			kube:         mgr.GetClient(),
 			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
-			newServiceFn: newNoOpService}),
+			newOsbClient: util.NewOsbClient}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
@@ -84,9 +83,10 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // A connector is expected to produce an ExternalClient when its Connect method
 // is called.
 type connector struct {
-	kube         client.Client
-	usage        resource.Tracker
-	newServiceFn func(creds []byte) (interface{}, error)
+	kube                     client.Client
+	usage                    resource.Tracker
+	newOsbClient             func(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
+	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
 
 // Connect typically produces an ExternalClient by:
@@ -95,32 +95,46 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
+
+	// Assert that the managed resource is of type ServiceInstance.
 	cr, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
 		return nil, errors.New(errNotServiceInstance)
 	}
 
+	// Track usage of the ProviderConfig by this managed resource.
 	if err := c.usage.Track(ctx, mg); err != nil {
 		return nil, errors.Wrap(err, errTrackPCUsage)
 	}
 
+	// Retrieve the ProviderConfig referenced by the managed resource.
 	pc := &apisv1alpha1.ProviderConfig{}
 	if err := c.kube.Get(ctx, types.NamespacedName{Name: cr.GetProviderConfigReference().Name}, pc); err != nil {
 		return nil, errors.Wrap(err, errGetPC)
 	}
 
+	// Extract credentials from the ProviderConfig.
 	cd := pc.Spec.Credentials
-	data, err := resource.CommonCredentialExtractor(ctx, cd.Source, c.kube, cd.CommonCredentialSelectors)
+	creds, err := resource.CommonCredentialExtractor(ctx, cd.Source, c.kube, cd.CommonCredentialSelectors)
 	if err != nil {
 		return nil, errors.Wrap(err, errGetCreds)
 	}
 
-	svc, err := c.newServiceFn(data)
+	// Create a new OSB client using the broker URL and credentials.
+	osbclient, err := c.newOsbClient(*pc, creds)
 	if err != nil {
 		return nil, errors.Wrap(err, errNewClient)
 	}
 
-	return &external{service: svc}, nil
+	// Build originating identity for the OSB client.
+	c.originatingIdentityValue.Extra = &pc.Spec.OriginatingIdentityExtraData
+	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)
+	if err != nil {
+		return nil, errors.Wrap(err, errNewClient)
+	}
+
+	// Return an external client with the OSB client, Kubernetes client, and originating identity.
+	return &external{client: osbclient, kube: c.kube, originatingIdentity: *oid}, nil
 }
 
 // An ExternalClient observes, then either creates, updates, or deletes an
@@ -128,18 +142,53 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	service interface{}
+	client              osb.Client
+	kube                client.Client
+	originatingIdentity osb.OriginatingIdentity
 }
 
+// Observe checks the current state of the external ServiceInstance resource and determines
+// whether it exists and is up to date with the desired managed resource state. It returns
+// an ExternalObservation indicating the existence and up-to-date status of the resource,
+// along with any connection details required to connect to the external resource.
+// If the provided managed resource is not a ServiceInstance, an error is returned.
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+	// Assert that the managed resource is of type ServiceInstance.
+	si, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotServiceInstance)
 	}
 
-	// These fmt statements should be removed in the real implementation.
-	fmt.Printf("Observing: %+v", cr)
+	// Ensure the InstanceId is set in the ServiceInstance spec before proceeding.
+	if si.Spec.ForProvider.InstanceId == "" {
+		return managed.ExternalObservation{}, errors.New("InstanceId must be set in ServiceInstance spec")
+	}
 
+	// Build the GetInstanceRequest using the InstanceId from the ServiceInstance spec.
+	req := &osb.GetInstanceRequest{
+		InstanceID: si.Spec.ForProvider.InstanceId,
+	}
+
+	// Call the OSB client's GetInstance method to retrieve the current state of the instance.
+	instance, err := c.client.GetInstance(req)
+	// Manage errors from the GetInstance call.
+	if err != nil {
+		// Check if the error is an HTTP error returned by the OSB client.
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			// If the HTTP status code is 404, the resource does not exist in the external system.
+			if httpErr.StatusCode == http.StatusNotFound {
+				return managed.ExternalObservation{
+					ResourceExists: false,
+				}, nil
+			}
+		}
+		// For all other errors, wrap and return them as unexpected errors.
+		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetInstance"))
+	}
+	// Compare the desired spec from the ServiceInstance with the actual instance returned from OSB.
+	// This determines if the external resource is up to date with the desired state.
+	upToDate := compareSpecWithOsb(*si, instance)
+	// These fmt statements should be removed in the real implementation.
 	return managed.ExternalObservation{
 		// Return false when the external resource does not exist. This lets
 		// the managed resource reconciler know that it needs to call Create to
@@ -149,11 +198,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		// Return false when the external resource exists, but it not up to date
 		// with the desired managed resource state. This lets the managed
 		// resource reconciler know that it needs to call Update.
-		ResourceUpToDate: true,
+		ResourceUpToDate: upToDate,
 
 		// Return any details that may be required to connect to the external
 		// resource. These will be stored as the connection secret.
-		ConnectionDetails: managed.ConnectionDetails{},
+		ConnectionDetails: managed.ConnectionDetails{
+			"dashboardURL": []byte(instance.DashboardURL),
+		},
 	}, nil
 }
 
@@ -200,4 +251,26 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 
 func (c *external) Disconnect(ctx context.Context) error {
 	return nil
+}
+
+func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceResponse) bool {
+	if instance == nil {
+		return false
+	}
+
+	if si.Spec.ForProvider.PlanId != "" && si.Spec.ForProvider.PlanId != instance.PlanID {
+		return false
+	}
+
+	if len(si.Spec.ForProvider.Parameters) > 0 {
+		if !reflect.DeepEqual(si.Spec.ForProvider.Parameters, instance.Parameters) {
+			return false
+		}
+	}
+
+	if !reflect.DeepEqual(si.Spec.ForProvider.Context, si.Status.AtProvider.Context) {
+		return false
+	}
+
+	return true
 }

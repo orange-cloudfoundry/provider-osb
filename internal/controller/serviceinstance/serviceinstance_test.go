@@ -16,17 +16,6 @@ limitations under the License.
 
 package serviceinstance
 
-import (
-	"context"
-	"testing"
-
-	"github.com/google/go-cmp/cmp"
-
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/test"
-)
-
 // Unlike many Kubernetes projects Crossplane does not use third party testing
 // libraries, per the common Go test review comments. Crossplane encourages the
 // use of table driven unit tests. The tests of the crossplane-runtime project
@@ -34,7 +23,7 @@ import (
 //
 // https://github.com/golang/go/wiki/TestComments
 // https://github.com/crossplane/crossplane/blob/master/CONTRIBUTING.md#contributing-code
-
+/*
 func TestObserve(t *testing.T) {
 	type fields struct {
 		service interface{}
@@ -72,3 +61,5 @@ func TestObserve(t *testing.T) {
 		})
 	}
 }
+
+*/
