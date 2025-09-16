@@ -92,7 +92,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 type connector struct {
 	kube                     client.Client
 	usage                    resource.Tracker
-	newOsbClient             func(url string, creds []byte) (osb.Client, error)
+	newOsbClient             func(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
 
@@ -128,7 +128,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	// Create a new OSB client using the broker URL and credentials.
-	osbclient, err := c.newOsbClient(pc.Spec.BrokerURL, creds)
+	osbclient, err := c.newOsbClient(*pc, creds)
 	if err != nil {
 		return nil, errors.Wrap(err, errNewClient)
 	}
