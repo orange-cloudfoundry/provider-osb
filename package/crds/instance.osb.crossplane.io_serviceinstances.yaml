@@ -131,16 +131,22 @@ spec:
                     type: object
                   instanceId:
                     type: string
+                  organizationGuid:
+                    type: string
                   parameters:
                     type: string
                   planId:
                     type: string
                   serviceId:
                     type: string
+                  spaceGuid:
+                    type: string
                 required:
                 - instanceId
+                - organizationGuid
                 - planId
                 - serviceId
+                - spaceGuid
                 type: object
               managementPolicies:
                 default:
@@ -372,7 +378,13 @@ spec:
                     - namespace
                     - platform
                     type: object
+                  dashboardURL:
+                    type: string
                   instanceId:
+                    type: string
+                  operation:
+                    type: string
+                  organizationGuid:
                     type: string
                   parameters:
                     type: string
@@ -380,10 +392,16 @@ spec:
                     type: string
                   serviceId:
                     type: string
+                  spaceGuid:
+                    type: string
+                  state:
+                    type: string
                 required:
                 - instanceId
+                - organizationGuid
                 - planId
                 - serviceId
+                - spaceGuid
                 type: object
               conditions:
                 description: Conditions of the resource.

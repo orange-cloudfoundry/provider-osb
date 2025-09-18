@@ -53,15 +53,16 @@ type ApplicationData struct {
 
 // Instance Data represents the schema for a ServiceInstance MR
 type InstanceData struct {
-	ApplicationRef  *NamespacedName        `json:"application,omitempty"`
-	ApplicationData *ApplicationData       `json:"applicationData,omitempty"`
-	InstanceId      string                 `json:"instanceId"`
-	PlanId          string                 `json:"planId"`
-	ServiceId       string                 `json:"serviceId"`
-	Context         KubernetesOSBContext   `json:"context,omitempty"`
-	Parameters      SerializableParameters `json:"parameters,omitempty"`
+	ApplicationRef   *NamespacedName        `json:"application,omitempty"`
+	ApplicationData  *ApplicationData       `json:"applicationData,omitempty"`
+	InstanceId       string                 `json:"instanceId"`
+	PlanId           string                 `json:"planId"`
+	ServiceId        string                 `json:"serviceId"`
+	Context          KubernetesOSBContext   `json:"context,omitempty"`
+	Parameters       SerializableParameters `json:"parameters,omitempty"`
+	OrganizationGuid string                 `json:"organizationGuid"`
+	SpaceGuid        string                 `json:"spaceGuid"`
 }
-
 type SerializableParameters string
 
 func (v *SerializableParameters) ToParameters() (map[string]any, error) {

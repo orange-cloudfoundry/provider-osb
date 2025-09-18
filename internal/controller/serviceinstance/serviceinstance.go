@@ -34,6 +34,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
@@ -50,6 +51,7 @@ const (
 
 	errNewClient     = "cannot create new Service"
 	errRequestFailed = "OSB %s request failed"
+	errParseMarshall = "error while marshalling or parsing %s"
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -209,18 +211,56 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 }
 
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+	// Assert that the managed resource is of type ServiceInstance.
+	si, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errNotServiceInstance)
 	}
 
-	fmt.Printf("Creating: %+v", cr)
+	// Convert parameters from the ServiceInstance spec to the format required by OSB.
+	params, err := si.Spec.ForProvider.Parameters.ToParameters()
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+	}
 
-	return managed.ExternalCreation{
-		// Optionally return any details that may be required to connect to the
-		// external resource. These will be stored as the connection secret.
-		ConnectionDetails: managed.ConnectionDetails{},
-	}, nil
+	// Build the ProvisionRequest for the OSB client using the ServiceInstance spec.
+	req := &osb.ProvisionRequest{
+		InstanceID:        si.Spec.ForProvider.InstanceId,
+		ServiceID:         si.Spec.ForProvider.ServiceId,
+		PlanID:            si.Spec.ForProvider.PlanId,
+		OrganizationGUID:  si.Spec.ForProvider.OrganizationGuid,
+		SpaceGUID:         si.Spec.ForProvider.SpaceGuid,
+		Parameters:        params,
+		AcceptsIncomplete: true,
+		Context:           util.StructToMap(si.Spec.ForProvider.Context),
+	}
+
+	// Call the OSB client's ProvisionInstance method to create the external resource.
+	resp, err := c.client.ProvisionInstance(req)
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "ProvisionInstance"))
+	}
+
+	// Update the ServiceInstance status based on the response from the OSB client.
+	if resp.OperationKey != nil {
+		si.Status.SetConditions(xpv1.Creating())
+		si.Status.AtProvider.State = "provisioning"
+		if resp.OperationKey != nil {
+			opStr := string(*resp.OperationKey)
+			si.Status.AtProvider.Operation = &opStr
+		} else {
+			si.Status.AtProvider.Operation = nil
+		}
+	} else {
+		si.Status.SetConditions(xpv1.Available())
+		si.Status.AtProvider.State = "Ready"
+	}
+
+	// Set the dashboard URL and context in the ServiceInstance status.
+	si.Status.AtProvider.DashboardURL = resp.DashboardURL
+	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
+
+	return managed.ExternalCreation{}, nil
 }
 
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
