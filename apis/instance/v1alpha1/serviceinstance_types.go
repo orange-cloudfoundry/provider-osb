@@ -33,6 +33,9 @@ type ServiceInstanceObservation struct {
 	ApplicationData     *common.ApplicationData `json:"applicationData,omitempty"`
 	common.InstanceData `json:",inline"`
 	Context             common.KubernetesOSBContext `json:"context,omitempty"`
+	DashboardURL        *string                     `json:"dashboardURL,omitempty"`
+	Operation           *string                     `json:"operation,omitempty"`
+	State               string                      `json:"state,omitempty"`
 }
 
 // A ServiceInstanceSpec defines the desired state of a ServiceInstance.
