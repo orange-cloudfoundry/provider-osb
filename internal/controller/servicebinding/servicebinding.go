@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	v1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -51,6 +52,8 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 )
 
 const (
@@ -72,6 +75,7 @@ const (
 	errGetDataFromBinding     = "cannot get data from service binding"
 	errRequestFailed          = "OSB %s request failed"
 	errParseMarshall          = "error while marshalling or parsing %s"
+	errBindingExpired         = "binding has expired at %s"
 
 	bindingMetadataPrefix = "binding." + util.MetadataPrefix
 
@@ -109,7 +113,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 				UID:      mgr.GetConfig().Impersonate.UID,
 				Groups:   mgr.GetConfig().Impersonate.Groups,
 			},
-			newServiceFn: util.NewOsbClient,
+			newServiceFn:  util.NewOsbClient,
+			rotateBinding: o.Features.Enabled(features.EnableAlphaRotateBindings),
 		}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
@@ -152,6 +157,7 @@ type connector struct {
 	usage                    resource.Tracker
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 	newServiceFn             func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
+	rotateBinding            bool
 }
 
 // Connect typically produces an ExternalClient by:
@@ -193,7 +199,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errNewClient)
 	}
 
-	return &external{client: osbclient, kube: c.kube, originatingIdentity: *oid}, nil
+	return &external{client: osbclient, kube: c.kube, originatingIdentity: *oid, rotateBinding: c.rotateBinding}, nil
 }
 
 // An ExternalClient observes, then either creates, updates, or deletes an
@@ -204,6 +210,7 @@ type external struct {
 	client              osb.Client
 	kube                client.Client
 	originatingIdentity osb.OriginatingIdentity
+	rotateBinding       bool
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
@@ -282,18 +289,40 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time"))
 		}
-		// TODO do it if an auto renew feature flag is enabled
-		// else issue a warning on the resource if should be renewed, and different warning if expired
 
 		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
 		if renewBeforeTime.Before(time.Now()) {
-			return managed.ExternalObservation{
-				ResourceExists:   true,
-				ResourceUpToDate: false,
-			}, nil
+			expireAtTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.ExpiresAt)
+			if err != nil {
+				return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "expireAt time"))
+			}
+			expired := false
+			if expireAtTime.Before(time.Now()) {
+				cond := xpv1.Condition{
+					Type:    xpv1.TypeHealthy,
+					Status:  v1.ConditionFalse,
+					Message: fmt.Sprintf("warning : the binding has expired %s", expireAtTime.Format(util.Iso8601dateFormat)),
+				}
+				binding.SetConditions(cond)
+				expired = true
+			}
+			if c.rotateBinding {
+				return managed.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: false,
+				}, nil
+			} else {
+				if !expired {
+					cond := xpv1.Condition{
+						Type:    xpv1.TypeHealthy,
+						Status:  v1.ConditionFalse,
+						Message: fmt.Sprintf("warning : the binding will expire soon %s", expireAtTime.Format(util.Iso8601dateFormat)),
+					}
+					binding.SetConditions(cond)
+				}
+			}
 		}
 	}
-
 	// Compare observed to response
 	// If there is a diff, return an error, since bindings are not updatable
 	isEqual, err := compareToObserved(binding)

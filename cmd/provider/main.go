@@ -58,9 +58,10 @@ func main() {
 
 		maxReconcileRate = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("10").Int()
 
-		namespace                  = app.Flag("namespace", "Namespace used to set as default scope in default secret store config.").Default("crossplane-system").Envar("POD_NAMESPACE").String()
-		enableExternalSecretStores = app.Flag("enable-external-secret-stores", "Enable support for ExternalSecretStores.").Default("false").Envar("ENABLE_EXTERNAL_SECRET_STORES").Bool()
-		enableManagementPolicies   = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("false").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
+		namespace                     = app.Flag("namespace", "Namespace used to set as default scope in default secret store config.").Default("crossplane-system").Envar("POD_NAMESPACE").String()
+		enableExternalSecretStores    = app.Flag("enable-external-secret-stores", "Enable support for ExternalSecretStores.").Default("false").Envar("ENABLE_EXTERNAL_SECRET_STORES").Bool()
+		enableManagementPolicies      = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("false").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
+		enableAutomaticRotateBindings = app.Flag("enable-automatic-rotate-bindings", "Enable automatic Rotate Bindings.").Default("false").Envar("ENABLE_AUTOMATIC_ROTATE_BINDINGS").Bool()
 	)
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -140,6 +141,11 @@ func main() {
 	if *enableManagementPolicies {
 		o.Features.Enable(features.EnableAlphaManagementPolicies)
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaManagementPolicies)
+	}
+
+	if *enableAutomaticRotateBindings {
+		o.Features.Enable(features.EnableAlphaRotateBindings)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaRotateBindings)
 	}
 
 	kingpin.FatalIfError(osbprovider.Setup(mgr, o), "Cannot setup OSB controllers")
