@@ -29,4 +29,8 @@ const (
 	// Management Policies. See the below design for more details.
 	// https://github.com/crossplane/crossplane/blob/master/design/design-doc-observe-only-resources.md
 	EnableAlphaManagementPolicies feature.Flag = "EnableAlphaManagementPolicies"
+
+	// EnableAlphaRotateBindings enables alpha support for
+	// Rotating Bindings.
+	EnableAlphaRotateBindings feature.Flag = "EnableAlphaRotateBindings"
 )
