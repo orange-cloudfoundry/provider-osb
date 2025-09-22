@@ -60,7 +60,7 @@ type ServiceBindingObservation struct {
 type SerializableVolumeMounts string
 
 func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) {
-	if v == nil || string([]byte(*v)) == "" {
+	if v == nil || len([]byte(*v)) == 0 {
 		return &[]osb.VolumeMount{}, nil
 	}
 	res := &[]osb.VolumeMount{}
@@ -71,7 +71,7 @@ func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) 
 type SerializableEndpoints string
 
 func (v *SerializableEndpoints) ToEndpoints() (*[]osb.Endpoint, error) {
-	if v == nil || string([]byte(*v)) == "" {
+	if v == nil || len([]byte(*v)) == 0 {
 		return &[]osb.Endpoint{}, nil
 	}
 	res := &[]osb.Endpoint{}
@@ -136,4 +136,4 @@ func init() {
 	SchemeBuilder.Register(&ServiceBinding{}, &ServiceBindingList{})
 }
 
-// TODO add GetName() funciton returning the observed uuid
+// TODO add GetName() function returning the observed uuid

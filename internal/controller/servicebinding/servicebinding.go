@@ -85,7 +85,7 @@ const (
 
 var (
 	// TODO: actually implement an no op client
-	// The osb fake client returns errors for every function which is not explicitely implemented
+	// The osb fake client returns errors for every function which is not explicitly implemented
 	// so we don't want to use it here
 	newNoOpService = func(_ []byte) (osb.Client, error) {
 		return osb.NewClient(&osb.ClientConfiguration{
@@ -311,15 +311,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 					ResourceExists:   true,
 					ResourceUpToDate: false,
 				}, nil
-			} else {
-				if !expired {
-					cond := xpv1.Condition{
-						Type:    xpv1.TypeHealthy,
-						Status:  v1.ConditionFalse,
-						Message: fmt.Sprintf("warning : the binding will expire soon %s", expireAtTime.Format(util.Iso8601dateFormat)),
-					}
-					binding.SetConditions(cond)
+			} else if !expired {
+				cond := xpv1.Condition{
+					Type:    xpv1.TypeHealthy,
+					Status:  v1.ConditionFalse,
+					Message: fmt.Sprintf("warning : the binding will expire soon %s", expireAtTime.Format(util.Iso8601dateFormat)),
 				}
+				binding.SetConditions(cond)
 			}
 		}
 	}
@@ -379,7 +377,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 				if err = c.removeRefFinalizer(ctx, binding); err != nil {
 					return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
 				}
-				// return resourceexists: false explicitely
+				// return resourceexists: false explicitly
 				// This will trigger the removal of crossplane runtime's finalizers
 				return managed.ExternalObservation{
 					ResourceExists: false,
@@ -496,7 +494,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from resource status"))
 	}
 
-	c.setResponseDataInStatus(binding, responseData{
+	err = c.setResponseDataInStatus(binding, responseData{
 		Parameters:      params,
 		Endpoints:       resp.Endpoints,
 		VolumeMounts:    resp.VolumeMounts,
@@ -504,6 +502,10 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		SyslogDrainURL:  resp.SyslogDrainURL,
 		Metadata:        resp.Metadata,
 	})
+
+	if err != nil {
+		return managed.ExternalCreation{}, err
+	}
 
 	return managed.ExternalCreation{
 		ConnectionDetails: creds,

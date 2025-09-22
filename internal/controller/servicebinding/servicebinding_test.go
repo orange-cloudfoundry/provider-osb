@@ -124,10 +124,12 @@ var (
 	}
 )
 
+/*
 func withMetadata(binding v1alpha1.ServiceBinding, metadata *osb.BindingMetadata) *v1alpha1.ServiceBinding {
 	binding.Status.AtProvider.Metadata = metadata
 	return &binding
 }
+*/
 
 func withLastOperationState(binding v1alpha1.ServiceBinding, state osb.LastOperationState) *v1alpha1.ServiceBinding {
 	binding.Status.AtProvider.LastOperationState = state
