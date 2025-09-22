@@ -211,6 +211,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 }
 
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
+
 	// Assert that the managed resource is of type ServiceInstance.
 	si, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
@@ -220,7 +221,13 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	// Convert parameters from the ServiceInstance spec to the format required by OSB.
 	params, err := si.Spec.ForProvider.Parameters.ToParameters()
 	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceInstance"))
+	}
+
+	// Convert context from the ServiceInstance spec to a map for OSB.
+	context, err := si.Spec.ForProvider.Context.ToMap()
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to map from ServiceInstance"))
 	}
 
 	// Build the ProvisionRequest for the OSB client using the ServiceInstance spec.
@@ -232,33 +239,34 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		SpaceGUID:         si.Spec.ForProvider.SpaceGuid,
 		Parameters:        params,
 		AcceptsIncomplete: true,
-		Context:           util.StructToMap(si.Spec.ForProvider.Context),
+		Context:           context,
 	}
-
 	// Call the OSB client's ProvisionInstance method to create the external resource.
 	resp, err := c.client.ProvisionInstance(req)
 	if err != nil {
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "ProvisionInstance"))
 	}
 
+	// Always update the context, DashboardURL in the status to reflect the spec.
+	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
+	si.Status.AtProvider.DashboardURL = resp.DashboardURL
 	// Update the ServiceInstance status based on the response from the OSB client.
-	if resp.OperationKey != nil {
+	if resp.Async {
 		si.Status.SetConditions(xpv1.Creating())
-		si.Status.AtProvider.State = "provisioning"
+		si.Status.AtProvider.LastOperationState = osb.StateInProgress
 		if resp.OperationKey != nil {
-			opStr := string(*resp.OperationKey)
-			si.Status.AtProvider.Operation = &opStr
-		} else {
-			si.Status.AtProvider.Operation = nil
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
+		return managed.ExternalCreation{
+			// AdditionalDetails is for logs
+			AdditionalDetails: managed.AdditionalDetails{
+				"async": "true",
+			},
+		}, nil
 	} else {
 		si.Status.SetConditions(xpv1.Available())
-		si.Status.AtProvider.State = "Ready"
+		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
 	}
-
-	// Set the dashboard URL and context in the ServiceInstance status.
-	si.Status.AtProvider.DashboardURL = resp.DashboardURL
-	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
 
 	return managed.ExternalCreation{}, nil
 }
