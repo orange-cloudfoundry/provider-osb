@@ -24,6 +24,8 @@ import (
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+
+	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
 
 // ServiceInstanceObservation are the observable fields of a ServiceInstance.
@@ -34,8 +36,8 @@ type ServiceInstanceObservation struct {
 	common.InstanceData `json:",inline"`
 	Context             common.KubernetesOSBContext `json:"context,omitempty"`
 	DashboardURL        *string                     `json:"dashboardURL,omitempty"`
-	Operation           *string                     `json:"operation,omitempty"`
-	State               string                      `json:"state,omitempty"`
+	LastOperationState  osb.LastOperationState      `json:"last_operation_state,omitempty"`
+	LastOperationKey    osb.OperationKey            `json:"last_operation_key,omitempty"`
 }
 
 // A ServiceInstanceSpec defines the desired state of a ServiceInstance.
