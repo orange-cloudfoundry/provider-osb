@@ -153,31 +153,3 @@ type NoOpOsbClient fake.FakeClient
 // func (c *NoOpOsbClient) GetCatalog() (*osb.CatalogResponse, error) {
 // 	return nil, nil
 // }
-
-// StructToMap convertit une struct en map[string]interface{}
-func StructToMap(obj interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-	val := reflect.ValueOf(obj)
-	typ := reflect.TypeOf(obj)
-
-	// Vérifie si l'objet est une struct
-	if val.Kind() == reflect.Ptr {
-		val = val.Elem()
-		typ = typ.Elem()
-	}
-	if val.Kind() != reflect.Struct {
-		return result
-	}
-
-	for i := 0; i < val.NumField(); i++ {
-		field := val.Field(i)
-		fieldType := typ.Field(i)
-		// Utilise le tag json si disponible, sinon le nom du champ
-		key := fieldType.Tag.Get("json")
-		if key == "" {
-			key = fieldType.Name
-		}
-		result[key] = field.Interface()
-	}
-	return result
-}
