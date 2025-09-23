@@ -187,9 +187,14 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		// For all other errors, wrap and return them as unexpected errors.
 		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetInstance"))
 	}
+	// Parse parameters from the ServiceInstance spec for comparison.
+	params, err := si.Spec.ForProvider.Parameters.ToParameters()
+	if err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceInstance"))
+	}
 	// Compare the desired spec from the ServiceInstance with the actual instance returned from OSB.
 	// This determines if the external resource is up to date with the desired state.
-	upToDate := compareSpecWithOsb(*si, instance)
+	upToDate := compareSpecWithOsb(*si, instance, params)
 	// These fmt statements should be removed in the real implementation.
 	return managed.ExternalObservation{
 		// Return false when the external resource does not exist. This lets
@@ -257,17 +262,14 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		if resp.OperationKey != nil {
 			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
-		return managed.ExternalCreation{
-			// AdditionalDetails is for logs
-			AdditionalDetails: managed.AdditionalDetails{
-				"async": "true",
-			},
-		}, nil
 	} else {
 		si.Status.SetConditions(xpv1.Available())
 		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
 	}
-
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, si); err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, "cannot update ServiceInstance status")
+	}
 	return managed.ExternalCreation{}, nil
 }
 
@@ -301,7 +303,7 @@ func (c *external) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceResponse) bool {
+func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceResponse, params map[string]any) bool {
 	if instance == nil {
 		return false
 	}
@@ -311,7 +313,7 @@ func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceRe
 	}
 
 	if len(si.Spec.ForProvider.Parameters) > 0 {
-		if !reflect.DeepEqual(si.Spec.ForProvider.Parameters, instance.Parameters) {
+		if !reflect.DeepEqual(params, instance.Parameters) {
 			return false
 		}
 	}
