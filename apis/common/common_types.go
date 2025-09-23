@@ -118,12 +118,12 @@ type KubernetesOSBOriginatingIdentityValue struct {
 
 // ToMap converts the KubernetesOSBContext into a map[string]interface{}.
 func (c *KubernetesOSBContext) ToMap() (map[string]interface{}, error) {
-	//Convert struct - > json
+	// Convert struct - > json
 	b, err := json.Marshal(c)
 	if err != nil {
 		return nil, err
 	}
-	//Convert json -> map[string]interface{}
+	// Convert json -> map[string]interface{}
 	var res map[string]interface{}
 	err = json.Unmarshal(b, &res)
 	return res, err
