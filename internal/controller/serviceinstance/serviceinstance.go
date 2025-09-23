@@ -187,14 +187,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		// For all other errors, wrap and return them as unexpected errors.
 		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetInstance"))
 	}
-	// Parse parameters from the ServiceInstance spec for comparison.
-	params, err := si.Spec.ForProvider.Parameters.ToParameters()
-	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceInstance"))
-	}
+
 	// Compare the desired spec from the ServiceInstance with the actual instance returned from OSB.
 	// This determines if the external resource is up to date with the desired state.
-	upToDate := compareSpecWithOsb(*si, instance, params)
+	upToDate, err := compareSpecWithOsb(*si, instance)
+	if err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, "cannot compare ServiceInstance spec with OSB instance")
+	}
 	// These fmt statements should be removed in the real implementation.
 	return managed.ExternalObservation{
 		// Return false when the external resource does not exist. This lets
@@ -303,24 +302,30 @@ func (c *external) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceResponse, params map[string]any) bool {
+func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceResponse) (bool, error) {
 	if instance == nil {
-		return false
+		return false, nil
 	}
 
 	if si.Spec.ForProvider.PlanId != "" && si.Spec.ForProvider.PlanId != instance.PlanID {
-		return false
+		return false, nil
 	}
 
 	if len(si.Spec.ForProvider.Parameters) > 0 {
+		// Parse parameters from the ServiceInstance spec for comparison.
+		params, err := si.Spec.ForProvider.Parameters.ToParameters()
+		if err != nil {
+			return false, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to map from ServiceInstance"))
+		}
+
 		if !reflect.DeepEqual(params, instance.Parameters) {
-			return false
+			return false, nil
 		}
 	}
 
 	if !reflect.DeepEqual(si.Spec.ForProvider.Context, si.Status.AtProvider.Context) {
-		return false
+		return false, nil
 	}
 
-	return true
+	return true, nil
 }
