@@ -131,16 +131,22 @@ spec:
                     type: object
                   instanceId:
                     type: string
+                  organizationGuid:
+                    type: string
                   parameters:
                     type: string
                   planId:
                     type: string
                   serviceId:
                     type: string
+                  spaceGuid:
+                    type: string
                 required:
                 - instanceId
+                - organizationGuid
                 - planId
                 - serviceId
+                - spaceGuid
                 type: object
               managementPolicies:
                 default:
@@ -372,7 +378,21 @@ spec:
                     - namespace
                     - platform
                     type: object
+                  dashboardURL:
+                    type: string
                   instanceId:
+                    type: string
+                  last_operation_key:
+                    description: |-
+                      OperationKey is an extra identifier from the broker in order to provide extra
+                      identifiers for asynchronous operations.
+                    type: string
+                  last_operation_state:
+                    description: |-
+                      LastOperationState is a typedef representing the state of an ongoing
+                      operation for an instance.
+                    type: string
+                  organizationGuid:
                     type: string
                   parameters:
                     type: string
@@ -380,10 +400,14 @@ spec:
                     type: string
                   serviceId:
                     type: string
+                  spaceGuid:
+                    type: string
                 required:
                 - instanceId
+                - organizationGuid
                 - planId
                 - serviceId
+                - spaceGuid
                 type: object
               conditions:
                 description: Conditions of the resource.

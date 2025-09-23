@@ -53,15 +53,16 @@ type ApplicationData struct {
 
 // Instance Data represents the schema for a ServiceInstance MR
 type InstanceData struct {
-	ApplicationRef  *NamespacedName        `json:"application,omitempty"`
-	ApplicationData *ApplicationData       `json:"applicationData,omitempty"`
-	InstanceId      string                 `json:"instanceId"`
-	PlanId          string                 `json:"planId"`
-	ServiceId       string                 `json:"serviceId"`
-	Context         KubernetesOSBContext   `json:"context,omitempty"`
-	Parameters      SerializableParameters `json:"parameters,omitempty"`
+	ApplicationRef   *NamespacedName        `json:"application,omitempty"`
+	ApplicationData  *ApplicationData       `json:"applicationData,omitempty"`
+	InstanceId       string                 `json:"instanceId"`
+	PlanId           string                 `json:"planId"`
+	ServiceId        string                 `json:"serviceId"`
+	Context          KubernetesOSBContext   `json:"context,omitempty"`
+	Parameters       SerializableParameters `json:"parameters,omitempty"`
+	OrganizationGuid string                 `json:"organizationGuid"`
+	SpaceGuid        string                 `json:"spaceGuid"`
 }
-
 type SerializableParameters string
 
 func (v *SerializableParameters) ToParameters() (map[string]any, error) {
@@ -113,4 +114,17 @@ type KubernetesOSBOriginatingIdentityValue struct {
 	UID      string                                 `json:"uid"`
 	Groups   []string                               `json:"groups"`
 	Extra    *KubernetesOSBOriginatingIdentityExtra `json:"extra"`
+}
+
+// ToMap converts the KubernetesOSBContext into a map[string]interface{}.
+func (c *KubernetesOSBContext) ToMap() (map[string]interface{}, error) {
+	// Convert struct - > json
+	b, err := json.Marshal(c)
+	if err != nil {
+		return nil, err
+	}
+	// Convert json -> map[string]interface{}
+	var res map[string]interface{}
+	err = json.Unmarshal(b, &res)
+	return res, err
 }

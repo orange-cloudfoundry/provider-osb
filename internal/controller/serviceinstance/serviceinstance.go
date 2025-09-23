@@ -34,6 +34,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
@@ -50,6 +51,7 @@ const (
 
 	errNewClient     = "cannot create new Service"
 	errRequestFailed = "OSB %s request failed"
+	errParseMarshall = "error while marshalling or parsing %s"
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -185,9 +187,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		// For all other errors, wrap and return them as unexpected errors.
 		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetInstance"))
 	}
+
 	// Compare the desired spec from the ServiceInstance with the actual instance returned from OSB.
 	// This determines if the external resource is up to date with the desired state.
-	upToDate := compareSpecWithOsb(*si, instance)
+	upToDate, err := compareSpecWithOsb(*si, instance)
+	if err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, "cannot compare ServiceInstance spec with OSB instance")
+	}
 	// These fmt statements should be removed in the real implementation.
 	return managed.ExternalObservation{
 		// Return false when the external resource does not exist. This lets
@@ -209,18 +215,61 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 }
 
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+
+	// Assert that the managed resource is of type ServiceInstance.
+	si, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
 		return managed.ExternalCreation{}, errors.New(errNotServiceInstance)
 	}
 
-	fmt.Printf("Creating: %+v", cr)
+	// Convert parameters from the ServiceInstance spec to the format required by OSB.
+	params, err := si.Spec.ForProvider.Parameters.ToParameters()
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceInstance"))
+	}
 
-	return managed.ExternalCreation{
-		// Optionally return any details that may be required to connect to the
-		// external resource. These will be stored as the connection secret.
-		ConnectionDetails: managed.ConnectionDetails{},
-	}, nil
+	// Convert context from the ServiceInstance spec to a map for OSB.
+	context, err := si.Spec.ForProvider.Context.ToMap()
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to map from ServiceInstance"))
+	}
+
+	// Build the ProvisionRequest for the OSB client using the ServiceInstance spec.
+	req := &osb.ProvisionRequest{
+		InstanceID:        si.Spec.ForProvider.InstanceId,
+		ServiceID:         si.Spec.ForProvider.ServiceId,
+		PlanID:            si.Spec.ForProvider.PlanId,
+		OrganizationGUID:  si.Spec.ForProvider.OrganizationGuid,
+		SpaceGUID:         si.Spec.ForProvider.SpaceGuid,
+		Parameters:        params,
+		AcceptsIncomplete: true,
+		Context:           context,
+	}
+	// Call the OSB client's ProvisionInstance method to create the external resource.
+	resp, err := c.client.ProvisionInstance(req)
+	if err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "ProvisionInstance"))
+	}
+
+	// Always update the context, DashboardURL in the status to reflect the spec.
+	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
+	si.Status.AtProvider.DashboardURL = resp.DashboardURL
+	// Update the ServiceInstance status based on the response from the OSB client.
+	if resp.Async {
+		si.Status.SetConditions(xpv1.Creating())
+		si.Status.AtProvider.LastOperationState = osb.StateInProgress
+		if resp.OperationKey != nil {
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+	} else {
+		si.Status.SetConditions(xpv1.Available())
+		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
+	}
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, si); err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, "cannot update ServiceInstance status")
+	}
+	return managed.ExternalCreation{}, nil
 }
 
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
@@ -253,24 +302,30 @@ func (c *external) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceResponse) bool {
+func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceResponse) (bool, error) {
 	if instance == nil {
-		return false
+		return false, nil
 	}
 
 	if si.Spec.ForProvider.PlanId != "" && si.Spec.ForProvider.PlanId != instance.PlanID {
-		return false
+		return false, nil
 	}
 
 	if len(si.Spec.ForProvider.Parameters) > 0 {
-		if !reflect.DeepEqual(si.Spec.ForProvider.Parameters, instance.Parameters) {
-			return false
+		// Parse parameters from the ServiceInstance spec for comparison.
+		params, err := si.Spec.ForProvider.Parameters.ToParameters()
+		if err != nil {
+			return false, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to map from ServiceInstance"))
+		}
+
+		if !reflect.DeepEqual(params, instance.Parameters) {
+			return false, nil
 		}
 	}
 
 	if !reflect.DeepEqual(si.Spec.ForProvider.Context, si.Status.AtProvider.Context) {
-		return false
+		return false, nil
 	}
 
-	return true
+	return true, nil
 }

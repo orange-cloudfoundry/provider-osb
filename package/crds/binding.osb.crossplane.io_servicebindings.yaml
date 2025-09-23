@@ -202,16 +202,22 @@ spec:
                         type: object
                       instanceId:
                         type: string
+                      organizationGuid:
+                        type: string
                       parameters:
                         type: string
                       planId:
                         type: string
                       serviceId:
                         type: string
+                      spaceGuid:
+                        type: string
                     required:
                     - instanceId
+                    - organizationGuid
                     - planId
                     - serviceId
+                    - spaceGuid
                     type: object
                   parameters:
                     type: string
