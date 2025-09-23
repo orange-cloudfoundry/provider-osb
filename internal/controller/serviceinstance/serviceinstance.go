@@ -273,13 +273,50 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 }
 
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+
+	si, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
 		return managed.ExternalUpdate{}, errors.New(errNotServiceInstance)
 	}
+	// Convert parameters from the ServiceInstance spec to the format required by OSB.
+	params, err := si.Spec.ForProvider.Parameters.ToParameters()
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+	}
+	// Convert context from the ServiceInstance spec to a map for OSB.
+	context, err := si.Spec.ForProvider.Context.ToMap()
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to map from ServiceInstance"))
+	}
+	// Build the UpdateInstanceRequest for the OSB client using the ServiceInstance spec.
+	req := &osb.UpdateInstanceRequest{
+		InstanceID:        si.Spec.ForProvider.InstanceId,
+		ServiceID:         si.Spec.ForProvider.ServiceId,
+		PlanID:            &si.Spec.ForProvider.PlanId,
+		Parameters:        params,
+		AcceptsIncomplete: true,
+		Context:           context,
+	}
 
-	fmt.Printf("Updating: %+v", cr)
-
+	resp, err := c.client.UpdateInstance(req)
+	if err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "UpdateInstance"))
+	}
+	// Always update the context, DashboardURL in the status to reflect the spec.
+	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
+	si.Status.AtProvider.DashboardURL = resp.DashboardURL
+	if resp.Async {
+		si.Status.AtProvider.LastOperationState = osb.StateInProgress
+		if resp.OperationKey != nil {
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+	} else {
+		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
+	}
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, si); err != nil {
+		return managed.ExternalUpdate{}, errors.Wrap(err, "cannot update ServiceInstance status")
+	}
 	return managed.ExternalUpdate{
 		// Optionally return any details that may be required to connect to the
 		// external resource. These will be stored as the connection secret.
