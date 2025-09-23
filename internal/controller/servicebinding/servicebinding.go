@@ -337,7 +337,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Doing so in the Observe() function enable adding a ServiceInstance
 	// resource after the creation of the ServiceBinding.
 	if err = c.addRefFinalizer(ctx, binding); err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, "error while adding finalizer to referenced instance")
+		return managed.ExternalObservation{}, errors.Wrap(err, errAddReferenceFinalizer)
 	}
 
 	return managed.ExternalObservation{
@@ -375,7 +375,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 				}
 				// Remove reference finalizer from referenced ServiceInstance
 				if err = c.removeRefFinalizer(ctx, binding); err != nil {
-					return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
+					return managed.ExternalObservation{}, errors.Wrap(err, errRemoveReferenceFinalizer)
 				}
 				// return resourceexists: false explicitly
 				// This will trigger the removal of crossplane runtime's finalizers
@@ -418,20 +418,10 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	spec := binding.Spec.ForProvider
 
-	// Convert spec.Context of type common.KubernetesOSBContext to map[string]any
-	requestContextBytes, err := json.Marshal(spec.Context)
+	// Convert spec.Context and spec.Parameters of type common.KubernetesOSBContext to map[string]any
+	requestContext, requestParams, err := convertSpecsData(spec)
 	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context from ServiceBinding"))
-	}
-	var requestContext map[string]any
-	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to bytes from ServiceBinding"))
-	}
-
-	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
-	var requestParams map[string]any
-	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+		return managed.ExternalCreation{}, err
 	}
 
 	bindingUuid := meta.GetExternalName(binding)
@@ -459,27 +449,9 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Request binding creation
-	resp, err := c.client.Bind(&bindRequest)
-
-	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind"))
-	}
-	if resp == nil {
-		return managed.ExternalCreation{}, fmt.Errorf(errNoResponse, bindRequest)
-	}
-
-	if resp.Async {
-		// If the creation was asynchronous, add an annotation
-		if resp.OperationKey != nil {
-			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
-		return managed.ExternalCreation{
-			// AdditionalDetails is for logs
-			AdditionalDetails: managed.AdditionalDetails{
-				"async": "true",
-			},
-		}, nil
+	resp, ec, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
+	if shouldReturn {
+		return ec, err
 	}
 
 	creds, err := getCredsFromResponse(resp)
@@ -510,6 +482,50 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	return managed.ExternalCreation{
 		ConnectionDetails: creds,
 	}, nil
+}
+
+func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alpha1.ServiceBinding) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
+	resp, err := c.client.Bind(&bindRequest)
+
+	if err != nil {
+		return nil, managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind")), true
+	}
+	if resp == nil {
+		return nil, managed.ExternalCreation{}, fmt.Errorf(errNoResponse, bindRequest), true
+	}
+
+	if resp.Async {
+		// If the creation was asynchronous, add an annotation
+		if resp.OperationKey != nil {
+			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
+		return nil, managed.ExternalCreation{
+			// AdditionalDetails is for logs
+			AdditionalDetails: managed.AdditionalDetails{
+				"async": "true",
+			},
+		}, nil, true
+	}
+	return resp, managed.ExternalCreation{}, nil, false
+}
+
+func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, map[string]any, error) {
+	requestContextBytes, err := json.Marshal(spec.Context)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context from ServiceBinding"))
+	}
+	var requestContext map[string]any
+	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
+		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to bytes from ServiceBinding"))
+	}
+
+	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
+	var requestParams map[string]any
+	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
+		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+	}
+	return requestContext, requestParams, nil
 }
 
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
