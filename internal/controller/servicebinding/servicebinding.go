@@ -83,18 +83,6 @@ const (
 	asyncDeletionFinalizer = bindingMetadataPrefix + "/async-deletion"
 )
 
-var (
-	// TODO: actually implement an no op client
-	// The osb fake client returns errors for every function which is not explicitly implemented
-	// so we don't want to use it here
-	newNoOpService = func(_ []byte) (osb.Client, error) {
-		return osb.NewClient(&osb.ClientConfiguration{
-			Name:           "NoOp",
-			TimeoutSeconds: 30,
-		})
-	}
-)
-
 // Setup adds a controller that reconciles ServiceBinding managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ServiceBindingGroupKind)
@@ -245,16 +233,12 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	resp, err := c.client.GetBinding(req)
 
-	// Manage errors
+	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
 	if err != nil {
-		// Handle HTTP errors
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			// If 404, then it means that the resource does not exist
-			if httpErr.StatusCode == http.StatusNotFound {
-				return managed.ExternalObservation{
-					ResourceExists: false,
-				}, nil
-			}
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr && httpErr.StatusCode == http.StatusNotFound {
+			return managed.ExternalObservation{
+				ResourceExists: false,
+			}, nil
 		}
 		// Other errors are unexpected
 		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetBinding"))
@@ -284,49 +268,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// Manage binding rotation
-	if resp.Metadata.RenewBefore != "" {
-		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
-		if err != nil {
-			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time"))
-		}
-
-		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
-		if renewBeforeTime.Before(time.Now()) {
-			expireAtTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.ExpiresAt)
-			if err != nil {
-				return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "expireAt time"))
-			}
-			expired := false
-			if expireAtTime.Before(time.Now()) {
-				cond := xpv1.Condition{
-					Type:    xpv1.TypeHealthy,
-					Status:  v1.ConditionFalse,
-					Message: fmt.Sprintf("warning : the binding has expired %s", expireAtTime.Format(util.Iso8601dateFormat)),
-				}
-				binding.SetConditions(cond)
-				expired = true
-			}
-			if c.rotateBinding {
-				return managed.ExternalObservation{
-					ResourceExists:   true,
-					ResourceUpToDate: false,
-				}, nil
-			} else if !expired {
-				cond := xpv1.Condition{
-					Type:    xpv1.TypeHealthy,
-					Status:  v1.ConditionFalse,
-					Message: fmt.Sprintf("warning : the binding will expire soon %s", expireAtTime.Format(util.Iso8601dateFormat)),
-				}
-				binding.SetConditions(cond)
-			}
-		}
+	eo, err1, shouldReturn := handleRenewalBindings(resp, binding, c)
+	if shouldReturn {
+		return eo, err1
 	}
 	// Compare observed to response
 	// If there is a diff, return an error, since bindings are not updatable
-	isEqual, err := compareToObserved(binding)
-	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
-	}
+	isEqual := compareToObserved(binding)
 	if !isEqual {
 		return managed.ExternalObservation{}, errors.Wrap(err, "bindings cannot be updated")
 	}
@@ -345,6 +293,47 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		ResourceUpToDate:  true,
 		ConnectionDetails: credentialsJson,
 	}, nil
+}
+
+func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.ServiceBinding, c *external) (managed.ExternalObservation, error, bool) {
+	if resp.Metadata.RenewBefore != "" {
+		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
+		if err != nil {
+			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time")), true
+		}
+
+		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
+		if renewBeforeTime.Before(time.Now()) {
+			expireAtTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.ExpiresAt)
+			if err != nil {
+				return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "expireAt time")), true
+			}
+			expired := false
+			if expireAtTime.Before(time.Now()) {
+				cond := xpv1.Condition{
+					Type:    xpv1.TypeHealthy,
+					Status:  v1.ConditionFalse,
+					Message: fmt.Sprintf("warning : the binding has expired %s", expireAtTime.Format(util.Iso8601dateFormat)),
+				}
+				binding.SetConditions(cond)
+				expired = true
+			}
+			if c.rotateBinding {
+				return managed.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: false,
+				}, nil, true
+			} else if !expired {
+				cond := xpv1.Condition{
+					Type:    xpv1.TypeHealthy,
+					Status:  v1.ConditionFalse,
+					Message: fmt.Sprintf("warning : the binding will expire soon %s", expireAtTime.Format(util.Iso8601dateFormat)),
+				}
+				binding.SetConditions(cond)
+			}
+		}
+	}
+	return managed.ExternalObservation{}, nil, false
 }
 
 func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData bindingData) (managed.ExternalObservation, error) {
@@ -835,13 +824,13 @@ func (c *external) triggerRotation(binding *v1alpha1.ServiceBinding, data bindin
 	return nil, nil
 }
 
-func compareToObserved(cr *v1alpha1.ServiceBinding) (bool, error) {
+func compareToObserved(cr *v1alpha1.ServiceBinding) bool {
 	// We do not compare credentials, as this logic is managed by creds rotation.
 	// We do not compare bindingmetadata either, since the only metadata in binding objects
 	// is related to binding rotation (renew_before and expires_at)
 
 	// TODO add context and route to test if these were updated and return false
-	return reflect.DeepEqual(cr.Status.AtProvider.Parameters, cr.Spec.ForProvider.Parameters), nil
+	return reflect.DeepEqual(cr.Status.AtProvider.Parameters, cr.Spec.ForProvider.Parameters)
 }
 
 func getCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
