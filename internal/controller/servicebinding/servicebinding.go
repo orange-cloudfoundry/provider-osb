@@ -201,7 +201,7 @@ type external struct {
 	rotateBinding       bool
 }
 
-func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) { //nolint:gocognit // See note below.
+func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) { //nolint:gocyclo // See note below.
 	// NOTE: This method is over our cyclomatic complexity goal.
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
@@ -235,7 +235,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	resp, err := c.client.GetBinding(req)
 
 	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
-	eo, err, shouldReturn := util.HandleHttpError(err, "GetBindings")
+	eo, err, shouldReturn := util.HandleHttpError(err, "GetBinding")
 	if shouldReturn {
 		return eo, err
 	}

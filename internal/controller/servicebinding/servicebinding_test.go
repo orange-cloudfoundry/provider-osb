@@ -352,12 +352,9 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o: managed.ExternalObservation{
-					ResourceExists:   true,
-					ResourceUpToDate: true,
-					ConnectionDetails: map[string][]byte{
-						"password": []byte(`"YmFzaWMtcGFzc3dvcmQ="`),
-						"user":     []byte(`"YmFzaWMtdXNlcg=="`),
-					},
+					ResourceExists:    true,
+					ResourceUpToDate:  true,
+					ConnectionDetails: encodeCredentialsBase64(basicCredentials),
 				},
 				err: nil,
 			},
@@ -382,12 +379,9 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o: managed.ExternalObservation{
-					ResourceExists:   true,
-					ResourceUpToDate: true,
-					ConnectionDetails: map[string][]byte{
-						"password": []byte(`"YmFzaWMtcGFzc3dvcmQ="`),
-						"user":     []byte(`"YmFzaWMtdXNlcg=="`),
-					},
+					ResourceExists:    true,
+					ResourceUpToDate:  true,
+					ConnectionDetails: encodeCredentialsBase64(basicCredentials),
 				},
 				err: nil,
 			},
