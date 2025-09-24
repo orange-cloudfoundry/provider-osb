@@ -3,11 +3,14 @@ package util
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"net/http"
 	"reflect"
 	"slices"
 	"time"
 
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
@@ -21,6 +24,7 @@ const (
 	AsyncAnnotation                 = MetadataPrefix + "/async"
 	Iso8601dateFormat               = "2006-01-02T15:04:05.9Z"
 	OriginatingIdentityPlatformName = "kubernetes"
+	errRequestFailed                = "OSB %s request failed"
 )
 
 // func AddFinalizer(ctx context.Context, mg resource.Managed) error {
@@ -144,6 +148,20 @@ func RemoveFinalizerIfExists(obj metav1.Object, finalizerName string) bool {
 		return true
 	}
 	return false
+}
+
+func HandleHttpError(err error, errorType string) (managed.ExternalObservation, error, bool) {
+	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
+	if err != nil {
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr && httpErr.StatusCode == http.StatusNotFound {
+			return managed.ExternalObservation{
+				ResourceExists: false,
+			}, nil, true
+		}
+		// Other errors are unexpected
+		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, errorType)), true
+	}
+	return managed.ExternalObservation{}, nil, false
 }
 
 // TODO: actually implement an no op client, since the osb.fake client

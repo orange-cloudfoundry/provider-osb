@@ -124,10 +124,12 @@ var (
 	}
 )
 
+/*
 func withMetadata(binding v1alpha1.ServiceBinding, metadata *osb.BindingMetadata) *v1alpha1.ServiceBinding {
 	binding.Status.AtProvider.Metadata = metadata
 	return &binding
 }
+*/
 
 func withLastOperationState(binding v1alpha1.ServiceBinding, state osb.LastOperationState) *v1alpha1.ServiceBinding {
 	binding.Status.AtProvider.LastOperationState = state
@@ -189,7 +191,8 @@ func generateResponse[T osb.GetBindingResponse | osb.BindResponse](resp *T, cred
 
 func TestObserve(t *testing.T) {
 	type fields struct {
-		client osb.Client
+		client        osb.Client
+		rotateBinding bool
 	}
 
 	type args struct {
@@ -318,11 +321,67 @@ func TestObserve(t *testing.T) {
 						return resp, err
 					}),
 				},
+				rotateBinding: true,
 			},
 			want: want{
 				o: managed.ExternalObservation{
 					ResourceExists:   true,
 					ResourceUpToDate: false,
+				},
+				err: nil,
+			},
+		},
+		"ResourceExistsCredentialsExpireSoonAndNoRotate": {
+			args: args{
+				mg: withObservation(*basicBinding, basicObservation),
+			},
+			fields: fields{
+				client: &osbfake.FakeClient{
+					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
+						resp := &osb.GetBindingResponse{}
+						err := generateResponse(resp, basicCredentials)
+						// Set renewbefore date to 2 days ago, expires to yesterday
+						resp.Metadata = &osb.BindingMetadata{
+							RenewBefore: time.Now().AddDate(0, 0, -1).Format(util.Iso8601dateFormat),
+							ExpiresAt:   time.Now().AddDate(0, 0, 7).Format(util.Iso8601dateFormat),
+						}
+						return resp, err
+					}),
+				},
+				rotateBinding: false,
+			},
+			want: want{
+				o: managed.ExternalObservation{
+					ResourceExists:    true,
+					ResourceUpToDate:  true,
+					ConnectionDetails: encodeCredentialsBase64(basicCredentials),
+				},
+				err: nil,
+			},
+		},
+		"ResourceExistsCredentialsAreExpired": {
+			args: args{
+				mg: withObservation(*basicBinding, basicObservation),
+			},
+			fields: fields{
+				client: &osbfake.FakeClient{
+					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
+						resp := &osb.GetBindingResponse{}
+						err := generateResponse(resp, basicCredentials)
+						// Set renewbefore date to 2 days ago, expires to yesterday
+						resp.Metadata = &osb.BindingMetadata{
+							RenewBefore: time.Now().AddDate(0, 0, -2).Format(util.Iso8601dateFormat),
+							ExpiresAt:   time.Now().AddDate(0, 0, -1).Format(util.Iso8601dateFormat),
+						}
+						return resp, err
+					}),
+				},
+			},
+			want: want{
+				o: managed.ExternalObservation{
+					ResourceExists:    true,
+					ResourceUpToDate:  true,
+					ConnectionDetails: encodeCredentialsBase64(basicCredentials),
 				},
 				err: nil,
 			},
@@ -354,7 +413,7 @@ func TestObserve(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{client: tc.fields.client}
+			e := external{client: tc.fields.client, rotateBinding: tc.fields.rotateBinding}
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Observe(...): -want error, +got error:\n%s\n", tc.reason, diff)

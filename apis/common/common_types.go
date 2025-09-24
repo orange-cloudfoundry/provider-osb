@@ -31,11 +31,11 @@ type NamespacedName struct {
 }
 
 // String returns the general purpose string representation
-func (n NamespacedName) String() string {
+func (n *NamespacedName) String() string {
 	return n.Namespace + "/" + n.Name
 }
 
-func (n NamespacedName) ToObjectKey() client.ObjectKey {
+func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 	return client.ObjectKey{
 		Name:      n.Name,
 		Namespace: n.Namespace,
@@ -66,7 +66,7 @@ type InstanceData struct {
 type SerializableParameters string
 
 func (v *SerializableParameters) ToParameters() (map[string]any, error) {
-	if v == nil || string([]byte(*v)) == "" {
+	if v == nil || len([]byte(*v)) == 0 {
 		return map[string]any{}, nil
 	}
 	res := map[string]any{}

@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	v1 "k8s.io/api/core/v1"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -51,6 +52,8 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 )
 
 const (
@@ -72,23 +75,12 @@ const (
 	errGetDataFromBinding     = "cannot get data from service binding"
 	errRequestFailed          = "OSB %s request failed"
 	errParseMarshall          = "error while marshalling or parsing %s"
+	errBindingExpired         = "binding has expired at %s"
 
 	bindingMetadataPrefix = "binding." + util.MetadataPrefix
 
 	referenceFinalizerName = bindingMetadataPrefix + "/service-binding"
 	asyncDeletionFinalizer = bindingMetadataPrefix + "/async-deletion"
-)
-
-var (
-	// TODO: actually implement an no op client
-	// The osb fake client returns errors for every function which is not explicitely implemented
-	// so we don't want to use it here
-	newNoOpService = func(_ []byte) (osb.Client, error) {
-		return osb.NewClient(&osb.ClientConfiguration{
-			Name:           "NoOp",
-			TimeoutSeconds: 30,
-		})
-	}
 )
 
 // Setup adds a controller that reconciles ServiceBinding managed resources.
@@ -109,7 +101,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 				UID:      mgr.GetConfig().Impersonate.UID,
 				Groups:   mgr.GetConfig().Impersonate.Groups,
 			},
-			newServiceFn: util.NewOsbClient,
+			newServiceFn:  util.NewOsbClient,
+			rotateBinding: o.Features.Enabled(features.EnableAlphaRotateBindings),
 		}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
@@ -152,6 +145,7 @@ type connector struct {
 	usage                    resource.Tracker
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 	newServiceFn             func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
+	rotateBinding            bool
 }
 
 // Connect typically produces an ExternalClient by:
@@ -193,7 +187,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errNewClient)
 	}
 
-	return &external{client: osbclient, kube: c.kube, originatingIdentity: *oid}, nil
+	return &external{client: osbclient, kube: c.kube, originatingIdentity: *oid, rotateBinding: c.rotateBinding}, nil
 }
 
 // An ExternalClient observes, then either creates, updates, or deletes an
@@ -204,9 +198,11 @@ type external struct {
 	client              osb.Client
 	kube                client.Client
 	originatingIdentity osb.OriginatingIdentity
+	rotateBinding       bool
 }
 
-func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
+func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) { //nolint:gocyclo // See note below.
+	// NOTE: This method is over our cyclomatic complexity goal.
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotServiceBinding)
@@ -238,19 +234,10 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	resp, err := c.client.GetBinding(req)
 
-	// Manage errors
-	if err != nil {
-		// Handle HTTP errors
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			// If 404, then it means that the resource does not exist
-			if httpErr.StatusCode == http.StatusNotFound {
-				return managed.ExternalObservation{
-					ResourceExists: false,
-				}, nil
-			}
-		}
-		// Other errors are unexpected
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetBinding"))
+	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
+	eo, err, shouldReturn := util.HandleHttpError(err, "GetBinding")
+	if shouldReturn {
+		return eo, err
 	}
 
 	// Set observed fields values in cr.Status.AtProvider
@@ -277,29 +264,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// Manage binding rotation
-	if resp.Metadata.RenewBefore != "" {
-		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
-		if err != nil {
-			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time"))
-		}
-		// TODO do it if an auto renew feature flag is enabled
-		// else issue a warning on the resource if should be renewed, and different warning if expired
-
-		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
-		if renewBeforeTime.Before(time.Now()) {
-			return managed.ExternalObservation{
-				ResourceExists:   true,
-				ResourceUpToDate: false,
-			}, nil
-		}
+	eo, err1, shouldReturn := handleRenewalBindings(resp, binding, c)
+	if shouldReturn {
+		return eo, err1
 	}
-
 	// Compare observed to response
 	// If there is a diff, return an error, since bindings are not updatable
-	isEqual, err := compareToObserved(binding)
-	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
-	}
+	isEqual := compareToObserved(binding)
 	if !isEqual {
 		return managed.ExternalObservation{}, errors.Wrap(err, "bindings cannot be updated")
 	}
@@ -310,7 +281,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Doing so in the Observe() function enable adding a ServiceInstance
 	// resource after the creation of the ServiceBinding.
 	if err = c.addRefFinalizer(ctx, binding); err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, "error while adding finalizer to referenced instance")
+		return managed.ExternalObservation{}, errors.Wrap(err, errAddReferenceFinalizer)
 	}
 
 	return managed.ExternalObservation{
@@ -318,6 +289,47 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		ResourceUpToDate:  true,
 		ConnectionDetails: credentialsJson,
 	}, nil
+}
+
+func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.ServiceBinding, c *external) (managed.ExternalObservation, error, bool) {
+	if resp.Metadata.RenewBefore != "" {
+		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
+		if err != nil {
+			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time")), true
+		}
+
+		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
+		if renewBeforeTime.Before(time.Now()) {
+			expireAtTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.ExpiresAt)
+			if err != nil {
+				return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "expireAt time")), true
+			}
+			expired := false
+			if expireAtTime.Before(time.Now()) {
+				cond := xpv1.Condition{
+					Type:    xpv1.TypeHealthy,
+					Status:  v1.ConditionFalse,
+					Message: fmt.Sprintf("warning : the binding has expired %s", expireAtTime.Format(util.Iso8601dateFormat)),
+				}
+				binding.SetConditions(cond)
+				expired = true
+			}
+			if c.rotateBinding {
+				return managed.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: false,
+				}, nil, true
+			} else if !expired {
+				cond := xpv1.Condition{
+					Type:    xpv1.TypeHealthy,
+					Status:  v1.ConditionFalse,
+					Message: fmt.Sprintf("warning : the binding will expire soon %s", expireAtTime.Format(util.Iso8601dateFormat)),
+				}
+				binding.SetConditions(cond)
+			}
+		}
+	}
+	return managed.ExternalObservation{}, nil, false
 }
 
 func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData bindingData) (managed.ExternalObservation, error) {
@@ -348,9 +360,9 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 				}
 				// Remove reference finalizer from referenced ServiceInstance
 				if err = c.removeRefFinalizer(ctx, binding); err != nil {
-					return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
+					return managed.ExternalObservation{}, errors.Wrap(err, errRemoveReferenceFinalizer)
 				}
-				// return resourceexists: false explicitely
+				// return resourceexists: false explicitly
 				// This will trigger the removal of crossplane runtime's finalizers
 				return managed.ExternalObservation{
 					ResourceExists: false,
@@ -391,20 +403,10 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	spec := binding.Spec.ForProvider
 
-	// Convert spec.Context of type common.KubernetesOSBContext to map[string]any
-	requestContextBytes, err := json.Marshal(spec.Context)
+	// Convert spec.Context and spec.Parameters of type common.KubernetesOSBContext to map[string]any
+	requestContext, requestParams, err := convertSpecsData(spec)
 	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context from ServiceBinding"))
-	}
-	var requestContext map[string]any
-	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to bytes from ServiceBinding"))
-	}
-
-	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
-	var requestParams map[string]any
-	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+		return managed.ExternalCreation{}, err
 	}
 
 	bindingUuid := meta.GetExternalName(binding)
@@ -432,27 +434,9 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Request binding creation
-	resp, err := c.client.Bind(&bindRequest)
-
-	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind"))
-	}
-	if resp == nil {
-		return managed.ExternalCreation{}, fmt.Errorf(errNoResponse, bindRequest)
-	}
-
-	if resp.Async {
-		// If the creation was asynchronous, add an annotation
-		if resp.OperationKey != nil {
-			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
-		return managed.ExternalCreation{
-			// AdditionalDetails is for logs
-			AdditionalDetails: managed.AdditionalDetails{
-				"async": "true",
-			},
-		}, nil
+	resp, ec, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
+	if shouldReturn {
+		return ec, err
 	}
 
 	creds, err := getCredsFromResponse(resp)
@@ -467,7 +451,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from resource status"))
 	}
 
-	c.setResponseDataInStatus(binding, responseData{
+	err = c.setResponseDataInStatus(binding, responseData{
 		Parameters:      params,
 		Endpoints:       resp.Endpoints,
 		VolumeMounts:    resp.VolumeMounts,
@@ -476,9 +460,57 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		Metadata:        resp.Metadata,
 	})
 
+	if err != nil {
+		return managed.ExternalCreation{}, err
+	}
+
 	return managed.ExternalCreation{
 		ConnectionDetails: creds,
 	}, nil
+}
+
+func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alpha1.ServiceBinding) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
+	resp, err := c.client.Bind(&bindRequest)
+
+	if err != nil {
+		return nil, managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind")), true
+	}
+	if resp == nil {
+		return nil, managed.ExternalCreation{}, fmt.Errorf(errNoResponse, bindRequest), true
+	}
+
+	if resp.Async {
+		// If the creation was asynchronous, add an annotation
+		if resp.OperationKey != nil {
+			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
+		return nil, managed.ExternalCreation{
+			// AdditionalDetails is for logs
+			AdditionalDetails: managed.AdditionalDetails{
+				"async": "true",
+			},
+		}, nil, true
+	}
+	return resp, managed.ExternalCreation{}, nil, false
+}
+
+func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, map[string]any, error) {
+	requestContextBytes, err := json.Marshal(spec.Context)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context from ServiceBinding"))
+	}
+	var requestContext map[string]any
+	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
+		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to bytes from ServiceBinding"))
+	}
+
+	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
+	var requestParams map[string]any
+	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
+		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+	}
+	return requestContext, requestParams, nil
 }
 
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
@@ -788,13 +820,13 @@ func (c *external) triggerRotation(binding *v1alpha1.ServiceBinding, data bindin
 	return nil, nil
 }
 
-func compareToObserved(cr *v1alpha1.ServiceBinding) (bool, error) {
+func compareToObserved(cr *v1alpha1.ServiceBinding) bool {
 	// We do not compare credentials, as this logic is managed by creds rotation.
 	// We do not compare bindingmetadata either, since the only metadata in binding objects
 	// is related to binding rotation (renew_before and expires_at)
 
 	// TODO add context and route to test if these were updated and return false
-	return reflect.DeepEqual(cr.Status.AtProvider.Parameters, cr.Spec.ForProvider.Parameters), nil
+	return reflect.DeepEqual(cr.Status.AtProvider.Parameters, cr.Spec.ForProvider.Parameters)
 }
 
 func getCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
