@@ -310,8 +310,6 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		if resp.OperationKey != nil {
 			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
-	} else {
-		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
 	}
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, si); err != nil {
