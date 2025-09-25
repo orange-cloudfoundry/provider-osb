@@ -288,13 +288,47 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 }
 
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+	si, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
 		return managed.ExternalDelete{}, errors.New(errNotServiceInstance)
 	}
 
-	fmt.Printf("Deleting: %+v", cr)
-
+	// If the InstanceId is not set, there is nothing to delete.
+	// We consider the resource as already deleted.
+	if si.Spec.ForProvider.InstanceId == "" {
+		return managed.ExternalDelete{}, nil
+	}
+	// Build the DeprovisionRequest using the InstanceId from the ServiceInstance spec.
+	req := &osb.DeprovisionRequest{
+		InstanceID:          si.Spec.ForProvider.InstanceId,
+		AcceptsIncomplete:   true,
+		ServiceID:           si.Spec.ForProvider.ServiceId,
+		PlanID:              si.Spec.ForProvider.PlanId,
+		OriginatingIdentity: &c.originatingIdentity,
+	}
+	// Call the OSB client's DeprovisionInstance method to delete the external resource.
+	resp, err := c.client.DeprovisionInstance(req)
+	if err != nil {
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+				return managed.ExternalDelete{}, nil
+			}
+		}
+		return managed.ExternalDelete{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "DeprovisionInstance"))
+	}
+	// Update the ServiceInstance status based on the response from the OSB client.
+	// If the operation is asynchronous, set the condition to Deleting and update the last operation state.
+	if resp.Async {
+		si.Status.AtProvider.LastOperationState = osb.StateInProgress
+		if resp.OperationKey != nil {
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+	}
+	// This indicates that the deletion process has been initiated.
+	si.Status.SetConditions(xpv1.Deleting())
+	if err := c.kube.Status().Update(ctx, si); err != nil {
+		return managed.ExternalDelete{}, errors.Wrap(err, "cannot update ServiceInstance status")
+	}
 	return managed.ExternalDelete{}, nil
 }
 
