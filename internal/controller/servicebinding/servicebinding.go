@@ -65,8 +65,9 @@ const (
 
 	errNewClient = "cannot create new Service"
 
-	errTechnical  = "error: technical error encountered : %s"
-	errNoResponse = "no errors but the response sent back was empty for request: %v"
+	errTechnical    = "error: technical error encountered : %s"
+	errNoResponse   = "no errors but the response sent back was empty for request: %v"
+	errStatusUpdate = "error: Cannot update status of service bindings resources: %v"
 
 	errAddReferenceFinalizer    = "cannot add finalizer to referenced resource"
 	errRemoveReferenceFinalizer = "cannot remove finalizer from referenced resource"
@@ -382,6 +383,10 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 	}
 	binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
 
+	if err = c.kube.Status().Update(ctx, binding); err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, errStatusUpdate)
+	}
+
 	// Requeue, waiting for operation treatment
 	return managed.ExternalObservation{
 		ResourceExists:   true,
@@ -412,7 +417,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	bindingUuid := meta.GetExternalName(binding)
 	// Immediately set the binding's external name with a new UUID if it did not have one,
 	// even before creation is a success
-	if meta.GetExternalName(binding) != "" {
+	if meta.GetExternalName(binding) == "" {
 		bindingUuid := string(uuid.NewUUID())
 		meta.SetExternalName(binding, bindingUuid)
 	}
