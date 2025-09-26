@@ -292,7 +292,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 }
 
 func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.ServiceBinding, c *external) (managed.ExternalObservation, error, bool) {
-	if resp.Metadata.RenewBefore != "" {
+	if resp.Metadata != nil && resp.Metadata.RenewBefore != "" {
 		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
 		if err != nil {
 			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time")), true
