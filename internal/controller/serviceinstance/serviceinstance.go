@@ -420,7 +420,9 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, si *v1alph
 		si.Status.SetConditions(xpv1.Available())
 	case osb.StateFailed:
 		si.Status.SetConditions(xpv1.Unavailable())
+	default: // already defined InProgress
 	}
+
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, si); err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, "cannot update ServiceInstance status")
