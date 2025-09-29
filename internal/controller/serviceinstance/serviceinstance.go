@@ -169,6 +169,12 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return managed.ExternalObservation{}, errors.New("InstanceId must be set in ServiceInstance spec")
 	}
 
+	// Manage pending async operations (poll only for "in progress" state)
+	if si.Status.AtProvider.LastOperationState == osb.StateInProgress {
+		return c.handleLastOperationInProgress(ctx, si)
+
+	}
+
 	// If the resource is being deleted, check for active bindings before allowing deletion.
 	if !si.GetDeletionTimestamp().IsZero() {
 		return c.handleDeletionWithActiveBindings(ctx, si)
@@ -379,6 +385,51 @@ func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceRe
 	}
 
 	return true, nil
+}
+
+func (c *external) handleLastOperationInProgress(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
+	// Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
+	req := &osb.LastOperationRequest{
+		InstanceID:          si.Spec.ForProvider.InstanceId,
+		ServiceID:           &si.Spec.ForProvider.ServiceId,
+		PlanID:              &si.Spec.ForProvider.PlanId,
+		OriginatingIdentity: &c.originatingIdentity,
+		OperationKey:        &si.Status.AtProvider.LastOperationKey,
+	}
+	resp, err := c.client.PollLastOperation(req)
+	if err != nil {
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+				// The resource is gone, we consider it as not existing.
+				return managed.ExternalObservation{
+					ResourceExists: false,
+				}, nil
+			}
+		}
+		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "LastOperation"))
+	}
+	// Update the ServiceInstance status based on the response from the OSB client.
+	si.Status.AtProvider.LastOperationState = resp.State
+	if resp.Description != nil {
+		si.Status.AtProvider.LastOperationDescription = *resp.Description
+	}
+
+	// Operation has completed (succeeded or failed), update the status accordingly.
+	switch resp.State {
+	case osb.StateSucceeded:
+		si.Status.SetConditions(xpv1.Available())
+	case osb.StateFailed:
+		si.Status.SetConditions(xpv1.Unavailable())
+	}
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, si); err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, "cannot update ServiceInstance status")
+	}
+
+	return managed.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: true,
+	}, nil
 }
 
 // handleActiveBindings checks for active ServiceBindings before allowing deletion of the ServiceInstance.
