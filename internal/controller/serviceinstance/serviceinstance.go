@@ -35,6 +35,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
@@ -415,14 +416,12 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, si *v1alph
 	}
 
 	// Operation has completed (succeeded or failed), update the status accordingly.
-	switch resp.State {
-	case osb.StateSucceeded:
+	if resp.State == osb.StateSucceeded {
 		si.Status.SetConditions(xpv1.Available())
-	case osb.StateFailed:
-		si.Status.SetConditions(xpv1.Unavailable())
-	default: // already defined InProgress
 	}
-
+	if resp.State == osb.StateFailed {
+		si.Status.SetConditions(xpv1.Unavailable())
+	}
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, si); err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, "cannot update ServiceInstance status")
