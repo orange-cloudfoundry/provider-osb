@@ -166,9 +166,11 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return managed.ExternalObservation{}, errors.New("InstanceId must be set in ServiceInstance spec")
 	}
 
-	// Build the GetInstanceRequest using the InstanceId from the ServiceInstance spec.
+	// Build the GetInstanceRequest using the InstanceId, the ServiceId and the PlanID from the ServiceInstance spec.
 	req := &osb.GetInstanceRequest{
 		InstanceID: si.Spec.ForProvider.InstanceId,
+		ServiceID:  si.Spec.ForProvider.ServiceId,
+		PlanID:     si.Spec.ForProvider.PlanId,
 	}
 
 	// Call the OSB client's GetInstance method to retrieve the current state of the instance.
