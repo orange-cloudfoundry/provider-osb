@@ -20,6 +20,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/application"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/config"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/servicebinding"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/serviceinstance"
@@ -30,6 +31,7 @@ import (
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func(ctrl.Manager, controller.Options) error{
 		config.Setup,
+		application.Setup,
 		servicebinding.Setup,
 		serviceinstance.Setup,
 	} {
