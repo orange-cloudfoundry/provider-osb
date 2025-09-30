@@ -317,18 +317,18 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalDelete{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "DeprovisionInstance"))
 	}
 	// Update the ServiceInstance status based on the response from the OSB client.
-	// If the operation is asynchronous, set the condition to Deleting and update the last operation state.
+	// If the operation is asynchronous, update the last operation state.
 	if resp.Async {
 		si.Status.AtProvider.LastOperationState = osb.StateInProgress
 		if resp.OperationKey != nil {
 			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
+		// Update the status of the ServiceInstance resource in Kubernetes.
+		if err := c.kube.Status().Update(ctx, si); err != nil {
+			return managed.ExternalDelete{}, errors.Wrap(err, "cannot update ServiceInstance status")
+		}
 	}
-	// This indicates that the deletion process has been initiated.
-	si.Status.SetConditions(xpv1.Deleting())
-	if err := c.kube.Status().Update(ctx, si); err != nil {
-		return managed.ExternalDelete{}, errors.Wrap(err, "cannot update ServiceInstance status")
-	}
+
 	return managed.ExternalDelete{}, nil
 }
 
