@@ -127,8 +127,8 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errTrackPCUsage)
 	}
 
-	pc := &apisv1alpha1.ProviderConfig{}
-	if err := c.kube.Get(ctx, types.NamespacedName{Name: cr.GetProviderConfigReference().Name}, pc); err != nil {
+	pc, err := util.GetProviderConfig(ctx, c.kube, cr.Spec.ForProvider.ProviderConfig)
+	if err != nil {
 		return nil, errors.Wrap(err, errGetPC)
 	}
 
