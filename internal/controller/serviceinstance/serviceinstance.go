@@ -23,7 +23,6 @@ import (
 	"reflect"
 
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -97,7 +96,6 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-
 	// Assert that the managed resource is of type ServiceInstance.
 	cr, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
@@ -110,8 +108,8 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	// Retrieve the ProviderConfig referenced by the managed resource.
-	pc := &apisv1alpha1.ProviderConfig{}
-	if err := c.kube.Get(ctx, types.NamespacedName{Name: cr.GetProviderConfigReference().Name}, pc); err != nil {
+	pc, err := util.GetProviderConfig(ctx, c.kube, cr.Spec.ForProvider.ApplicationData.ProviderConfig)
+	if err != nil {
 		return nil, errors.Wrap(err, errGetPC)
 	}
 
@@ -169,6 +167,8 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Build the GetInstanceRequest using the InstanceId from the ServiceInstance spec.
 	req := &osb.GetInstanceRequest{
 		InstanceID: si.Spec.ForProvider.InstanceId,
+		//ServiceID:  si.Spec.ForProvider.ServiceId,
+		//PlanID:     si.Spec.ForProvider.PlanId,
 	}
 
 	// Call the OSB client's GetInstance method to retrieve the current state of the instance.

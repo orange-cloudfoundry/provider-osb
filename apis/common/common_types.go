@@ -42,13 +42,17 @@ func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 	}
 }
 
+type ProviderConfigRef struct {
+	Name string `json:"name"`
+}
+
 // ApplicationData represents the schema for an Application MR
 // TODO: replace brokerUrl and credentials to a ref to ProviderConfig
 // It should be only a ref and never re-specified in ApplicationData
 type ApplicationData struct {
-	BrokerURL string `json:"brokerURL"`
-	Name      string `json:"name"`
-	Guid      string `json:"guid"`
+	Name           string            `json:"name"`
+	Guid           string            `json:"guid"`
+	ProviderConfig ProviderConfigRef `json:"providerConfigRef"`
 }
 
 // Instance Data represents the schema for a ServiceInstance MR
