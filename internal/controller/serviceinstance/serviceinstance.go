@@ -310,38 +310,8 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 	if si.Status.AtProvider.HasActiveBindings {
 		return managed.ExternalDelete{}, errors.New("cannot delete ServiceInstance, it has active bindings---")
 	}
-	// Build the DeprovisionRequest using the InstanceId from the ServiceInstance spec.
-	req := &osb.DeprovisionRequest{
-		InstanceID:          si.Spec.ForProvider.InstanceId,
-		AcceptsIncomplete:   true,
-		ServiceID:           si.Spec.ForProvider.ServiceId,
-		PlanID:              si.Spec.ForProvider.PlanId,
-		OriginatingIdentity: &c.originatingIdentity,
-	}
-	// Call the OSB client's DeprovisionInstance method to delete the external resource.
-	resp, err := c.client.DeprovisionInstance(req)
-	if err != nil {
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
-				return managed.ExternalDelete{}, nil
-			}
-		}
-		return managed.ExternalDelete{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "DeprovisionInstance"))
-	}
-	// Update the ServiceInstance status based on the response from the OSB client.
-	// If the operation is asynchronous, update the last operation state.
-	if resp.Async {
-		si.Status.AtProvider.LastOperationState = osb.StateInProgress
-		if resp.OperationKey != nil {
-			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-		// Update the status of the ServiceInstance resource in Kubernetes.
-		if err := c.kube.Status().Update(ctx, si); err != nil {
-			return managed.ExternalDelete{}, errors.Wrap(err, "cannot update ServiceInstance status")
-		}
-	}
 
-	return managed.ExternalDelete{}, nil
+	return c.deprovision(ctx, si)
 }
 
 func (c *external) Disconnect(ctx context.Context) error {
@@ -413,4 +383,42 @@ func (c *external) handleDeletionWithActiveBindings(ctx context.Context, si *v1a
 		ResourceExists:   true,
 		ResourceUpToDate: true,
 	}, nil
+}
+
+// deprovision handles the deprovisioning of the ServiceInstance in the external system.
+// It constructs a DeprovisionRequest and calls the OSB client's DeprovisionInstance method.
+// If the instance is successfully deprovisioned or does not exist, it returns without error.
+// If the operation is asynchronous, it updates the ServiceInstance status accordingly.
+func (c *external) deprovision(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalDelete, error) {
+	// Build the DeprovisionRequest using the InstanceId from the ServiceInstance spec.
+	req := &osb.DeprovisionRequest{
+		InstanceID:          si.Spec.ForProvider.InstanceId,
+		AcceptsIncomplete:   true,
+		ServiceID:           si.Spec.ForProvider.ServiceId,
+		PlanID:              si.Spec.ForProvider.PlanId,
+		OriginatingIdentity: &c.originatingIdentity,
+	}
+	// Call the OSB client's DeprovisionInstance method to delete the external resource.
+	resp, err := c.client.DeprovisionInstance(req)
+	if err != nil {
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+				return managed.ExternalDelete{}, nil
+			}
+		}
+		return managed.ExternalDelete{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "DeprovisionInstance"))
+	}
+	// Update the ServiceInstance status based on the response from the OSB client.
+	// If the operation is asynchronous, update the last operation state.
+	if resp.Async {
+		si.Status.AtProvider.LastOperationState = osb.StateInProgress
+		if resp.OperationKey != nil {
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+		// Update the status of the ServiceInstance resource in Kubernetes.
+		if err := c.kube.Status().Update(ctx, si); err != nil {
+			return managed.ExternalDelete{}, errors.Wrap(err, "cannot update ServiceInstance status")
+		}
+	}
+	return managed.ExternalDelete{}, nil
 }
