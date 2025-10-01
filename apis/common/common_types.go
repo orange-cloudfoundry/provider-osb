@@ -47,8 +47,6 @@ type ProviderConfigRef struct {
 }
 
 // ApplicationData represents the schema for an Application MR
-// TODO: replace brokerUrl and credentials to a ref to ProviderConfig
-// It should be only a ref and never re-specified in ApplicationData
 type ApplicationData struct {
 	Name           string            `json:"name"`
 	Guid           string            `json:"guid"`
