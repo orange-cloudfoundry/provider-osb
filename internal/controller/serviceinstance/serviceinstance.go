@@ -35,6 +35,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
@@ -167,6 +168,12 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Ensure the InstanceId is set in the ServiceInstance spec before proceeding.
 	if si.Spec.ForProvider.InstanceId == "" {
 		return managed.ExternalObservation{}, errors.New("InstanceId must be set in ServiceInstance spec")
+	}
+
+	// Manage pending async operations (poll only for "in progress" state)
+	if si.Status.AtProvider.LastOperationState == osb.StateInProgress {
+		return c.handleLastOperationInProgress(ctx, si)
+
 	}
 
 	// If the resource is being deleted, check for active bindings before allowing deletion.
@@ -379,6 +386,51 @@ func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceRe
 	}
 
 	return true, nil
+}
+
+func (c *external) handleLastOperationInProgress(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
+	// Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
+	req := &osb.LastOperationRequest{
+		InstanceID:          si.Spec.ForProvider.InstanceId,
+		ServiceID:           &si.Spec.ForProvider.ServiceId,
+		PlanID:              &si.Spec.ForProvider.PlanId,
+		OriginatingIdentity: &c.originatingIdentity,
+		OperationKey:        &si.Status.AtProvider.LastOperationKey,
+	}
+	resp, err := c.client.PollLastOperation(req)
+	if err != nil {
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+				// The resource is gone, we consider it as not existing.
+				return managed.ExternalObservation{
+					ResourceExists: false,
+				}, nil
+			}
+		}
+		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "LastOperation"))
+	}
+	// Update the ServiceInstance status based on the response from the OSB client.
+	si.Status.AtProvider.LastOperationState = resp.State
+	if resp.Description != nil {
+		si.Status.AtProvider.LastOperationDescription = *resp.Description
+	}
+
+	// Operation has completed (succeeded or failed), update the status accordingly.
+	if resp.State == osb.StateSucceeded {
+		si.Status.SetConditions(xpv1.Available())
+	}
+	if resp.State == osb.StateFailed {
+		si.Status.SetConditions(xpv1.Unavailable())
+	}
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, si); err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, "cannot update ServiceInstance status")
+	}
+
+	return managed.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: true,
+	}, nil
 }
 
 // handleActiveBindings checks for active ServiceBindings before allowing deletion of the ServiceInstance.

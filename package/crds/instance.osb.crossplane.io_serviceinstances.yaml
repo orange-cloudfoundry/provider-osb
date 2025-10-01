@@ -384,6 +384,8 @@ spec:
                     type: boolean
                   instanceId:
                     type: string
+                  last_operation_description:
+                    type: string
                   last_operation_key:
                     description: |-
                       OperationKey is an extra identifier from the broker in order to provide extra

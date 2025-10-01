@@ -31,14 +31,15 @@ import (
 // ServiceInstanceObservation are the observable fields of a ServiceInstance.
 // TODO manage observations
 type ServiceInstanceObservation struct {
-	ApplicationRef      *common.NamespacedName  `json:"application,omitempty"`
-	ApplicationData     *common.ApplicationData `json:"applicationData,omitempty"`
-	common.InstanceData `json:",inline"`
-	Context             common.KubernetesOSBContext `json:"context,omitempty"`
-	DashboardURL        *string                     `json:"dashboardURL,omitempty"`
-	LastOperationState  osb.LastOperationState      `json:"last_operation_state,omitempty"`
-	LastOperationKey    osb.OperationKey            `json:"last_operation_key,omitempty"`
-	HasActiveBindings   bool                        `json:"hasActiveBindings,omitempty"`
+	ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
+	ApplicationData          *common.ApplicationData `json:"applicationData,omitempty"`
+	common.InstanceData      `json:",inline"`
+	Context                  common.KubernetesOSBContext `json:"context,omitempty"`
+	DashboardURL             *string                     `json:"dashboardURL,omitempty"`
+	LastOperationState       osb.LastOperationState      `json:"last_operation_state,omitempty"`
+	LastOperationKey         osb.OperationKey            `json:"last_operation_key,omitempty"`
+	LastOperationDescription string                      `json:"last_operation_description,omitempty"`
+	HasActiveBindings        bool                        `json:"hasActiveBindings,omitempty"`
 }
 
 // A ServiceInstanceSpec defines the desired state of a ServiceInstance.
