@@ -23,7 +23,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/feature"
 
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,6 +36,7 @@ import (
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/application/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 )
 
