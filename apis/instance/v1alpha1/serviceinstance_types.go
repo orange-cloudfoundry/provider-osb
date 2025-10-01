@@ -38,6 +38,7 @@ type ServiceInstanceObservation struct {
 	DashboardURL        *string                     `json:"dashboardURL,omitempty"`
 	LastOperationState  osb.LastOperationState      `json:"last_operation_state,omitempty"`
 	LastOperationKey    osb.OperationKey            `json:"last_operation_key,omitempty"`
+	HasActiveBindings   bool                        `json:"hasActiveBindings,omitempty"`
 }
 
 // A ServiceInstanceSpec defines the desired state of a ServiceInstance.

@@ -36,6 +36,7 @@ import (
 
 	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
@@ -52,6 +53,8 @@ const (
 	errNewClient     = "cannot create new Service"
 	errRequestFailed = "OSB %s request failed"
 	errParseMarshall = "error while marshalling or parsing %s"
+	errListBindings  = "cannot list ServiceBindings"
+	errUpdateStatus  = "cannot update ServiceInstance status"
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -164,6 +167,11 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Ensure the InstanceId is set in the ServiceInstance spec before proceeding.
 	if si.Spec.ForProvider.InstanceId == "" {
 		return managed.ExternalObservation{}, errors.New("InstanceId must be set in ServiceInstance spec")
+	}
+
+	// If the resource is being deleted, check for active bindings before allowing deletion.
+	if !si.GetDeletionTimestamp().IsZero() {
+		return c.handleDeletionWithActiveBindings(ctx, si)
 	}
 
 	// Build the GetInstanceRequest using the InstanceId from the ServiceInstance spec.
@@ -323,14 +331,22 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 }
 
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+	si, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
 		return managed.ExternalDelete{}, errors.New(errNotServiceInstance)
 	}
 
-	fmt.Printf("Deleting: %+v", cr)
+	// If the InstanceId is not set, there is nothing to delete.
+	// We consider the resource as already deleted.
+	if si.Spec.ForProvider.InstanceId == "" {
+		return managed.ExternalDelete{}, nil
+	}
+	// If there are active bindings, we cannot delete the ServiceInstance.
+	if si.Status.AtProvider.HasActiveBindings {
+		return managed.ExternalDelete{}, errors.New("cannot delete ServiceInstance, it has active bindings---")
+	}
 
-	return managed.ExternalDelete{}, nil
+	return c.deprovision(ctx, si)
 }
 
 func (c *external) Disconnect(ctx context.Context) error {
@@ -363,4 +379,81 @@ func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceRe
 	}
 
 	return true, nil
+}
+
+// handleActiveBindings checks for active ServiceBindings before allowing deletion of the ServiceInstance.
+// If active bindings are found, it updates the ServiceInstance status to reflect this and prevents deletion.
+// If no active bindings are found, it allows the deletion process to proceed.
+// It returns an ExternalObservation indicating that the resource exists and is up to date,
+// along with any error encountered during the process.
+func (c *external) handleDeletionWithActiveBindings(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
+	// List all ServiceBindings in the same namespace as the ServiceInstance.
+	var bindings apisbinding.ServiceBindingList
+	if err := c.kube.List(ctx, &bindings, client.InNamespace(si.GetNamespace())); err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, errListBindings)
+	}
+	// Check if there are any existing ServiceBindings associated with this ServiceInstance.
+	// If there are, we cannot delete the ServiceInstance until they are removed.
+	hasActiveBindings := false
+	for _, b := range bindings.Items {
+		//	A binding is considered active if it references this ServiceInstance and is not marked for deletion.
+		if b.Spec.ForProvider.InstanceRef.Name == si.GetName() && b.DeletionTimestamp.IsZero() {
+			hasActiveBindings = true
+			break
+		}
+	}
+	if hasActiveBindings {
+		// Active bindings exist, we cannot delete the ServiceInstance.
+		si.Status.AtProvider.HasActiveBindings = true
+	} else {
+		// No active bindings, we can proceed with deletion.
+		si.Status.AtProvider.HasActiveBindings = false
+	}
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, si); err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, errUpdateStatus)
+	}
+	// If the resource is being deleted, we consider it as existing and up to date.
+	return managed.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: true,
+	}, nil
+}
+
+// deprovision handles the deprovisioning of the ServiceInstance in the external system.
+// It constructs a DeprovisionRequest and calls the OSB client's DeprovisionInstance method.
+// If the instance is successfully deprovisioned or does not exist, it returns without error.
+// If the operation is asynchronous, it updates the ServiceInstance status accordingly.
+func (c *external) deprovision(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalDelete, error) {
+	// Build the DeprovisionRequest using the InstanceId from the ServiceInstance spec.
+	req := &osb.DeprovisionRequest{
+		InstanceID:          si.Spec.ForProvider.InstanceId,
+		AcceptsIncomplete:   true,
+		ServiceID:           si.Spec.ForProvider.ServiceId,
+		PlanID:              si.Spec.ForProvider.PlanId,
+		OriginatingIdentity: &c.originatingIdentity,
+	}
+	// Call the OSB client's DeprovisionInstance method to delete the external resource.
+	resp, err := c.client.DeprovisionInstance(req)
+	if err != nil {
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+				return managed.ExternalDelete{}, nil
+			}
+		}
+		return managed.ExternalDelete{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "DeprovisionInstance"))
+	}
+	// Update the ServiceInstance status based on the response from the OSB client.
+	// If the operation is asynchronous, update the last operation state.
+	if resp.Async {
+		si.Status.AtProvider.LastOperationState = osb.StateInProgress
+		if resp.OperationKey != nil {
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+		// Update the status of the ServiceInstance resource in Kubernetes.
+		if err := c.kube.Status().Update(ctx, si); err != nil {
+			return managed.ExternalDelete{}, errors.Wrap(err, "cannot update ServiceInstance status")
+		}
+	}
+	return managed.ExternalDelete{}, nil
 }
