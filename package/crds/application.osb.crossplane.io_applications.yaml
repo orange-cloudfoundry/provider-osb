@@ -71,20 +71,24 @@ spec:
                 - Delete
                 type: string
               forProvider:
-                description: |-
-                  ApplicationData represents the schema for an Application MR
-                  It should be only a ref and never re-specified in ApplicationData
+                description: ApplicationData represents the schema for an Application
+                  MR
                 properties:
-                  brokerURL:
-                    type: string
                   guid:
                     type: string
                   name:
                     type: string
+                  providerConfigRef:
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
                 required:
-                - brokerURL
                 - guid
                 - name
+                - providerConfigRef
                 type: object
               managementPolicies:
                 default:

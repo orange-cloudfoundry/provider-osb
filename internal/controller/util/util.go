@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -171,3 +173,13 @@ type NoOpOsbClient fake.FakeClient
 // func (c *NoOpOsbClient) GetCatalog() (*osb.CatalogResponse, error) {
 // 	return nil, nil
 // }
+
+func GetProviderConfig(ctx context.Context, kube client.Client, ref common.ProviderConfigRef) (*apisv1alpha1.ProviderConfig, error) {
+	pc := &apisv1alpha1.ProviderConfig{}
+	key := client.ObjectKey{Name: ref.Name}
+	if err := kube.Get(ctx, key, pc); err != nil {
+		return nil, err
+	}
+
+	return pc, nil
+}

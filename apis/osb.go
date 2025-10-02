@@ -20,6 +20,7 @@ package apis
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
+	applicationv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/application/v1alpha1"
 	bindingv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	instancev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	templatev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
@@ -28,6 +29,7 @@ import (
 func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
 	AddToSchemes = append(AddToSchemes,
+		applicationv1alpha1.SchemeBuilder.AddToScheme,
 		instancev1alpha1.SchemeBuilder.AddToScheme,
 		bindingv1alpha1.SchemeBuilder.AddToScheme,
 		templatev1alpha1.SchemeBuilder.AddToScheme,
