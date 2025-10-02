@@ -449,7 +449,7 @@ func (c *external) handleDeletionWithActiveBindings(ctx context.Context, si *v1a
 	hasActiveBindings := false
 	for _, b := range bindings.Items {
 		//	A binding is considered active if it references this ServiceInstance and is not marked for deletion.
-		if b.Spec.ForProvider.InstanceRef.Name == si.GetName() && b.DeletionTimestamp.IsZero() {
+		if b.Spec.ForProvider.InstanceRef != nil && b.Spec.ForProvider.InstanceRef.Name == si.GetName() && b.DeletionTimestamp.IsZero() {
 			hasActiveBindings = true
 			break
 		}
