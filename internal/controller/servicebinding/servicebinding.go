@@ -511,8 +511,10 @@ func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, m
 
 	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
 	var requestParams map[string]any
-	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
-		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+	if spec.Parameters != "" {
+		if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
+			return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+		}
 	}
 	return requestContext, requestParams, nil
 }
