@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/crossplane/crossplane-runtime/pkg/connection"
 	"github.com/crossplane/crossplane-runtime/pkg/controller"
@@ -170,9 +171,8 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// Manage pending async operations (poll only for "in progress" state)
-	if si.Status.AtProvider.LastOperationState == osb.StateInProgress {
+	if si.Status.AtProvider.LastOperationState == osb.StateInProgress || si.Status.AtProvider.LastOperationState == "deleting" {
 		return c.handleLastOperationInProgress(ctx, si)
-
 	}
 
 	// If the resource is being deleted, check for active bindings before allowing deletion.
@@ -425,7 +425,13 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, si *v1alph
 
 	// Operation has completed (succeeded or failed), update the status accordingly.
 	if resp.State == osb.StateSucceeded {
-		latest.Status.SetConditions(xpv1.Available())
+		if si.Status.AtProvider.LastOperationState == "deleting" && !si.Status.AtProvider.HasActiveBindings {
+			return c.removeFinalizer(ctx, si)
+		} else {
+			latest.Status.SetConditions(xpv1.Available())
+			latest.Status.AtProvider.LastOperationState = osb.StateSucceeded
+		}
+
 	}
 	if resp.State == osb.StateFailed {
 		latest.Status.SetConditions(xpv1.Unavailable())
@@ -506,7 +512,7 @@ func (c *external) deprovision(ctx context.Context, si *v1alpha1.ServiceInstance
 	// Update the ServiceInstance status based on the response from the OSB client.
 	// If the operation is asynchronous, update the last operation state.
 	if resp.Async {
-		si.Status.AtProvider.LastOperationState = osb.StateInProgress
+		si.Status.AtProvider.LastOperationState = "deleting"
 		if resp.OperationKey != nil {
 			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
@@ -516,4 +522,25 @@ func (c *external) deprovision(ctx context.Context, si *v1alpha1.ServiceInstance
 		}
 	}
 	return managed.ExternalDelete{}, nil
+}
+
+// removeFinalizer removes the specified finalizer from the ServiceInstance if it exists.
+func (c *external) removeFinalizer(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
+	// Get the latest version of the ServiceInstance to avoid conflicts during finalizer removal.
+	latest := &v1alpha1.ServiceInstance{}
+	if err := c.kube.Get(ctx, client.ObjectKey{Name: si.Name, Namespace: si.Namespace}, latest); err != nil {
+		return managed.ExternalObservation{}, errors.New(errGetLatest)
+	}
+	// Remove the specified finalizer if it exists.
+	for _, f := range latest.GetFinalizers() {
+		controllerutil.RemoveFinalizer(latest, f)
+	}
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, latest); err != nil {
+		return managed.ExternalObservation{}, errors.Wrap(err, errUpdateStatus)
+	}
+	// If the last operation was a deletion and it has succeeded, we consider the resource as deleted.
+	return managed.ExternalObservation{
+		ResourceExists: false,
+	}, nil
 }
