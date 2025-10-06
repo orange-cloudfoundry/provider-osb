@@ -382,6 +382,14 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 	}
 	binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
 
+	// Set condition based on operation state
+	if resp.State == osb.StateSucceeded {
+		binding.Status.SetConditions(xpv1.Available())
+	}
+	if resp.State == osb.StateFailed {
+		binding.Status.SetConditions(xpv1.Unavailable())
+	}
+
 	if err = c.kube.Status().Update(ctx, binding); err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errStatusUpdate)
 	}
@@ -442,6 +450,10 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	if shouldReturn {
 		return ec, err
 	}
+	// Set values returned by the request
+	if err = c.kube.Status().Update(ctx, binding); err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errStatusUpdate)
+	}
 
 	creds, err := getCredsFromResponse(resp)
 	if err != nil {
@@ -489,12 +501,10 @@ func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alph
 			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
 		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
-		return nil, managed.ExternalCreation{
-			// AdditionalDetails is for logs
-			AdditionalDetails: managed.AdditionalDetails{
-				"async": "true",
-			},
-		}, nil, true
+		binding.Status.SetConditions(xpv1.Creating())
+	} else {
+		binding.Status.SetConditions(xpv1.Available())
+		binding.Status.AtProvider.LastOperationState = osb.StateSucceeded
 	}
 	return resp, managed.ExternalCreation{}, nil, false
 }
