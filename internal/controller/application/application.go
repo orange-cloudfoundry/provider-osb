@@ -23,7 +23,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/feature"
 
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -37,6 +36,7 @@ import (
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/application/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 )
 
@@ -127,8 +127,8 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, errors.Wrap(err, errTrackPCUsage)
 	}
 
-	pc := &apisv1alpha1.ProviderConfig{}
-	if err := c.kube.Get(ctx, types.NamespacedName{Name: cr.GetProviderConfigReference().Name}, pc); err != nil {
+	pc, err := util.GetProviderConfig(ctx, c.kube, cr.Spec.ForProvider.ProviderConfig)
+	if err != nil {
 		return nil, errors.Wrap(err, errGetPC)
 	}
 
