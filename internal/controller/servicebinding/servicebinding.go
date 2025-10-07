@@ -412,22 +412,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	// Request binding creation
 	resp, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
 	if shouldReturn {
-		if err != nil {
-			return managed.ExternalCreation{}, err
-		}
-		if resp.Async {
-			// Update the resource to reflect the async state
-			if err = c.kube.Status().Update(ctx, binding); err != nil {
-				return managed.ExternalCreation{}, errors.Wrap(err, errStatusUpdate)
-			}
-			// Return with no error to avoid requeueing with error
-			return managed.ExternalCreation{
-				AdditionalDetails: managed.AdditionalDetails{
-					"async": "true",
-				},
-			}, nil
-		}
-
+		return c.handleAsyncOrError(ctx, binding, resp, err)
 	}
 	// Set values returned by the request
 	if err = c.kube.Status().Update(ctx, binding); err != nil {
@@ -882,4 +867,21 @@ func (c *external) updateBindingStatusFromLastOp(binding *v1alpha1.ServiceBindin
 	if resp.State == osb.StateFailed {
 		binding.Status.SetConditions(xpv1.Unavailable())
 	}
+}
+
+func (c *external) handleAsyncOrError(ctx context.Context, binding *v1alpha1.ServiceBinding, resp *osb.BindResponse, err error) (managed.ExternalCreation, error) {
+	if err != nil {
+		return managed.ExternalCreation{}, err
+	}
+	if resp.Async {
+		if err = c.kube.Status().Update(ctx, binding); err != nil {
+			return managed.ExternalCreation{}, errors.Wrap(err, errStatusUpdate)
+		}
+		return managed.ExternalCreation{
+			AdditionalDetails: managed.AdditionalDetails{
+				"async": "true",
+			},
+		}, nil
+	}
+	return managed.ExternalCreation{}, nil
 }
