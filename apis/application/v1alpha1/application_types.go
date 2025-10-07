@@ -29,20 +29,27 @@ import (
 // ApplicationObservation are the observable fields of a Application.
 // TODO manage observations
 type ApplicationObservation struct {
+	// +kubebuilder:validation:Required
 	BrokerURL string `json:"brokerURL"`
-	Name      string `json:"Name"`
+
+	// +kubebuilder:validation:Required
+	Name string `json:"Name"`
 }
 
 // A ApplicationSpec defines the desired state of a Application.
 type ApplicationSpec struct {
 	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       common.ApplicationData `json:"forProvider"`
+
+	// +kubebuilder:validation:Required
+	ForProvider common.ApplicationData `json:"forProvider"`
 }
 
 // A ApplicationStatus represents the observed state of a Application.
 type ApplicationStatus struct {
 	xpv1.ResourceStatus `json:",inline"`
-	AtProvider          ApplicationObservation `json:"atProvider,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	AtProvider ApplicationObservation `json:"atProvider,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -58,7 +65,10 @@ type Application struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ApplicationSpec   `json:"spec"`
+	// +kubebuilder:validation:Required
+	Spec ApplicationSpec `json:"spec"`
+
+	// +kubebuilder:validation:Optional
 	Status ApplicationStatus `json:"status,omitempty"`
 }
 

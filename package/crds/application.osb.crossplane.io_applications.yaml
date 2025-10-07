@@ -75,12 +75,17 @@ spec:
                   MR
                 properties:
                   guid:
+                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                     type: string
                   name:
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                     type: string
                   providerConfigRef:
                     properties:
                       name:
+                        minLength: 1
                         type: string
                     required:
                     - name

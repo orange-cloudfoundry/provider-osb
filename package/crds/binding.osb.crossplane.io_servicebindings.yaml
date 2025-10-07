@@ -80,8 +80,14 @@ spec:
                       And it makes `make generate` fail
                     properties:
                       name:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespace:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                     required:
                     - name
@@ -91,12 +97,17 @@ spec:
                       MR
                     properties:
                       guid:
+                        pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                         type: string
                       name:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       providerConfigRef:
                         properties:
                           name:
+                            minLength: 1
                             type: string
                         required:
                         - name
@@ -112,20 +123,29 @@ spec:
                       cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                     properties:
                       cluster_id:
+                        pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                         type: string
                       instance_annotations:
                         additionalProperties:
                           type: string
                         type: object
                       instance_name:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespace:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespace_annotations:
                         additionalProperties:
                           type: string
                         type: object
                       platform:
+                        enum:
+                        - kubernetes
                         type: string
                     required:
                     - cluster_id
@@ -139,8 +159,14 @@ spec:
                       And it makes `make generate` fail
                     properties:
                       name:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespace:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                     required:
                     - name
@@ -155,8 +181,14 @@ spec:
                           And it makes `make generate` fail
                         properties:
                           name:
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                             type: string
                           namespace:
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                             type: string
                         required:
                         - name
@@ -166,12 +198,17 @@ spec:
                           Application MR
                         properties:
                           guid:
+                            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                             type: string
                           name:
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                             type: string
                           providerConfigRef:
                             properties:
                               name:
+                                minLength: 1
                                 type: string
                             required:
                             - name
@@ -187,20 +224,29 @@ spec:
                           cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                         properties:
                           cluster_id:
+                            pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                             type: string
                           instance_annotations:
                             additionalProperties:
                               type: string
                             type: object
                           instance_name:
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                             type: string
                           namespace:
+                            maxLength: 63
+                            minLength: 1
+                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                             type: string
                           namespace_annotations:
                             additionalProperties:
                               type: string
                             type: object
                           platform:
+                            enum:
+                            - kubernetes
                             type: string
                         required:
                         - cluster_id
@@ -209,16 +255,21 @@ spec:
                         - platform
                         type: object
                       instanceId:
+                        pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                         type: string
                       organizationGuid:
+                        pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                         type: string
                       parameters:
                         type: string
                       planId:
+                        pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                         type: string
                       serviceId:
+                        pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                         type: string
                       spaceGuid:
+                        pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                         type: string
                     required:
                     - instanceId
@@ -230,6 +281,7 @@ spec:
                   parameters:
                     type: string
                   route:
+                    pattern: ^https?://.+
                     type: string
                 type: object
               managementPolicies:
@@ -433,8 +485,10 @@ spec:
                   parameters:
                     type: string
                   route_service_url:
+                    pattern: ^https?://.+
                     type: string
                   syslog_drain_url:
+                    pattern: ^https?://.+
                     type: string
                   volume_mounts:
                     type: string
