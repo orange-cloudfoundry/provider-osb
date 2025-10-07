@@ -66,7 +66,7 @@ const (
 
 	errTechnical    = "error: technical error encountered : %s"
 	errNoResponse   = "no errors but the response sent back was empty for request: %v"
-	errStatusUpdate = "error: Cannot update status of service bindings resources: %v"
+	errStatusUpdate = "error: cannot update status of service bindings resources: %v"
 
 	errAddReferenceFinalizer    = "cannot add finalizer to referenced resource"
 	errRemoveReferenceFinalizer = "cannot remove finalizer from referenced resource"
