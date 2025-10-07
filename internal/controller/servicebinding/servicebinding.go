@@ -412,7 +412,22 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	// Request binding creation
 	resp, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
 	if shouldReturn {
-		return managed.ExternalCreation{}, err
+		if err != nil {
+			return managed.ExternalCreation{}, err
+		}
+		if resp.Async {
+			// Update the resource to reflect the async state
+			if err = c.kube.Status().Update(ctx, binding); err != nil {
+				return managed.ExternalCreation{}, errors.Wrap(err, errStatusUpdate)
+			}
+			// Return with no error to avoid requeueing with error
+			return managed.ExternalCreation{
+				AdditionalDetails: managed.AdditionalDetails{
+					"async": "true",
+				},
+			}, nil
+		}
+
 	}
 	// Set values returned by the request
 	if err = c.kube.Status().Update(ctx, binding); err != nil {
@@ -466,6 +481,7 @@ func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alph
 		}
 		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
 		binding.Status.SetConditions(xpv1.Creating())
+		return resp, nil, true
 	} else {
 		binding.Status.SetConditions(xpv1.Available())
 		binding.Status.AtProvider.LastOperationState = osb.StateSucceeded
