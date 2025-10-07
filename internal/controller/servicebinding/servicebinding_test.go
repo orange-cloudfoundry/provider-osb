@@ -200,10 +200,7 @@ func newMockKubeClientForServiceBinding(ctrl *gomock.Controller, sb *v1alpha1.Se
 	// Mock the Get() method to return the sb object when requested
 	mockClient.
 		EXPECT().
-		Get(gomock.Any(), gomock.Eq(client.ObjectKey{
-			Name:      sb.GetName(),
-			Namespace: sb.GetNamespace(),
-		}), gomock.Any(), gomock.Any()).
+		Get(gomock.Any(), gomock.Eq(client.ObjectKeyFromObject(sb)), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 			binding, ok := obj.(*v1alpha1.ServiceBinding)
 			if !ok {
