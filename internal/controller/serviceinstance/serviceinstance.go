@@ -413,28 +413,16 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, si *v1alph
 	}
 
 	// Get the latest version of the ServiceInstance to avoid conflicts during status update.
-	latest := &v1alpha1.ServiceInstance{}
-	if err := c.kube.Get(ctx, client.ObjectKey{Name: si.Name, Namespace: si.Namespace}, latest); err != nil {
-		return managed.ExternalObservation{}, errors.New(errGetLatest)
+	latest, err := c.getLatestInstance(ctx, si)
+	if err != nil {
+		return managed.ExternalObservation{}, err
 	}
 	// Update the ServiceInstance status based on the response from the OSB client.
-	latest.Status.AtProvider.LastOperationState = resp.State
-	if resp.Description != nil {
-		latest.Status.AtProvider.LastOperationDescription = *resp.Description
-	}
-
-	// Operation has completed (succeeded or failed), update the status accordingly.
-	if resp.State == osb.StateSucceeded {
-		if si.Status.AtProvider.LastOperationState == "deleting" && !si.Status.AtProvider.HasActiveBindings {
-			return c.removeFinalizer(ctx, si)
-		} else {
-			latest.Status.SetConditions(xpv1.Available())
-			latest.Status.AtProvider.LastOperationState = osb.StateSucceeded
-		}
-
-	}
-	if resp.State == osb.StateFailed {
-		latest.Status.SetConditions(xpv1.Unavailable())
+	c.updateInstanceStatusFromLastOp(latest, resp)
+	// If the last operation was a deletion and it has succeeded, we can remove the finalizer.
+	// We also check if there are active bindings before removing the finalizer.
+	if si.Status.AtProvider.LastOperationState == "deleting" && !si.Status.AtProvider.HasActiveBindings {
+		return c.removeFinalizer(ctx, si)
 	}
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, latest); err != nil {
@@ -543,4 +531,27 @@ func (c *external) removeFinalizer(ctx context.Context, si *v1alpha1.ServiceInst
 	return managed.ExternalObservation{
 		ResourceExists: false,
 	}, nil
+}
+
+func (c *external) getLatestInstance(ctx context.Context, si *v1alpha1.ServiceInstance) (*v1alpha1.ServiceInstance, error) {
+	latest := &v1alpha1.ServiceInstance{}
+	if err := c.kube.Get(ctx, client.ObjectKey{Name: si.Name, Namespace: si.Namespace}, latest); err != nil {
+		return nil, errors.New(errGetLatest)
+	}
+	return latest, nil
+}
+
+func (c *external) updateInstanceStatusFromLastOp(si *v1alpha1.ServiceInstance, resp *osb.LastOperationResponse) {
+	// Update the ServiceInstance status based on the response from the OSB client.
+	si.Status.AtProvider.LastOperationState = resp.State
+	if resp.Description != nil {
+		si.Status.AtProvider.LastOperationDescription = *resp.Description
+	}
+	if resp.State == osb.StateSucceeded {
+		si.Status.SetConditions(xpv1.Available())
+		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
+	}
+	if resp.State == osb.StateFailed {
+		si.Status.SetConditions(xpv1.Unavailable())
+	}
 }
