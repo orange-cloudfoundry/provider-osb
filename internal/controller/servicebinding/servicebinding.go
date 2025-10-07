@@ -410,9 +410,9 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Request binding creation
-	resp, ec, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
+	resp, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
 	if shouldReturn {
-		return ec, err
+		return managed.ExternalCreation{}, err
 	}
 	// Set values returned by the request
 	if err = c.kube.Status().Update(ctx, binding); err != nil {
@@ -449,14 +449,14 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}, nil
 }
 
-func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alpha1.ServiceBinding) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
+func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alpha1.ServiceBinding) (*osb.BindResponse, error, bool) {
 	resp, err := c.client.Bind(&bindRequest)
 
 	if err != nil {
-		return nil, managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind")), true
+		return nil, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind")), true
 	}
 	if resp == nil {
-		return nil, managed.ExternalCreation{}, fmt.Errorf(errNoResponse, bindRequest), true
+		return nil, fmt.Errorf(errNoResponse, bindRequest), true
 	}
 
 	if resp.Async {
@@ -470,7 +470,7 @@ func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alph
 		binding.Status.SetConditions(xpv1.Available())
 		binding.Status.AtProvider.LastOperationState = osb.StateSucceeded
 	}
-	return resp, managed.ExternalCreation{}, nil, false
+	return resp, nil, false
 }
 
 func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, map[string]any, error) {
