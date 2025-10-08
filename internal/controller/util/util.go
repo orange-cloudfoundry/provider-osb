@@ -2,7 +2,9 @@ package util
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +12,7 @@ import (
 	"slices"
 	"time"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
@@ -182,4 +185,100 @@ func GetProviderConfig(ctx context.Context, kube client.Client, ref common.Provi
 	}
 
 	return pc, nil
+}
+
+func HashBytes(b []byte) string {
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:])
+}
+
+func ValidateAuth(osb osb.Client) error {
+	_, err := osb.GetCatalog()
+	if err != nil {
+		return errors.Wrap(err, "authentication failed")
+	}
+	return nil
+}
+
+type MetaObject interface {
+	client.Object
+	GetConfigChecksum() string
+	SetConfigChecksum(string)
+	GetCondition(condType xpv1.ConditionType) xpv1.Condition
+	SetConditions(conditions ...xpv1.Condition)
+}
+
+func IsConfigChanged[T MetaObject](cr T, newChecksum string) bool {
+	return cr.GetConfigChecksum() != newChecksum
+}
+
+func EnsureConfigChecksum[T MetaObject](ctx context.Context, kube client.Client, cr T, newChecksum string) (bool, error) {
+	if cr.GetConfigChecksum() == newChecksum {
+		return false, nil
+	}
+
+	cr.SetConfigChecksum(newChecksum)
+
+	if err := kube.Status().Update(ctx, cr); err != nil {
+		return false, errors.Wrap(err, "cannot update status with new ConfigChecksum")
+	}
+
+	return true, nil
+}
+
+func IsBrokerAvailable[T MetaObject](ctx context.Context, osb osb.Client, kube client.Client, cr T) error {
+	_, err := osb.GetStatus()
+	if err != nil {
+		cr.SetConditions(xpv1.Available().WithMessage("external resource is not reachable"))
+
+		if err := kube.Status().Update(ctx, cr); err != nil {
+			return errors.Wrap(err, "cannot update status")
+		}
+		return errors.Wrap(err, "external resource is not reachable")
+	}
+	return nil
+}
+
+func SetReadyCondition[T MetaObject](ctx context.Context, kube client.Client, cr T, message string) error {
+	condition := cr.GetCondition(xpv1.TypeReady)
+
+	if condition.Status != "True" {
+		cr.SetConditions(xpv1.Available().WithMessage(message))
+
+		if err := kube.Status().Update(ctx, cr); err != nil {
+			return errors.Wrap(err, "cannot update status")
+		}
+	}
+
+	return nil
+}
+
+// CheckOSBBrokerResource checks the availability of the OSB broker, ensures the configuration checksum,
+// validates authentication if needed, and updates the Ready condition.
+// Returns true if an update is required, or an error if any step fails.
+func CheckOSBBrokerResource[T MetaObject](ctx context.Context, osb osb.Client, kube client.Client, cr T, checksumToken string) (needsUpdate bool, err error) {
+	// Broker availability
+	if err := IsBrokerAvailable(ctx, osb, kube, cr); err != nil {
+		return false, fmt.Errorf("OSB broker unavailable: %w", err)
+	}
+
+	// Ensure config checksum
+	needsUpdate, err = EnsureConfigChecksum(ctx, kube, cr, checksumToken)
+	if err != nil {
+		return false, fmt.Errorf("failed to ensure config checksum: %w", err)
+	}
+
+	// Validate auth if needed
+	if needsUpdate {
+		if err := ValidateAuth(osb); err != nil {
+			return false, fmt.Errorf("OSB authentication validation failed: %w", err)
+		}
+	}
+
+	// Set Ready condition
+	if err := SetReadyCondition(ctx, kube, cr, "The external resource is reachable and authentication is valid"); err != nil {
+		return false, fmt.Errorf("failed to set Ready condition: %w", err)
+	}
+
+	return needsUpdate, nil
 }

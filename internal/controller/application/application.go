@@ -34,6 +34,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
 
+	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/application/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
@@ -45,15 +46,8 @@ const (
 	errTrackPCUsage   = "cannot track ProviderConfig usage"
 	errGetPC          = "cannot get ProviderConfig"
 	errGetCreds       = "cannot get credentials"
-
-	errNewClient = "cannot create new Service"
-)
-
-// A NoOpService does nothing.
-type NoOpService struct{}
-
-var (
-	newNoOpService = func(_ []byte) (interface{}, error) { return &NoOpService{}, nil }
+	errNewClient      = "cannot create new osb client"
+	errStatusUpdate   = "error: Cannot update status of application resource: %v"
 )
 
 // Setup adds a controller that reconciles Application managed resources.
@@ -69,7 +63,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 		managed.WithExternalConnecter(&connector{
 			kube:         mgr.GetClient(),
 			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
-			newServiceFn: newNoOpService}),
+			newServiceFn: util.NewOsbClient,
+		}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
@@ -109,7 +104,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 type connector struct {
 	kube         client.Client
 	usage        resource.Tracker
-	newServiceFn func(creds []byte) (interface{}, error)
+	newServiceFn func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
 }
 
 // Connect typically produces an ExternalClient by:
@@ -133,17 +128,20 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	cd := pc.Spec.Credentials
-	data, err := resource.CommonCredentialExtractor(ctx, cd.Source, c.kube, cd.CommonCredentialSelectors)
+	creds, err := resource.CommonCredentialExtractor(ctx, cd.Source, c.kube, cd.CommonCredentialSelectors)
 	if err != nil {
 		return nil, errors.Wrap(err, errGetCreds)
 	}
 
-	svc, err := c.newServiceFn(data)
+	checksumToken := util.HashBytes(creds)
+
+	// Build osb client
+	osbClient, err := c.newServiceFn(*pc, creds)
 	if err != nil {
 		return nil, errors.Wrap(err, errNewClient)
 	}
 
-	return &external{service: svc}, nil
+	return &external{osb: osbClient, kube: c.kube, checksumToken: checksumToken}, nil
 }
 
 // An ExternalClient observes, then either creates, updates, or deletes an
@@ -151,17 +149,21 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	service interface{}
+	osb           osb.Client
+	kube          client.Client
+	checksumToken string
 }
 
-func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
+func (e *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
 		return managed.ExternalObservation{}, errors.New(errNotApplication)
 	}
 
-	// These fmt statements should be removed in the real implementation.
-	fmt.Printf("Observing: %+v", cr)
+	_, err := util.CheckOSBBrokerResource(ctx, e.osb, e.kube, cr, e.checksumToken)
+	if err != nil {
+		return managed.ExternalObservation{}, err
+	}
 
 	return managed.ExternalObservation{
 		// Return false when the external resource does not exist. This lets
