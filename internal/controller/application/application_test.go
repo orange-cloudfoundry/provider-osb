@@ -18,6 +18,7 @@ package application
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -33,7 +34,9 @@ import (
 	v2 "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/application/v1alpha1"
+	binding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+	instance "github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	mock "github.com/orange-cloudfoundry/provider-osb/internal/mymock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -423,6 +426,126 @@ func Test_external_Update(t *testing.T) {
 	}
 }
 
+type RequestType int
+
+const (
+	ErrorOnInstanceOnly RequestType = iota
+	ErrorOnBindingOnly
+	SuccessBoth
+)
+
+func newMockKubeClientForApplicationDelete(ctrl *gomock.Controller, app *v1alpha1.Application, RequestType RequestType) client.Client {
+	mockClient := mock.NewMockClient(ctrl) // généré par mockgen
+
+	// Mock pour Status().Update()
+	mockStatus := mock.NewMockSubResourceWriter(ctrl)
+	mockStatus.
+		EXPECT().
+		Update(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+			return nil
+		}).
+		AnyTimes()
+
+	mockClient.
+		EXPECT().
+		Status().
+		Return(mockStatus).
+		AnyTimes()
+
+	mockClient.
+		EXPECT().
+		List(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
+			switch l := list.(type) {
+			case *instance.ServiceInstanceList:
+				if RequestType == ErrorOnInstanceOnly {
+					l.Items = []instance.ServiceInstance{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "si-1",
+								Namespace: app.Namespace,
+							},
+							Spec: instance.ServiceInstanceSpec{
+								ForProvider: common.InstanceData{
+									ApplicationData: &common.ApplicationData{
+										Name: "basic-application",
+									},
+								},
+							},
+						},
+					}
+				}
+				if RequestType == SuccessBoth {
+					l.Items = []instance.ServiceInstance{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "si-1",
+								Namespace: app.Namespace,
+							},
+							Spec: instance.ServiceInstanceSpec{
+								ForProvider: common.InstanceData{
+									ApplicationData: &common.ApplicationData{
+										Name: "basic-name-app",
+									},
+								},
+							},
+						},
+					}
+				}
+			case *binding.ServiceBindingList:
+				if RequestType == ErrorOnBindingOnly {
+					l.Items = []binding.ServiceBinding{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "bs-1",
+								Namespace: app.Namespace,
+							},
+							Spec: binding.ServiceBindingSpec{
+								ForProvider: binding.ServiceBindingParameters{
+									ApplicationData: &common.ApplicationData{
+										Name: "basic-application",
+									},
+								},
+							},
+						},
+					}
+				}
+				if RequestType == SuccessBoth {
+					l.Items = []binding.ServiceBinding{
+						{
+							ObjectMeta: metav1.ObjectMeta{
+								Name:      "bs-1",
+								Namespace: app.Namespace,
+							},
+							Spec: binding.ServiceBindingSpec{
+								ForProvider: binding.ServiceBindingParameters{
+									ApplicationData: &common.ApplicationData{
+										Name: "basic-name-app",
+									},
+								},
+							},
+						},
+					}
+				}
+			default:
+				return fmt.Errorf("unsupported list type %T", list)
+			}
+			return nil
+		}).
+		AnyTimes()
+
+	mockClient.
+		EXPECT().
+		Get(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, key client.ObjectKey, obj client.Object) error {
+			return nil
+		}).
+		AnyTimes()
+
+	return mockClient
+}
+
 func Test_external_Delete(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -454,6 +577,42 @@ func Test_external_Delete(t *testing.T) {
 			want: want{
 				o:   managed.ExternalDelete{},
 				err: errors.New(errNotApplication),
+			},
+		},
+		"ErrorOnInstance": {
+			args: args{
+				mg: basicApplication.DeepCopy(),
+			},
+			fields: fields{
+				kubeClient: newMockKubeClientForApplicationDelete(ctrl, basicApplication.DeepCopy(), ErrorOnInstanceOnly),
+			},
+			want: want{
+				o:   managed.ExternalDelete{},
+				err: errors.New("cannot delete Application basic-application because ServiceInstance si-1 references it"),
+			},
+		},
+		"ErrorOnBinding": {
+			args: args{
+				mg: basicApplication.DeepCopy(),
+			},
+			fields: fields{
+				kubeClient: newMockKubeClientForApplicationDelete(ctrl, basicApplication.DeepCopy(), ErrorOnBindingOnly),
+			},
+			want: want{
+				o:   managed.ExternalDelete{},
+				err: errors.New("cannot delete Application basic-application because ServiceBinding bs-1 references it"),
+			},
+		},
+		"Success": {
+			args: args{
+				mg: basicApplication.DeepCopy(),
+			},
+			fields: fields{
+				kubeClient: newMockKubeClientForApplicationDelete(ctrl, basicApplication.DeepCopy(), SuccessBoth),
+			},
+			want: want{
+				o:   managed.ExternalDelete{},
+				err: nil,
 			},
 		},
 	}
