@@ -515,12 +515,12 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
+				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
 						Error: panicError,
 					},
 				},
-				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
@@ -532,6 +532,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
+				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: osbfake.DynamicBindReaction(func(req *osb.BindRequest) (*osb.BindResponse, error) {
 						resp := &osb.BindResponse{}
@@ -539,7 +540,6 @@ func TestCreate(t *testing.T) {
 						return resp, err
 					}),
 				},
-				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
 			},
 			want: want{
 				o: managed.ExternalCreation{
@@ -552,6 +552,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
+				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
 						Response: &osb.BindResponse{
@@ -559,7 +560,6 @@ func TestCreate(t *testing.T) {
 						},
 					},
 				},
-				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
 			},
 			want: want{
 				// no credentials, because async
