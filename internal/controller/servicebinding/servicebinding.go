@@ -346,41 +346,13 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 	}
 
 	resp, err := c.client.PollBindingLastOperation(lastOpReq)
-
 	// Manage errors
 	if err != nil {
-		// HTTP error 410 means that the resource was deleted by the broker
-		// so if the resource on the cluster was effectively deleted,
-		// we can remove its finalizer
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			if httpErr.StatusCode == http.StatusGone && meta.WasDeleted(binding) {
-				// Remove async finalizer from binding
-				if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
-					return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
-				}
-				// Remove reference finalizer from referenced ServiceInstance
-				if err = c.removeRefFinalizer(ctx, binding); err != nil {
-					return managed.ExternalObservation{}, errors.Wrap(err, errRemoveReferenceFinalizer)
-				}
-				// return resourceexists: false explicitly
-				// This will trigger the removal of crossplane runtime's finalizers
-				return managed.ExternalObservation{
-					ResourceExists: false,
-				}, nil
-			}
-		}
-		// Other errors should be considered as failures
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "PollBindingLastOperation"))
+		return c.handleLastOperationError(ctx, binding, err)
 	}
 
-	// Set polled operation data in resource status
-	binding.Status.AtProvider.LastOperationState = resp.State
-	if resp.Description != nil {
-		binding.Status.AtProvider.LastOperationDescription = *resp.Description
-	} else {
-		binding.Status.AtProvider.LastOperationDescription = ""
-	}
-	binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
+	// Set observed fields values in cr.Status.AtProvider
+	c.updateBindingStatusFromLastOp(binding, resp)
 
 	if err = c.kube.Status().Update(ctx, binding); err != nil {
 		return managed.ExternalObservation{}, errors.Wrap(err, errStatusUpdate)
@@ -438,9 +410,13 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Request binding creation
-	resp, ec, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
+	resp, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
 	if shouldReturn {
-		return ec, err
+		return c.handleAsyncOrError(ctx, binding, resp, err)
+	}
+	// Set values returned by the request
+	if err = c.kube.Status().Update(ctx, binding); err != nil {
+		return managed.ExternalCreation{}, errors.Wrap(err, errStatusUpdate)
 	}
 
 	creds, err := getCredsFromResponse(resp)
@@ -473,14 +449,14 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}, nil
 }
 
-func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alpha1.ServiceBinding) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
+func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alpha1.ServiceBinding) (*osb.BindResponse, error, bool) {
 	resp, err := c.client.Bind(&bindRequest)
 
 	if err != nil {
-		return nil, managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind")), true
+		return nil, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind")), true
 	}
 	if resp == nil {
-		return nil, managed.ExternalCreation{}, fmt.Errorf(errNoResponse, bindRequest), true
+		return nil, fmt.Errorf(errNoResponse, bindRequest), true
 	}
 
 	if resp.Async {
@@ -489,14 +465,13 @@ func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alph
 			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
 		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
-		return nil, managed.ExternalCreation{
-			// AdditionalDetails is for logs
-			AdditionalDetails: managed.AdditionalDetails{
-				"async": "true",
-			},
-		}, nil, true
+		binding.Status.SetConditions(xpv1.Creating())
+		return resp, nil, true
+	} else {
+		binding.Status.SetConditions(xpv1.Available())
+		binding.Status.AtProvider.LastOperationState = osb.StateSucceeded
 	}
-	return resp, managed.ExternalCreation{}, nil, false
+	return resp, nil, false
 }
 
 func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, map[string]any, error) {
@@ -511,8 +486,10 @@ func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, m
 
 	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
 	var requestParams map[string]any
-	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
-		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+	if spec.Parameters != "" {
+		if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
+			return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+		}
 	}
 	return requestContext, requestParams, nil
 }
@@ -846,4 +823,65 @@ func getCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 	}
 
 	return creds, nil
+}
+
+func (c *external) handleLastOperationError(ctx context.Context, binding *v1alpha1.ServiceBinding, err error) (managed.ExternalObservation, error) {
+	// HTTP error 410 means that the resource was deleted by the broker
+	// so if the resource on the cluster was effectively deleted,
+	// we can remove its finalizer
+	if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+		if httpErr.StatusCode == http.StatusGone && meta.WasDeleted(binding) {
+			// Remove async finalizer from binding
+			if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
+				return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
+			}
+			// Remove reference finalizer from referenced ServiceInstance
+			if err = c.removeRefFinalizer(ctx, binding); err != nil {
+				return managed.ExternalObservation{}, errors.Wrap(err, errRemoveReferenceFinalizer)
+			}
+			// return resourceexists: false explicitly
+			// This will trigger the removal of crossplane runtime's finalizers
+			return managed.ExternalObservation{
+				ResourceExists: false,
+			}, nil
+		}
+	}
+	// Other errors should be considered as failures
+	return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "PollBindingLastOperation"))
+}
+
+func (c *external) updateBindingStatusFromLastOp(binding *v1alpha1.ServiceBinding, resp *osb.LastOperationResponse) {
+	// Set polled operation data in resource status
+	binding.Status.AtProvider.LastOperationState = resp.State
+	if resp.Description != nil {
+		binding.Status.AtProvider.LastOperationDescription = *resp.Description
+	} else {
+		binding.Status.AtProvider.LastOperationDescription = ""
+	}
+	binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
+
+	// Set condition based on operation state
+	if resp.State == osb.StateSucceeded {
+		binding.Status.SetConditions(xpv1.Available())
+	}
+	if resp.State == osb.StateFailed {
+		binding.Status.SetConditions(xpv1.Unavailable())
+	}
+}
+
+func (c *external) handleAsyncOrError(ctx context.Context, binding *v1alpha1.ServiceBinding, resp *osb.BindResponse, err error) (managed.ExternalCreation, error) {
+	if err != nil {
+		return managed.ExternalCreation{}, err
+	}
+	if resp.Async {
+		if err = c.kube.Status().Update(ctx, binding); err != nil {
+			return managed.ExternalCreation{}, errors.Wrap(err, errStatusUpdate)
+		}
+		return managed.ExternalCreation{
+			AdditionalDetails: managed.AdditionalDetails{
+				"async": "true",
+			},
+		}, nil
+	}
+	return managed.ExternalCreation{}, nil
 }

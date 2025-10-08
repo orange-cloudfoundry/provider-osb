@@ -476,9 +476,13 @@ func TestObserve(t *testing.T) {
 }
 
 func TestCreate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
 	type fields struct {
 		client osb.Client
 		oid    osb.OriginatingIdentity
+		kube   client.Client
 	}
 
 	type args struct {
@@ -511,6 +515,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
+				kube: newMockKubeClientForServiceBinding(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
 						Error: panicError,
@@ -527,6 +532,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
+				kube: newMockKubeClientForServiceBinding(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: osbfake.DynamicBindReaction(func(req *osb.BindRequest) (*osb.BindResponse, error) {
 						resp := &osb.BindResponse{}
@@ -546,6 +552,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
+				kube: newMockKubeClientForServiceBinding(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
 						Response: &osb.BindResponse{
@@ -567,7 +574,7 @@ func TestCreate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{client: tc.fields.client, originatingIdentity: tc.fields.oid}
+			e := external{client: tc.fields.client, originatingIdentity: tc.fields.oid, kube: tc.fields.kube}
 			got, err := e.Create(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Create(...): -want error, +got error:\n%s\n", tc.reason, diff)
