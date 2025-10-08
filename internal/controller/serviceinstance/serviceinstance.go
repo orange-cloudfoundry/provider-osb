@@ -45,6 +45,7 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 )
 
+// todo : add constants in a util package to be used by serviceinstance and servicebinding
 const (
 	errNotServiceInstance = "managed resource is not a ServiceInstance custom resource"
 	errTrackPCUsage       = "cannot track ProviderConfig usage"
@@ -533,6 +534,7 @@ func (c *external) removeFinalizer(ctx context.Context, si *v1alpha1.ServiceInst
 	}, nil
 }
 
+// todo : add getLatestInstance in a util package to be used by serviceinstance and servicebinding
 func (c *external) getLatestInstance(ctx context.Context, si *v1alpha1.ServiceInstance) (*v1alpha1.ServiceInstance, error) {
 	latest := &v1alpha1.ServiceInstance{}
 	if err := c.kube.Get(ctx, client.ObjectKey{Name: si.Name, Namespace: si.Namespace}, latest); err != nil {
@@ -541,6 +543,7 @@ func (c *external) getLatestInstance(ctx context.Context, si *v1alpha1.ServiceIn
 	return latest, nil
 }
 
+// todo : add updateInstanceStatusFromLastOp in a util package to be used by serviceinstance and servicebinding
 func (c *external) updateInstanceStatusFromLastOp(si *v1alpha1.ServiceInstance, resp *osb.LastOperationResponse) {
 	// Update the ServiceInstance status based on the response from the OSB client.
 	si.Status.AtProvider.LastOperationState = resp.State
