@@ -226,10 +226,10 @@ func EnsureConfigChecksum[T MetaObject](ctx context.Context, kube client.Client,
 	return true, nil
 }
 
-func IsBrokerAvailable[T MetaObject](ctx context.Context, osb osb.Client, kube client.Client, cr T) error {
+func CheckBrokerAvailability[T MetaObject](ctx context.Context, osb osb.Client, kube client.Client, cr T) error {
 	_, err := osb.GetStatus()
 	if err != nil {
-		cr.SetConditions(xpv1.Available().WithMessage("external resource is not reachable"))
+		cr.SetConditions(xpv1.Unavailable().WithMessage("external resource is not reachable"))
 
 		if err := kube.Status().Update(ctx, cr); err != nil {
 			return errors.Wrap(err, "cannot update status")
@@ -258,7 +258,7 @@ func SetReadyCondition[T MetaObject](ctx context.Context, kube client.Client, cr
 // Returns true if an update is required, or an error if any step fails.
 func CheckOSBBrokerResource[T MetaObject](ctx context.Context, osb osb.Client, kube client.Client, cr T, checksumToken string) (needsUpdate bool, err error) {
 	// Broker availability
-	if err := IsBrokerAvailable(ctx, osb, kube, cr); err != nil {
+	if err := CheckBrokerAvailability(ctx, osb, kube, cr); err != nil {
 		return false, fmt.Errorf("OSB broker unavailable: %w", err)
 	}
 
