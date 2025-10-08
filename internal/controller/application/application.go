@@ -36,6 +36,8 @@ import (
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/application/v1alpha1"
+	binding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
+	instance "github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
@@ -218,7 +220,15 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalDelete{}, errors.New(errNotApplication)
 	}
 
-	fmt.Printf("Deleting: %+v", cr)
+	err := util.CheckReferencesApplication(ctx, c.kube, cr, &instance.ServiceInstanceList{})
+	if err != nil {
+		return managed.ExternalDelete{}, err
+	}
+
+	err = util.CheckReferencesApplication(ctx, c.kube, cr, &binding.ServiceBindingList{})
+	if err != nil {
+		return managed.ExternalDelete{}, err
+	}
 
 	return managed.ExternalDelete{}, nil
 }

@@ -18,12 +18,14 @@ import (
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/application/v1alpha1"
+	binding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+	instance "github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -283,4 +285,53 @@ func CheckOSBBrokerResource[T MetaObject](ctx context.Context, osb osb.Client, k
 	}
 
 	return needsUpdate, nil
+}
+
+// CheckReferencesApplication checks if any resource in the given list references the specified Application.
+// Supports multiple list types with the same field path: Spec.ForProvider.ApplicationData.Name.
+// - ctx: context for logging
+// - kube: Kubernetes client
+// - app: the Application to check references for
+// - list: pointer to the dynamic resource list (client.ObjectList)
+func CheckReferencesApplication(ctx context.Context, kube client.Client, app *v1alpha1.Application, list client.ObjectList) error {
+	logger := log.FromContext(ctx)
+	appName := app.Name
+	namespace := app.Namespace
+
+	// List all resources of the given type in the namespace
+	if err := kube.List(ctx, list, client.InNamespace(namespace)); err != nil {
+		logger.Error(err, "unable to list resources")
+		return err
+	}
+
+	// Type switch based on the concrete list type
+	switch l := list.(type) {
+	case *instance.ServiceInstanceList:
+		for i := range l.Items {
+			si := &l.Items[i]
+			if si.Spec.ForProvider.ApplicationData.Name == appName {
+				logger.Info("Deletion blocked: ServiceInstance references this Application",
+					"applicationName", appName,
+					"serviceInstance", si.Name,
+				)
+				return fmt.Errorf("cannot delete Application %s because ServiceInstance %s references it", appName, si.Name)
+			}
+		}
+	case *binding.ServiceBindingList:
+		for i := range l.Items {
+			bs := &l.Items[i]
+			if bs.Spec.ForProvider.ApplicationData.Name == appName {
+				logger.Info("Deletion blocked: BindingsService references this Application",
+					"applicationName", appName,
+					"bindingsService", bs.Name,
+				)
+				return fmt.Errorf("cannot delete Application %s because ServiceBinding %s references it", appName, bs.Name)
+			}
+		}
+	default:
+		return fmt.Errorf("unsupported resource list type %T", list)
+	}
+
+	// No references found
+	return nil
 }
