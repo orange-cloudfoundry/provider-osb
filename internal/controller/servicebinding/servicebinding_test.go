@@ -515,7 +515,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
+				kube: newMockKubeClientForServiceBinding(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
 						Error: panicError,
@@ -532,7 +532,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
+				kube: newMockKubeClientForServiceBinding(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: osbfake.DynamicBindReaction(func(req *osb.BindRequest) (*osb.BindResponse, error) {
 						resp := &osb.BindResponse{}
@@ -552,7 +552,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				kube: generateFakeKubeClientServiceBindingWithMock(ctrl, basicBinding),
+				kube: newMockKubeClientForServiceBinding(ctrl, basicBinding),
 				client: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
 						Response: &osb.BindResponse{
