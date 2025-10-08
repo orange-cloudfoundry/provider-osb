@@ -264,11 +264,14 @@ spec:
                 description: ApplicationObservation are the observable fields of a
                   Application.
                 properties:
+                  ConfigChecksum:
+                    type: string
                   Name:
                     type: string
                   brokerURL:
                     type: string
                 required:
+                - ConfigChecksum
                 - Name
                 - brokerURL
                 type: object

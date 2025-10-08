@@ -29,8 +29,9 @@ import (
 // ApplicationObservation are the observable fields of a Application.
 // TODO manage observations
 type ApplicationObservation struct {
-	BrokerURL string `json:"brokerURL"`
-	Name      string `json:"Name"`
+	BrokerURL      string `json:"brokerURL"`
+	Name           string `json:"Name"`
+	ConfigChecksum string `json:"ConfigChecksum"`
 }
 
 // A ApplicationSpec defines the desired state of a Application.
