@@ -31,27 +31,47 @@ import (
 // ServiceInstanceObservation are the observable fields of a ServiceInstance.
 // TODO manage observations
 type ServiceInstanceObservation struct {
-	ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
-	ApplicationData          *common.ApplicationData `json:"applicationData,omitempty"`
-	common.InstanceData      `json:",inline"`
-	Context                  common.KubernetesOSBContext `json:"context,omitempty"`
-	DashboardURL             *string                     `json:"dashboardURL,omitempty"`
-	LastOperationState       osb.LastOperationState      `json:"last_operation_state,omitempty"`
-	LastOperationKey         osb.OperationKey            `json:"last_operation_key,omitempty"`
-	LastOperationDescription string                      `json:"last_operation_description,omitempty"`
-	HasActiveBindings        bool                        `json:"hasActiveBindings,omitempty"`
+	// +kubebuilder:validation:Optional
+	ApplicationRef *common.NamespacedName `json:"application,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	ApplicationData     *common.ApplicationData `json:"applicationData,omitempty"`
+	common.InstanceData `json:",inline"`
+
+	// +kubebuilder:validation:Optional
+	Context common.KubernetesOSBContext `json:"context,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	DashboardURL *string `json:"dashboardURL,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	LastOperationState osb.LastOperationState `json:"last_operation_state,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	LastOperationKey osb.OperationKey `json:"last_operation_key,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	LastOperationDescription string `json:"last_operation_description,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	HasActiveBindings bool `json:"hasActiveBindings,omitempty"`
 }
 
 // A ServiceInstanceSpec defines the desired state of a ServiceInstance.
 type ServiceInstanceSpec struct {
 	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       common.InstanceData `json:"forProvider"`
+
+	// +kubebuilder:validation:Required
+	ForProvider common.InstanceData `json:"forProvider"`
 }
 
 // A ServiceInstanceStatus represents the observed state of a ServiceInstance.
 type ServiceInstanceStatus struct {
 	xpv1.ResourceStatus `json:",inline"`
-	AtProvider          ServiceInstanceObservation `json:"atProvider,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	AtProvider ServiceInstanceObservation `json:"atProvider,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -67,7 +87,10 @@ type ServiceInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ServiceInstanceSpec   `json:"spec"`
+	// +kubebuilder:validation:Required
+	Spec ServiceInstanceSpec `json:"spec"`
+
+	// +kubebuilder:validation:Optional
 	Status ServiceInstanceStatus `json:"status,omitempty"`
 }
 

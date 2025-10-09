@@ -32,29 +32,64 @@ import (
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
 type ServiceBindingParameters struct {
-	ApplicationRef  *common.NamespacedName        `json:"application,omitempty"`
-	ApplicationData *common.ApplicationData       `json:"applicationData,omitempty"`
-	InstanceRef     *common.NamespacedName        `json:"instance,omitempty"`
-	InstanceData    *common.InstanceData          `json:"instanceData,omitempty"`
-	Context         common.KubernetesOSBContext   `json:"context,omitempty"`
-	Parameters      common.SerializableParameters `json:"parameters,omitempty"`
-	Route           string                        `json:"route,omitempty"`
+	// +kubebuilder:validation:Optional
+	ApplicationRef *common.NamespacedName `json:"application,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	ApplicationData *common.ApplicationData `json:"applicationData,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	InstanceRef *common.NamespacedName `json:"instance,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	InstanceData *common.InstanceData `json:"instanceData,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	Context common.KubernetesOSBContext `json:"context,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	Parameters common.SerializableParameters `json:"parameters,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	Route string `json:"route,omitempty"`
 	// TODO manage additional attributes
 }
 
 // ServiceBindingObservation are the observable fields of a ServiceBinding.
 type ServiceBindingObservation struct {
 	// TODO add context and route to test if these were updated and return error if so
-	Parameters               common.SerializableParameters `json:"parameters,omitempty"`
-	RouteServiceURL          *string                       `json:"route_service_url,omitempty"`
-	Endpoints                SerializableEndpoints         `json:"endpoints,omitempty"`
-	VolumeMounts             SerializableVolumeMounts      `json:"volume_mounts,omitempty"`
-	SyslogDrainURL           *string                       `json:"syslog_drain_url,omitempty"`
-	Metadata                 *osb.BindingMetadata          `json:"metadata,omitempty"`
-	LastOperationState       osb.LastOperationState        `json:"last_operation_state,omitempty"`
-	LastOperationKey         osb.OperationKey              `json:"last_operation_key,omitempty"`
-	LastOperationDescription string                        `json:"last_operation_description,omitempty"`
-	LastOperationPolledTime  string                        `json:"last_operation_polled_time,omitempty"`
+	// +kubebuilder:validation:Optional
+	Parameters common.SerializableParameters `json:"parameters,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	RouteServiceURL *string `json:"route_service_url,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	Endpoints SerializableEndpoints `json:"endpoints,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	VolumeMounts SerializableVolumeMounts `json:"volume_mounts,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	SyslogDrainURL *string `json:"syslog_drain_url,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	Metadata *osb.BindingMetadata `json:"metadata,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	LastOperationState osb.LastOperationState `json:"last_operation_state,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	LastOperationKey osb.OperationKey `json:"last_operation_key,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	LastOperationDescription string `json:"last_operation_description,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	LastOperationPolledTime string `json:"last_operation_polled_time,omitempty"`
 }
 
 type SerializableVolumeMounts string
@@ -68,6 +103,7 @@ func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) 
 	return res, err
 }
 
+// +kubebuilder:validation:Type=string
 type SerializableEndpoints string
 
 func (v *SerializableEndpoints) ToEndpoints() (*[]osb.Endpoint, error) {
@@ -89,13 +125,17 @@ func (v *SerializableEndpoints) String() string {
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
 type ServiceBindingSpec struct {
 	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       ServiceBindingParameters `json:"forProvider"`
+
+	// +kubebuilder:validation:Required
+	ForProvider ServiceBindingParameters `json:"forProvider"`
 }
 
 // A ServiceBindingStatus represents the observed state of a ServiceBinding.
 type ServiceBindingStatus struct {
 	xpv1.ResourceStatus `json:",inline"`
-	AtProvider          ServiceBindingObservation `json:"atProvider,omitempty"`
+
+	// +kubebuilder:validation:Optional
+	AtProvider ServiceBindingObservation `json:"atProvider,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -111,7 +151,10 @@ type ServiceBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ServiceBindingSpec   `json:"spec"`
+	// +kubebuilder:validation:Required
+	Spec ServiceBindingSpec `json:"spec"`
+
+	// +kubebuilder:validation:Optional
 	Status ServiceBindingStatus `json:"status,omitempty"`
 }
 
