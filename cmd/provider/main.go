@@ -40,10 +40,10 @@ import (
 	"github.com/crossplane/crossplane-runtime/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
 
-	"github.com/orange-cloudfoundry/provider-osb/apis"
-	"github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
-	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/controller"
-	"github.com/orange-cloudfoundry/provider-osb/internal/features"
+	"github.com/orange-cloudfoundry/provider-osb/apis/v1"
+	"github.com/orange-cloudfoundry/provider-osb/apis/v1/v1alpha1"
+	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller"
+	"github.com/orange-cloudfoundry/provider-osb/internal/v1/features"
 )
 
 func main() {
