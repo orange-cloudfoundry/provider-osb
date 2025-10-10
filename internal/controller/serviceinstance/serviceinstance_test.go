@@ -87,6 +87,8 @@ var (
 			},
 		},
 	}
+	DashboardURL = "https://dashboard.example.com"
+	OperationKey = "op-key-123"
 )
 
 func AddServiceInstanceStatus(si *v1alpha1.ServiceInstance, status v1alpha1.ServiceInstanceStatus) *v1alpha1.ServiceInstance {
@@ -143,6 +145,11 @@ func newMockKubeClientForServiceInstance(ctrl *gomock.Controller, si *v1alpha1.S
 	return mockClient
 }
 
+// notServiceInstance is a test double that does not implement ServiceInstance.
+type notServiceInstance struct {
+	resource.Managed
+}
+
 func TestObserve(t *testing.T) {
 
 	ctrl := gomock.NewController(t)
@@ -161,11 +168,6 @@ func TestObserve(t *testing.T) {
 	type want struct {
 		o   managed.ExternalObservation
 		err error
-	}
-
-	// notServiceInstance is a test double that does not implement ServiceInstance.
-	type notServiceInstance struct {
-		resource.Managed
 	}
 
 	cases := map[string]struct {
@@ -275,7 +277,7 @@ func TestObserve(t *testing.T) {
 				client: &osbfake.FakeClient{
 					GetInstanceReaction: &osbfake.GetInstanceReaction{
 						Response: &osb.GetInstanceResponse{
-							DashboardURL: "https://dashboard.example.com",
+							DashboardURL: DashboardURL,
 							PlanID:       "plan-id-789",
 							Parameters:   map[string]interface{}{},
 						},
@@ -292,7 +294,7 @@ func TestObserve(t *testing.T) {
 					ResourceExists:   true,
 					ResourceUpToDate: true,
 					ConnectionDetails: managed.ConnectionDetails{
-						"dashboardURL": []byte("https://dashboard.example.com"),
+						"dashboardURL": []byte(DashboardURL),
 					},
 				},
 				err: nil,
@@ -352,6 +354,146 @@ func TestObserve(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
 				t.Errorf("\n%s\ne.Observe(...): -want, +got:\n%s\n", tc.reason, diff)
+			}
+		})
+	}
+}
+
+func TestCreate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	type fields struct {
+		client osb.Client
+		kube   client.Client
+	}
+	type args struct {
+		ctx context.Context
+		mg  resource.Managed
+	}
+	type want struct {
+		o   managed.ExternalCreation
+		err error
+	}
+
+	// Fake ServiceInstance for creation
+	fakeInstance := &v1alpha1.ServiceInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-instance",
+			Namespace: "default",
+		},
+		Spec: v1alpha1.ServiceInstanceSpec{
+			ForProvider: common.InstanceData{
+				InstanceId:       "test-id",
+				ServiceId:        "service-id-xyz",
+				PlanId:           "plan-id-789",
+				OrganizationGuid: "org-guid",
+				SpaceGuid:        "space-guid",
+				Parameters:       "",
+				Context: common.KubernetesOSBContext{
+					Platform:  "kubernetes",
+					Namespace: "default",
+					ClusterId: "cluster-123",
+				},
+			},
+		},
+	}
+	cases := map[string]struct {
+		reason string
+		fields fields
+		args   args
+		want   want
+	}{
+		"NotServiceInstance": {
+			reason: "Should return error if managed resource is not a ServiceInstance",
+			fields: fields{},
+			args: args{
+				ctx: context.TODO(),
+				mg:  &notServiceInstance{},
+			},
+			want: want{
+				o:   managed.ExternalCreation{},
+				err: errors.New(errNotServiceInstance),
+			},
+		},
+		"ProvisionSuccessSync": {
+			reason: "Should create instance and update status for synchronous provisioning",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					ProvisionReaction: &osbfake.ProvisionReaction{
+						Response: &osb.ProvisionResponse{
+							Async:        false,
+							DashboardURL: &DashboardURL,
+						},
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstance.DeepCopy(),
+			},
+			want: want{
+				o:   managed.ExternalCreation{},
+				err: nil,
+			},
+		},
+		"ProvisionSuccessAsync": {
+			reason: "Should create instance and update status for async provisioning",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					ProvisionReaction: &osbfake.ProvisionReaction{
+						Response: &osb.ProvisionResponse{
+							Async:        true,
+							DashboardURL: &DashboardURL,
+							OperationKey: (*osb.OperationKey)(&OperationKey),
+						},
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstance.DeepCopy(),
+			},
+			want: want{
+				o:   managed.ExternalCreation{},
+				err: nil,
+			},
+		},
+		"ProvisionError": {
+			reason: "Should return error if ProvisionInstance fails",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					ProvisionReaction: &osbfake.ProvisionReaction{
+						Error: errors.New("provision error"),
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstance.DeepCopy(),
+			},
+			want: want{
+				o:   managed.ExternalCreation{},
+				err: errors.Wrap(errors.New("provision error"), "OSB ProvisionInstance request failed"),
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := &external{
+				client: tc.fields.client,
+				kube:   tc.fields.kube,
+			}
+			got, err := e.Create(tc.args.ctx, tc.args.mg)
+			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+				t.Errorf("\n%s\nCreate(...): -want error, +got error:\n%s\n", tc.reason, diff)
+			}
+			if diff := cmp.Diff(tc.want.o, got); diff != "" {
+				t.Errorf("\n%s\nCreate(...): -want, +got:\n%s\n", tc.reason, diff)
 			}
 		})
 	}
