@@ -61,6 +61,27 @@ var (
 			},
 		},
 	}
+	fakeInstanceForCreateUpdate = &v1alpha1.ServiceInstance{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "example-instance",
+			Namespace: "default",
+		},
+		Spec: v1alpha1.ServiceInstanceSpec{
+			ForProvider: common.InstanceData{
+				InstanceId:       "test-id",
+				ServiceId:        "service-id-xyz",
+				PlanId:           "plan-id-789",
+				OrganizationGuid: "org-guid",
+				SpaceGuid:        "space-guid",
+				Parameters:       "",
+				Context: common.KubernetesOSBContext{
+					Platform:  "kubernetes",
+					Namespace: "default",
+					ClusterId: "cluster-123",
+				},
+			},
+		},
+	}
 	stateInProgress = v1alpha1.ServiceInstanceStatus{
 		AtProvider: v1alpha1.ServiceInstanceObservation{
 			LastOperationState: osb.StateInProgress,
@@ -376,28 +397,6 @@ func TestCreate(t *testing.T) {
 		err error
 	}
 
-	// Fake ServiceInstance for creation
-	fakeInstance := &v1alpha1.ServiceInstance{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "example-instance",
-			Namespace: "default",
-		},
-		Spec: v1alpha1.ServiceInstanceSpec{
-			ForProvider: common.InstanceData{
-				InstanceId:       "test-id",
-				ServiceId:        "service-id-xyz",
-				PlanId:           "plan-id-789",
-				OrganizationGuid: "org-guid",
-				SpaceGuid:        "space-guid",
-				Parameters:       "",
-				Context: common.KubernetesOSBContext{
-					Platform:  "kubernetes",
-					Namespace: "default",
-					ClusterId: "cluster-123",
-				},
-			},
-		},
-	}
 	cases := map[string]struct {
 		reason string
 		fields fields
@@ -427,11 +426,11 @@ func TestCreate(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstance.DeepCopy(),
+				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
@@ -450,11 +449,11 @@ func TestCreate(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstance.DeepCopy(),
+				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
@@ -469,11 +468,11 @@ func TestCreate(t *testing.T) {
 						Error: errors.New("provision error"),
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstance.DeepCopy(),
+				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
@@ -494,6 +493,125 @@ func TestCreate(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
 				t.Errorf("\n%s\nCreate(...): -want, +got:\n%s\n", tc.reason, diff)
+			}
+		})
+	}
+}
+
+func TestUpdate(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	type fields struct {
+		client osb.Client
+		kube   client.Client
+	}
+	type args struct {
+		ctx context.Context
+		mg  resource.Managed
+	}
+	type want struct {
+		o   managed.ExternalUpdate
+		err error
+	}
+
+	cases := map[string]struct {
+		reason string
+		fields fields
+		args   args
+		want   want
+	}{
+		"NotServiceInstance": {
+			reason: "Should return error if managed resource is not a ServiceInstance",
+			fields: fields{},
+			args: args{
+				ctx: context.TODO(),
+				mg:  &notServiceInstance{},
+			},
+			want: want{
+				o:   managed.ExternalUpdate{},
+				err: errors.New(errNotServiceInstance),
+			},
+		},
+
+		"UpdateSuccessSync": {
+			reason: "Should update instance and status for synchronous update",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					UpdateInstanceReaction: &osbfake.UpdateInstanceReaction{
+						Response: &osb.UpdateInstanceResponse{
+							Async:        false,
+							DashboardURL: &DashboardURL,
+						},
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+			},
+			want: want{
+				o:   managed.ExternalUpdate{ConnectionDetails: managed.ConnectionDetails{}},
+				err: nil,
+			},
+		},
+		"UpdateSuccessAsync": {
+			reason: "Should update instance and status for async update",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					UpdateInstanceReaction: &osbfake.UpdateInstanceReaction{
+						Response: &osb.UpdateInstanceResponse{
+							Async:        true,
+							DashboardURL: &DashboardURL,
+							OperationKey: (*osb.OperationKey)(&OperationKey),
+						},
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+			},
+			want: want{
+				o:   managed.ExternalUpdate{ConnectionDetails: managed.ConnectionDetails{}},
+				err: nil,
+			},
+		},
+		"UpdateError": {
+			reason: "Should return error if UpdateInstance fails",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					UpdateInstanceReaction: &osbfake.UpdateInstanceReaction{
+						Error: errors.New("update error"),
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+			},
+			want: want{
+				o:   managed.ExternalUpdate{},
+				err: errors.Wrap(errors.New("update error"), "OSB UpdateInstance request failed"),
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := &external{
+				client: tc.fields.client,
+				kube:   tc.fields.kube,
+			}
+			got, err := e.Update(tc.args.ctx, tc.args.mg)
+			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+				t.Errorf("\n%s\nUpdate(...): -want error, +got error:\n%s\n", tc.reason, diff)
+			}
+			if diff := cmp.Diff(tc.want.o, got); diff != "" {
+				t.Errorf("\n%s\nUpdate(...): -want, +got:\n%s\n", tc.reason, diff)
 			}
 		})
 	}
