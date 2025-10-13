@@ -9,7 +9,7 @@
 package v1alpha1
 
 import (
-	v2 "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v1/common"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
