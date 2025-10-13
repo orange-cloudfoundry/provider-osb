@@ -1,6 +1,7 @@
 package util
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -11,12 +12,15 @@ import (
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/common"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v2/v1alpha1"
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -171,3 +175,75 @@ type NoOpOsbClient fake.FakeClient
 // func (c *NoOpOsbClient) GetCatalog() (*osb.CatalogResponse, error) {
 // 	return nil, nil
 // }
+
+const (
+	errNoProviderConfig  = "no providerConfigRef provided"
+	errGetProviderConfig = "cannot get referenced ProviderConfig"
+	errTrackUsage        = "cannot track ProviderConfig usage"
+)
+
+func enrichLocalSecretRefs(pc *apisv1alpha1.ProviderConfig, mg resource.Managed) {
+	if pc == nil {
+		return
+	}
+	if pc.Spec.Credentials.SecretRef != nil {
+		pc.Spec.Credentials.SecretRef.Namespace = mg.GetNamespace()
+	}
+}
+
+func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resource.Managed) (*apisv1alpha1.ProviderConfig, error) {
+	switch managed := mg.(type) {
+	case resource.ModernManaged:
+		return resolveProviderConfigModern(ctx, crClient, managed)
+	default:
+		return nil, errors.New("resource is not a managed")
+	}
+}
+
+func resolveProviderConfigModern(ctx context.Context, crClient client.Client, mg resource.ModernManaged) (*apisv1alpha1.ProviderConfig, error) {
+	configRef := mg.GetProviderConfigReference()
+	if configRef == nil {
+		return nil, errors.New(errNoProviderConfig)
+	}
+
+	pcRuntimeObj, err := crClient.Scheme().New(apisv1alpha1.SchemeGroupVersion.WithKind(configRef.Kind))
+	if err != nil {
+		return nil, errors.Wrapf(err, "referenced provider config kind %q is invalid for %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
+	}
+	pcObj, ok := pcRuntimeObj.(resource.ProviderConfig)
+	if !ok {
+		return nil, errors.Errorf("referenced provider config kind %q is not a provider config type %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
+	}
+
+	// Namespace will be ignored if the PC is a cluster-scoped type
+	if err := crClient.Get(ctx, types.NamespacedName{Name: configRef.Name, Namespace: mg.GetNamespace()}, pcObj); err != nil {
+		return nil, errors.Wrap(err, errGetProviderConfig)
+	}
+
+	var effectivePC *apisv1alpha1.ProviderConfig
+	switch pc := pcObj.(type) {
+	case *apisv1alpha1.ProviderConfig:
+		enrichLocalSecretRefs(pc, mg)
+		effectivePC = &apisv1alpha1.ProviderConfig{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: apisv1alpha1.SchemeGroupVersion.String(),
+				Kind:       apisv1alpha1.ProviderConfigKind,
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        pc.GetName(),
+				Labels:      pc.GetLabels(),
+				Annotations: pc.GetAnnotations(),
+				Generation:  pc.GetGeneration(),
+				UID:         pc.GetUID(),
+			},
+			Spec: pc.Spec,
+		}
+	default:
+		return nil, errors.New("unknown")
+	}
+	t := resource.NewProviderConfigUsageTracker(crClient, &apisv1alpha1.ProviderConfigUsage{})
+	if err := t.Track(ctx, mg); err != nil {
+		return nil, errors.Wrap(err, errTrackUsage)
+	}
+	return effectivePC, nil
+}

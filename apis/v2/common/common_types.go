@@ -42,15 +42,15 @@ func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 	}
 }
 
-type ProviderConfigRef struct {
+type ProviderAppConfigRef struct {
 	Name string `json:"name"`
 }
 
 // ApplicationData represents the schema for an Application MR
 type ApplicationData struct {
-	Name           string            `json:"name"`
-	Guid           string            `json:"guid"`
-	ProviderConfig ProviderConfigRef `json:"providerConfigRef"`
+	Name           string               `json:"name"`
+	Guid           string               `json:"guid"`
+	ProviderConfig ProviderAppConfigRef `json:"providerAppConfigRef"`
 }
 
 // Instance Data represents the schema for a ServiceInstance MR

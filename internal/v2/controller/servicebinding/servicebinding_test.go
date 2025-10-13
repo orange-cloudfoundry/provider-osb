@@ -36,7 +36,9 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 
+	apiscommonv2 "github.com/crossplane/crossplane-runtime/v2/apis/common"
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	b64 "encoding/base64"
@@ -103,8 +105,8 @@ var (
 					Name: "basic-application",
 				},
 			},
-			ResourceSpec: xpv1.ResourceSpec{
-				ProviderConfigReference: &xpv1.Reference{
+			ManagedResourceSpec: xpv2.ManagedResourceSpec{
+				ProviderConfigReference: &apiscommonv2.ProviderConfigReference{
 					Name: "basic-providerconfig",
 				},
 				ManagementPolicies: xpv1.ManagementPolicies{xpv1.ManagementActionAll},

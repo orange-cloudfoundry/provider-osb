@@ -35,6 +35,7 @@ type StoreConfigStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // A StoreConfig configures how GCP controller should store connection details.
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"

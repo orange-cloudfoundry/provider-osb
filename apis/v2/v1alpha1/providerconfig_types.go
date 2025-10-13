@@ -61,6 +61,7 @@ type ProviderConfigStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // A ProviderConfig configures a OSB provider.
 // +kubebuilder:subresource:status

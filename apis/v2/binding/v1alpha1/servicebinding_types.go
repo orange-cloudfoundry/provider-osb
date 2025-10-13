@@ -26,6 +26,7 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/common"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
@@ -88,8 +89,8 @@ func (v *SerializableEndpoints) String() string {
 
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
 type ServiceBindingSpec struct {
-	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       ServiceBindingParameters `json:"forProvider"`
+	xpv2.ManagedResourceSpec `json:",inline"`
+	ForProvider              ServiceBindingParameters `json:"forProvider"`
 }
 
 // A ServiceBindingStatus represents the observed state of a ServiceBinding.
@@ -99,14 +100,15 @@ type ServiceBindingStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:storageversion
 
 // A ServiceBinding is an example API type.
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
 // +kubebuilder:printcolumn:name="EXTERNAL-NAME",type="string",JSONPath=".metadata.annotations.crossplane\\.io/external-name"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,osb}
+// +kubebuilder:resource:scope=Namespaced,categories={crossplane,managed,osb}
 type ServiceBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

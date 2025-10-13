@@ -26,6 +26,7 @@ import (
 )
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // A ProviderConfigUsage indicates that a resource is using a ProviderConfig.
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
