@@ -284,6 +284,11 @@ spec:
                     pattern: ^https?://.+
                     type: string
                 type: object
+                x-kubernetes-validations:
+                - message: At least one of application, applicationData, instance,
+                    instanceData must be defined
+                  rule: has(self.application) || has(self.applicationData) || has(self.instance)
+                    || has(self.instanceData)
               managementPolicies:
                 default:
                 - '*'

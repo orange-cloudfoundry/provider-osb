@@ -492,6 +492,9 @@ spec:
                 - serviceId
                 - spaceGuid
                 type: object
+                x-kubernetes-validations:
+                - message: At least one of application, applicationData must be defined
+                  rule: has(self.application) || has(self.applicationData)
               conditions:
                 description: Conditions of the resource.
                 items:
