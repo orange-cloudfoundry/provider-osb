@@ -51,6 +51,7 @@ spec:
             properties:
               broker_url:
                 description: BrokerURL to send OSB requests to
+                pattern: ^https?://.+
                 type: string
               credentials:
                 description: Credentials required to authenticate to this provider.
@@ -115,9 +116,11 @@ spec:
                 x-kubernetes-preserve-unknown-fields: true
               osb_version:
                 description: OSB version is used to add error management
+                pattern: ^2\.\d{1,2}$
                 type: string
               timeout:
                 description: Timeout to replace the default one when creating client
+                minimum: 0
                 type: integer
             required:
             - broker_url
