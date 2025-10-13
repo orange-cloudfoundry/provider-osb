@@ -47,7 +47,7 @@ import (
 // https://github.com/crossplane/crossplane/blob/master/CONTRIBUTING.md#contributing-code
 
 var (
-	fakeServiceInstance = &v1alpha1.ServiceInstance{
+	basicServiceInstance = &v1alpha1.ServiceInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "example-instance",
 			Namespace:  "default",
@@ -61,7 +61,7 @@ var (
 			},
 		},
 	}
-	fakeInstanceForCreateUpdate = &v1alpha1.ServiceInstance{
+	fakeInstance = &v1alpha1.ServiceInstance{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "example-instance",
 			Namespace: "default",
@@ -237,11 +237,11 @@ func TestObserve(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, AddServiceInstanceStatus(fakeServiceInstance, stateInProgress)),
+				kube: newMockKubeClientForServiceInstance(ctrl, AddServiceInstanceStatus(basicServiceInstance, stateInProgress)),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  AddServiceInstanceStatus(fakeServiceInstance, stateInProgress),
+				mg:  AddServiceInstanceStatus(basicServiceInstance, stateInProgress),
 			},
 			want: want{
 				o: managed.ExternalObservation{
@@ -261,11 +261,11 @@ func TestObserve(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, AddServiceInstanceStatus(fakeServiceInstance, stateDeletingNoBindings)),
+				kube: newMockKubeClientForServiceInstance(ctrl, AddServiceInstanceStatus(basicServiceInstance, stateDeletingNoBindings)),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  AddServiceInstanceStatus(fakeServiceInstance, stateDeletingNoBindings),
+				mg:  AddServiceInstanceStatus(basicServiceInstance, stateDeletingNoBindings),
 			},
 			want: want{
 				o: managed.ExternalObservation{
@@ -304,11 +304,11 @@ func TestObserve(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeServiceInstance),
+				kube: newMockKubeClientForServiceInstance(ctrl, basicServiceInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeServiceInstance,
+				mg:  basicServiceInstance,
 			},
 			want: want{
 				o: managed.ExternalObservation{
@@ -329,11 +329,11 @@ func TestObserve(t *testing.T) {
 						Error: &osb.HTTPStatusCodeError{StatusCode: http.StatusNotFound},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeServiceInstance),
+				kube: newMockKubeClientForServiceInstance(ctrl, basicServiceInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeServiceInstance,
+				mg:  basicServiceInstance,
 			},
 			want: want{
 				o: managed.ExternalObservation{
@@ -350,11 +350,11 @@ func TestObserve(t *testing.T) {
 						Error: errors.New("unexpected error"),
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeServiceInstance),
+				kube: newMockKubeClientForServiceInstance(ctrl, basicServiceInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeServiceInstance,
+				mg:  basicServiceInstance,
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
@@ -426,11 +426,11 @@ func TestCreate(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+				mg:  fakeInstance.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
@@ -449,11 +449,11 @@ func TestCreate(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+				mg:  fakeInstance.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
@@ -468,11 +468,11 @@ func TestCreate(t *testing.T) {
 						Error: errors.New("provision error"),
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+				mg:  fakeInstance.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
@@ -545,11 +545,11 @@ func TestUpdate(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+				mg:  fakeInstance.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalUpdate{ConnectionDetails: managed.ConnectionDetails{}},
@@ -568,11 +568,11 @@ func TestUpdate(t *testing.T) {
 						},
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+				mg:  fakeInstance.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalUpdate{ConnectionDetails: managed.ConnectionDetails{}},
@@ -587,11 +587,11 @@ func TestUpdate(t *testing.T) {
 						Error: errors.New("update error"),
 					},
 				},
-				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstanceForCreateUpdate),
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
 			},
 			args: args{
 				ctx: context.TODO(),
-				mg:  fakeInstanceForCreateUpdate.DeepCopy(),
+				mg:  fakeInstance.DeepCopy(),
 			},
 			want: want{
 				o:   managed.ExternalUpdate{},
@@ -612,6 +612,179 @@ func TestUpdate(t *testing.T) {
 			}
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
 				t.Errorf("\n%s\nUpdate(...): -want, +got:\n%s\n", tc.reason, diff)
+			}
+		})
+	}
+}
+
+func TestDelete(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	type fields struct {
+		client osb.Client
+		kube   client.Client
+	}
+	type args struct {
+		ctx context.Context
+		mg  resource.Managed
+	}
+	type want struct {
+		err error
+	}
+
+	cases := map[string]struct {
+		reason string
+		fields fields
+		args   args
+		want   want
+	}{
+		"NotServiceInstance": {
+			reason: "Should return error if managed resource is not a ServiceInstance",
+			fields: fields{},
+			args: args{
+				ctx: context.TODO(),
+				mg:  &notServiceInstance{},
+			},
+			want: want{
+				err: errors.New(errNotServiceInstance),
+			},
+		},
+		"InstanceIdMissing": {
+			reason: "Should consider resource already deleted if InstanceId is not set",
+			fields: fields{},
+			args: args{
+				ctx: context.TODO(),
+				mg: &v1alpha1.ServiceInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "example-instance",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.ServiceInstanceSpec{
+						ForProvider: common.InstanceData{
+							InstanceId: "",
+						},
+					},
+				},
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"HasActiveBindings": {
+			reason: "Should return error if ServiceInstance has active bindings",
+			fields: fields{},
+			args: args{
+				ctx: context.TODO(),
+				mg: &v1alpha1.ServiceInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "example-instance",
+						Namespace: "default",
+					},
+					Spec: v1alpha1.ServiceInstanceSpec{
+						ForProvider: common.InstanceData{
+							InstanceId: "test-id",
+						},
+					},
+					Status: v1alpha1.ServiceInstanceStatus{
+						AtProvider: v1alpha1.ServiceInstanceObservation{
+							HasActiveBindings: true,
+						},
+					},
+				},
+			},
+			want: want{
+				err: errors.New("cannot delete ServiceInstance, it has active bindings---"),
+			},
+		},
+		"DeprovisionSuccessSync": {
+			reason: "Should succeed when deprovision is synchronous",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					DeprovisionReaction: &osbfake.DeprovisionReaction{
+						Response: &osb.DeprovisionResponse{
+							Async: false,
+						},
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstance.DeepCopy(),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"DeprovisionSuccessAsync": {
+			reason: "Should succeed when deprovision is asynchronous",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					DeprovisionReaction: &osbfake.DeprovisionReaction{
+						Response: &osb.DeprovisionResponse{
+							Async:        true,
+							OperationKey: (*osb.OperationKey)(&OperationKey),
+						},
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstance.DeepCopy(),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"DeprovisionNotFound": {
+			reason: "Should succeed if instance is already gone (404)",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					DeprovisionReaction: &osbfake.DeprovisionReaction{
+						Error: &osb.HTTPStatusCodeError{StatusCode: http.StatusNotFound},
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstance.DeepCopy(),
+			},
+			want: want{
+				err: nil,
+			},
+		},
+		"DeprovisionError": {
+			reason: "Should return error if deprovision fails with unexpected error",
+			fields: fields{
+				client: &osbfake.FakeClient{
+					DeprovisionReaction: &osbfake.DeprovisionReaction{
+						Error: errors.New("deprovision error"),
+					},
+				},
+				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
+			},
+			args: args{
+				ctx: context.TODO(),
+				mg:  fakeInstance.DeepCopy(),
+			},
+			want: want{
+				err: errors.Wrap(errors.New("deprovision error"), "OSB DeprovisionInstance request failed"),
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := &external{
+				client: tc.fields.client,
+				kube:   tc.fields.kube,
+			}
+			_, err := e.Delete(tc.args.ctx, tc.args.mg)
+			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+				t.Errorf("\n%s\nDelete(...): -want error, +got error:\n%s\n", tc.reason, diff)
 			}
 		})
 	}
