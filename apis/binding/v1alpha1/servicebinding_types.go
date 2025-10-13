@@ -31,6 +31,7 @@ import (
 )
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
+// +kubebuilder:validation:XValidation:rule="has(self.application) || has(self.applicationData) || has(self.instance) || has(self.instanceData)",message="At least one of application, applicationData, instance, instanceData must be defined"
 type ServiceBindingParameters struct {
 	// +kubebuilder:validation:Optional
 	ApplicationRef *common.NamespacedName `json:"application,omitempty"`

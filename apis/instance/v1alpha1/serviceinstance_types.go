@@ -30,6 +30,7 @@ import (
 
 // ServiceInstanceObservation are the observable fields of a ServiceInstance.
 // TODO manage observations
+// +kubebuilder:validation:XValidation:rule="has(self.application) || has(self.applicationData)",message="At least one of application, applicationData must be defined"
 type ServiceInstanceObservation struct {
 	// +kubebuilder:validation:Optional
 	ApplicationRef *common.NamespacedName `json:"application,omitempty"`
