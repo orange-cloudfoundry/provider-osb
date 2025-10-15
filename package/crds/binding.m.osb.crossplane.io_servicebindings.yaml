@@ -142,8 +142,21 @@ spec:
                     description: Instance Data represents the schema for a ServiceInstance
                       MR
                     properties:
+                      application:
+                        description: |-
+                          NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                          And it makes `make generate` fail
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                        required:
+                        - name
+                        type: object
                       applicationData:
-                        description: ApplicationRef   *NamespacedName        `json:"application,omitempty"`
+                        description: ApplicationData represents the schema for an
+                          Application MR
                         properties:
                           guid:
                             type: string

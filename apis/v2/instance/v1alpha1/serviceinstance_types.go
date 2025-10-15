@@ -43,7 +43,7 @@ type ServiceInstanceStatus struct {
 }
 
 type ServiceInstanceObservation struct {
-	//ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
+	ApplicationRef           *common.NamespacedName    `json:"application,omitempty"`
 	ApplicationData          *v1alpha1.ApplicationSpec `json:"applicationData,omitempty"`
 	common.InstanceData      `json:",inline"`
 	Context                  common.KubernetesOSBContext `json:"context,omitempty"`

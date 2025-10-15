@@ -207,8 +207,8 @@ func legacyToModernProviderConfigSpec(pc *apisv1alpha1.ProviderConfig) (*apisv1a
 
 	var mSpec apisv1alpha1.ProviderConfig
 	err = json.Unmarshal(data, &mSpec)
-	mSpec.TypeMeta.Kind = apisv1alpha1.ProviderConfigKind
-	mSpec.TypeMeta.APIVersion = apisv1alpha1.SchemeGroupVersion.String()
+	mSpec.Kind = apisv1alpha1.ProviderConfigKind
+	mSpec.APIVersion = apisv1alpha1.SchemeGroupVersion.String()
 	mSpec.ObjectMeta = metav1.ObjectMeta{
 		Name:        pc.GetName(),
 		Labels:      pc.GetLabels(),
