@@ -92,3 +92,8 @@ var (
 func init() {
 	SchemeBuilder.Register(&ServiceInstance{}, &ServiceInstanceList{})
 }
+
+// GetProviderConfigReference of this ServiceInstance.
+func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.ProviderConfigReference {
+	return mg.Spec.ForProvider.ApplicationData.ProviderConfigReference
+}

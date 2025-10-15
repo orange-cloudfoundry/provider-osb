@@ -37,7 +37,6 @@ import (
 
 const (
 	errNotApplication = "managed resource is not a Application custom resource"
-	errTrackPCUsage   = "cannot track ProviderConfig usage"
 	errGetPC          = "cannot get ProviderConfig"
 	errGetCreds       = "cannot get credentials"
 
@@ -92,7 +91,6 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // is called.
 type connector struct {
 	kube         client.Client
-	usage        resource.Tracker
 	newServiceFn func(creds []byte) (interface{}, error)
 }
 
@@ -102,15 +100,6 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	_, ok := mg.(*v1alpha1.Application)
-	if !ok {
-		return nil, errors.New(errNotApplication)
-	}
-
-	if err := c.usage.Track(ctx, mg); err != nil {
-		return nil, errors.Wrap(err, errTrackPCUsage)
-	}
-
 	pc, err := util.ResolveProviderConfig(ctx, c.kube, mg)
 	if err != nil {
 		return nil, errors.Wrap(err, errGetPC)
