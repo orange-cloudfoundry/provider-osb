@@ -232,6 +232,17 @@ jobs:
       - name: Download Go Modules
         run: make modules.download modules.check
 
+      - name: Setup Crossplane CLI
+        uses: nimjor/setup-crossplane-cli@v1
+        with:
+          version: v2.0.2
+
+      - name: Fix Crossplane CLI path
+        run: |
+          mkdir -p .cache/tools/linux_x86_64
+          ln -s $(command -v crossplane) .cache/tools/linux_x86_64/crossplane-cli-v2.0.2
+          ls -l .cache/tools/linux_x86_64
+
       - name: Build Artifacts
         run: make -j2 build.all
         env:
