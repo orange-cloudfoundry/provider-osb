@@ -10,14 +10,16 @@ import (
 	"slices"
 	"time"
 
-	"github.com/crossplane/crossplane-runtime/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v1/common"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1/v1alpha1"
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -174,12 +176,63 @@ type NoOpOsbClient fake.FakeClient
 // 	return nil, nil
 // }
 
-func GetProviderConfig(ctx context.Context, kube client.Client, ref common.ProviderConfigRef) (*apisv1alpha1.ProviderConfig, error) {
-	pc := &apisv1alpha1.ProviderConfig{}
-	key := client.ObjectKey{Name: ref.Name}
-	if err := kube.Get(ctx, key, pc); err != nil {
+const (
+	errNoProviderConfig  = "no providerConfigRef provided"
+	errGetProviderConfig = "cannot get referenced ProviderConfig"
+	errTrackUsage        = "cannot track ProviderConfig usage"
+)
+
+func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resource.Managed) (*apisv1alpha1.ProviderConfig, error) {
+	switch managed := mg.(type) {
+	case resource.ModernManaged:
+		return nil, errors.New("ressource is not LegacyManaged: ModernManaged")
+	case resource.LegacyManaged:
+		return resolveProviderConfigLegacy(ctx, crClient, managed)
+	case resource.Managed:
+		return nil, errors.New("ressource is not LegacyManaged: Managed")
+	default:
+		return nil, errors.New("resource is not a managed")
+	}
+}
+
+func legacyToModernProviderConfigSpec(pc *apisv1alpha1.ProviderConfig) (*apisv1alpha1.ProviderConfig, error) {
+	// TODO(erhan): this is hacky and potentially lossy, generate or manually implement
+	if pc == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(pc)
+	if err != nil {
 		return nil, err
 	}
 
-	return pc, nil
+	var mSpec apisv1alpha1.ProviderConfig
+	err = json.Unmarshal(data, &mSpec)
+	mSpec.TypeMeta.Kind = apisv1alpha1.ProviderConfigKind
+	mSpec.TypeMeta.APIVersion = apisv1alpha1.SchemeGroupVersion.String()
+	mSpec.ObjectMeta = metav1.ObjectMeta{
+		Name:        pc.GetName(),
+		Labels:      pc.GetLabels(),
+		Annotations: pc.GetAnnotations(),
+		Generation:  pc.GetGeneration(),
+		UID:         pc.GetUID(),
+	}
+	return &mSpec, err
+}
+
+func resolveProviderConfigLegacy(ctx context.Context, client client.Client, mg resource.LegacyManaged) (*apisv1alpha1.ProviderConfig, error) {
+	configRef := mg.GetProviderConfigReference()
+	if configRef == nil {
+		return nil, errors.New(errNoProviderConfig)
+	}
+	pc := &apisv1alpha1.ProviderConfig{}
+	if err := client.Get(ctx, types.NamespacedName{Name: configRef.Name}, pc); err != nil {
+		return nil, errors.Wrap(err, errGetProviderConfig)
+	}
+
+	t := resource.NewLegacyProviderConfigUsageTracker(client, &apisv1alpha1.ProviderConfigUsage{})
+	if err := t.Track(ctx, mg); err != nil {
+		return nil, errors.Wrap(err, errTrackUsage)
+	}
+
+	return legacyToModernProviderConfigSpec(pc)
 }

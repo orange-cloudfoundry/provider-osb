@@ -20,19 +20,25 @@ package apis
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
-	applicationv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v2/application/v1alpha1"
-	bindingv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v2/binding/v1alpha1"
-	instancev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v2/instance/v1alpha1"
-	templatev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v2/v1alpha1"
+	bindingv1 "github.com/orange-cloudfoundry/provider-osb/apis/v1/binding/v1alpha1"
+	instancev1 "github.com/orange-cloudfoundry/provider-osb/apis/v1/instance/v1alpha1"
+	templatev1 "github.com/orange-cloudfoundry/provider-osb/apis/v1/v1alpha1"
+	applicationv2 "github.com/orange-cloudfoundry/provider-osb/apis/v2/application/v1alpha1"
+	bindingv2 "github.com/orange-cloudfoundry/provider-osb/apis/v2/binding/v1alpha1"
+	instancev2 "github.com/orange-cloudfoundry/provider-osb/apis/v2/instance/v1alpha1"
+	templatev2 "github.com/orange-cloudfoundry/provider-osb/apis/v2/v1alpha1"
 )
 
 func init() {
 	// Register the types with the Scheme so the components can map objects to GroupVersionKinds and back
 	AddToSchemes = append(AddToSchemes,
-		applicationv1alpha1.SchemeBuilder.AddToScheme,
-		instancev1alpha1.SchemeBuilder.AddToScheme,
-		bindingv1alpha1.SchemeBuilder.AddToScheme,
-		templatev1alpha1.SchemeBuilder.AddToScheme,
+		instancev1.SchemeBuilder.AddToScheme,
+		bindingv1.SchemeBuilder.AddToScheme,
+		templatev1.SchemeBuilder.AddToScheme,
+		applicationv2.SchemeBuilder.AddToScheme,
+		instancev2.SchemeBuilder.AddToScheme,
+		bindingv2.SchemeBuilder.AddToScheme,
+		templatev2.SchemeBuilder.AddToScheme,
 	)
 }
 

@@ -660,20 +660,20 @@ func (c *external) fetchApplicationDataFromBinding(ctx context.Context, spec v1a
 func (c *external) fetchApplicationDataFromInstance(ctx context.Context, instanceSpec common.InstanceData) (*common.ApplicationData, error) {
 	var appData *common.ApplicationData
 
-	if instanceSpec.ApplicationRef != nil {
-		// Fetch from referenced resource
-		application := applicationv1alpha1.Application{}
-		if err := c.kube.Get(ctx, instanceSpec.ApplicationRef.ToObjectKey(), &application); err != nil {
-			if kerrors.IsNotFound(err) {
-				return nil, errors.New("binding referenced an instance which referenced an application which does not exist")
-			}
-			return nil, errors.Wrap(err, "error while retrieving referenced application from referenced instance")
-		}
-		appData = &application.Spec.ForProvider
-	} else if instanceSpec.ApplicationData != nil {
-		// Fetch from within the service binding
-		appData = instanceSpec.ApplicationData
-	}
+	//if instanceSpec.ApplicationRef != nil {
+	//	// Fetch from referenced resource
+	//	application := applicationv1alpha1.Application{}
+	//	if err := c.kube.Get(ctx, instanceSpec.ApplicationRef.ToObjectKey(), &application); err != nil {
+	//		if kerrors.IsNotFound(err) {
+	//			return nil, errors.New("binding referenced an instance which referenced an application which does not exist")
+	//		}
+	//		return nil, errors.Wrap(err, "error while retrieving referenced application from referenced instance")
+	//	}
+	//	appData = &application.Spec.ForProvider
+	//} else if instanceSpec.ApplicationData != nil {
+	//	// Fetch from within the service binding
+	//	appData = instanceSpec.ApplicationData
+	//}
 
 	return appData, nil
 }

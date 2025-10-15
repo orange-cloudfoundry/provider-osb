@@ -17,33 +17,27 @@ limitations under the License.
 package main
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"time"
 
 	"gopkg.in/alecthomas/kingpin.v2"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
-	"github.com/crossplane/crossplane-runtime/pkg/controller"
-	"github.com/crossplane/crossplane-runtime/pkg/feature"
-	"github.com/crossplane/crossplane-runtime/pkg/logging"
-	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/statemetrics"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/ratelimiter"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
-	"github.com/orange-cloudfoundry/provider-osb/apis/v1"
-	"github.com/orange-cloudfoundry/provider-osb/apis/v1/v1alpha1"
-	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v1/features"
+	"github.com/orange-cloudfoundry/provider-osb/apis"
+	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/v2/controller"
+	"github.com/orange-cloudfoundry/provider-osb/internal/v2/features"
 )
 
 func main() {
@@ -58,10 +52,7 @@ func main() {
 
 		maxReconcileRate = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("10").Int()
 
-		namespace                     = app.Flag("namespace", "Namespace used to set as default scope in default secret store config.").Default("crossplane-system").Envar("POD_NAMESPACE").String()
-		enableExternalSecretStores    = app.Flag("enable-external-secret-stores", "Enable support for ExternalSecretStores.").Default("false").Envar("ENABLE_EXTERNAL_SECRET_STORES").Bool()
-		enableManagementPolicies      = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("false").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
-		enableAutomaticRotateBindings = app.Flag("enable-automatic-binding-rotation", "Enable automatic Rotate Bindings.").Default("false").Envar("ENABLE_AUTOMATIC_ROTATE_BINDINGS").Bool()
+		enableManagementPolicies = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("false").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
 	)
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -101,10 +92,10 @@ func main() {
 	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs to scheme")
 
 	metricRecorder := managed.NewMRMetricRecorder()
-	stateMetrics := statemetrics.NewMRStateMetrics()
+	statemetrics := statemetrics.NewMRStateMetrics()
 
 	metrics.Registry.MustRegister(metricRecorder)
-	metrics.Registry.MustRegister(stateMetrics)
+	metrics.Registry.MustRegister(statemetrics)
 
 	o := controller.Options{
 		Logger:                  log,
@@ -115,37 +106,13 @@ func main() {
 		MetricOptions: &controller.MetricOptions{
 			PollStateMetricInterval: *pollStateMetricInterval,
 			MRMetrics:               metricRecorder,
-			MRStateMetrics:          stateMetrics,
+			MRStateMetrics:          statemetrics,
 		},
 	}
 
-	if *enableExternalSecretStores {
-		o.Features.Enable(features.EnableAlphaExternalSecretStores)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaExternalSecretStores)
-
-		// Ensure default store config exists.
-		kingpin.FatalIfError(resource.Ignore(kerrors.IsAlreadyExists, mgr.GetClient().Create(context.Background(), &v1alpha1.StoreConfig{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "default",
-			},
-			Spec: v1alpha1.StoreConfigSpec{
-				// NOTE(turkenh): We only set required spec and expect optional
-				// ones to properly be initialized with CRD level default values.
-				SecretStoreConfig: xpv1.SecretStoreConfig{
-					DefaultScope: *namespace,
-				},
-			},
-		})), "cannot create default store config")
-	}
-
 	if *enableManagementPolicies {
-		o.Features.Enable(features.EnableAlphaManagementPolicies)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaManagementPolicies)
-	}
-
-	if *enableAutomaticRotateBindings {
-		o.Features.Enable(features.EnableAlphaRotateBindings)
-		log.Info("Alpha feature enabled", "flag", features.EnableAlphaRotateBindings)
+		o.Features.Enable(features.EnableBetaManagementPolicies)
+		log.Info("Alpha feature enabled", "flag", features.EnableBetaManagementPolicies)
 	}
 
 	kingpin.FatalIfError(osbprovider.Setup(mgr, o), "Cannot setup OSB controllers")

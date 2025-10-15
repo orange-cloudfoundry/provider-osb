@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package v1alpha1 contains the core resources of the osb provider.
 // +kubebuilder:object:generate=true
-// +groupName=osb.crossplane.io
+// +groupName=m.osb.crossplane.io
 // +versionName=v1alpha1
 package v1alpha1
 
@@ -27,7 +27,7 @@ import (
 
 // Package type metadata.
 const (
-	Group   = "osb.crossplane.io"
+	Group   = "m.osb.crossplane.io"
 	Version = "v1alpha1"
 )
 

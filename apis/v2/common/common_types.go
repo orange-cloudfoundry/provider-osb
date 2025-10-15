@@ -19,6 +19,7 @@ package common
 import (
 	"encoding/json"
 
+	"github.com/crossplane/crossplane-runtime/v2/apis/common"
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -42,20 +43,16 @@ func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 	}
 }
 
-type ProviderAppConfigRef struct {
-	Name string `json:"name"`
-}
-
 // ApplicationData represents the schema for an Application MR
 type ApplicationData struct {
-	Name           string               `json:"name"`
-	Guid           string               `json:"guid"`
-	ProviderConfig ProviderAppConfigRef `json:"providerAppConfigRef"`
+	Name                    string                          `json:"name"`
+	Guid                    string                          `json:"guid"`
+	ProviderConfigReference *common.ProviderConfigReference `json:"providerConfigRef,omitempty"`
 }
 
 // Instance Data represents the schema for a ServiceInstance MR
 type InstanceData struct {
-	ApplicationRef   *NamespacedName        `json:"application,omitempty"`
+	//ApplicationRef   *NamespacedName        `json:"application,omitempty"`
 	ApplicationData  *ApplicationData       `json:"applicationData,omitempty"`
 	InstanceId       string                 `json:"instanceId"`
 	PlanId           string                 `json:"planId"`
