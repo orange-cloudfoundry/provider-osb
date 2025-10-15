@@ -22,7 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v1/common"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
@@ -55,7 +55,6 @@ type ServiceInstanceStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:storageversion
 
 // A ServiceInstance is an example API type.
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"

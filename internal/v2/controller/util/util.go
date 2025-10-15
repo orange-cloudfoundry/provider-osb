@@ -21,6 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -195,34 +196,44 @@ func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resou
 	switch managed := mg.(type) {
 	case resource.ModernManaged:
 		return resolveProviderConfigModern(ctx, crClient, managed)
+	case resource.LegacyManaged:
+		return nil, errors.New("ressource is not ModernManaged: LegacyManaged")
+	case resource.Managed:
+		return nil, errors.New("ressource is not ModernManaged: Managed")
 	default:
 		return nil, errors.New("resource is not a managed")
 	}
 }
 
-func resolveProviderConfigModern(ctx context.Context, crClient client.Client, mg resource.ModernManaged) (*apisv1alpha1.ProviderConfig, error) {
+func resolveProviderConfigModern(ctx context.Context, kube client.Client, mg resource.ModernManaged) (*apisv1alpha1.ProviderConfig, error) {
+	logger := log.FromContext(ctx)
+
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
 		return nil, errors.New(errNoProviderConfig)
 	}
 
-	pcRuntimeObj, err := crClient.Scheme().New(apisv1alpha1.SchemeGroupVersion.WithKind(configRef.Kind))
+	pcGVK := apisv1alpha1.SchemeGroupVersion.WithKind(configRef.Kind)
+
+	pcRuntimeObj, err := kube.Scheme().New(pcGVK)
 	if err != nil {
 		return nil, errors.Wrapf(err, "referenced provider config kind %q is invalid for %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
 	}
+
 	pcObj, ok := pcRuntimeObj.(resource.ProviderConfig)
 	if !ok {
 		return nil, errors.Errorf("referenced provider config kind %q is not a provider config type %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
 	}
 
-	// Namespace will be ignored if the PC is a cluster-scoped type
-	if err := crClient.Get(ctx, types.NamespacedName{Name: configRef.Name, Namespace: mg.GetNamespace()}, pcObj); err != nil {
+	// Namespace will be ignored if the PC is cluster-scoped
+	if err := kube.Get(ctx, types.NamespacedName{Name: configRef.Name, Namespace: mg.GetNamespace()}, pcObj); err != nil {
 		return nil, errors.Wrap(err, errGetProviderConfig)
 	}
 
 	var effectivePC *apisv1alpha1.ProviderConfig
 	switch pc := pcObj.(type) {
 	case *apisv1alpha1.ProviderConfig:
+		logger.Info("Enriching local secret refs", "providerConfig", pc.GetName())
 		enrichLocalSecretRefs(pc, mg)
 		effectivePC = &apisv1alpha1.ProviderConfig{
 			TypeMeta: metav1.TypeMeta{
@@ -239,11 +250,14 @@ func resolveProviderConfigModern(ctx context.Context, crClient client.Client, mg
 			Spec: pc.Spec,
 		}
 	default:
-		return nil, errors.New("unknown")
+		return nil, errors.New("unknown provider config type")
 	}
-	t := resource.NewProviderConfigUsageTracker(crClient, &apisv1alpha1.ProviderConfigUsage{})
+
+	t := resource.NewProviderConfigUsageTracker(kube, &apisv1alpha1.ProviderConfigUsage{})
 	if err := t.Track(ctx, mg); err != nil {
+		logger.Error(err, "Failed to track ProviderConfig usage")
 		return nil, errors.Wrap(err, errTrackUsage)
 	}
+
 	return effectivePC, nil
 }

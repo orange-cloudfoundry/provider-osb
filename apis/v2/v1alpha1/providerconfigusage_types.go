@@ -19,11 +19,9 @@ package v1alpha1
 import (
 	"reflect"
 
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-
-	v1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 )
 
 // +kubebuilder:object:root=true
@@ -34,19 +32,13 @@ import (
 // +kubebuilder:printcolumn:name="CONFIG-NAME",type="string",JSONPath=".providerConfigRef.name"
 // +kubebuilder:printcolumn:name="RESOURCE-KIND",type="string",JSONPath=".resourceRef.kind"
 // +kubebuilder:printcolumn:name="RESOURCE-NAME",type="string",JSONPath=".resourceRef.name"
-// +kubebuilder:resource:scope=Cluster,categories={crossplane,provider,osb}
-// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Namespaced,categories={crossplane,providerconfig,aws}
+// +kubebuilder:storageversion
 type ProviderConfigUsage struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ProviderConfigUsageSpec `json:"spec"`
-	Status xpv1.ConditionedStatus  `json:"status,omitempty"`
-}
-
-type ProviderConfigUsageSpec struct {
-	ProviderConfigReference *xpv1.ProviderConfigReference `json:"providerConfigRef"`
-	ResourceReference       v1.TypedReference             `json:"resourceRef"`
+	xpv2.TypedProviderConfigUsage `json:",inline"`
 }
 
 // +kubebuilder:object:root=true
@@ -73,20 +65,4 @@ var (
 
 func init() {
 	SchemeBuilder.Register(&ProviderConfigUsage{}, &ProviderConfigUsageList{})
-}
-
-func (pcu *ProviderConfigUsage) GetProviderConfigReference() xpv1.ProviderConfigReference {
-	return *pcu.Spec.ProviderConfigReference
-}
-
-func (pcu *ProviderConfigUsage) SetProviderConfigReference(r v1.ProviderConfigReference) {
-	pcu.Spec.ProviderConfigReference = &r
-}
-
-func (pcu *ProviderConfigUsage) GetResourceReference() v1.TypedReference {
-	return pcu.Spec.ResourceReference
-}
-
-func (pcu *ProviderConfigUsage) SetResourceReference(r v1.TypedReference) {
-	pcu.Spec.ResourceReference = r
 }

@@ -25,7 +25,7 @@ import (
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/v1/common"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
@@ -99,7 +99,6 @@ type ServiceBindingStatus struct {
 }
 
 // +kubebuilder:object:root=true
-// +kubebuilder:storageversion
 
 // A ServiceBinding is an example API type.
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"

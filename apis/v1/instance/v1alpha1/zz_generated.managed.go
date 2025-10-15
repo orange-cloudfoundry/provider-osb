@@ -6,7 +6,7 @@
 
 package v1alpha1
 
-import xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+import xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 
 // GetCondition of this ServiceInstance.
 func (mg *ServiceInstance) GetCondition(ct xpv1.ConditionType) xpv1.Condition {
@@ -26,11 +26,6 @@ func (mg *ServiceInstance) GetManagementPolicies() xpv1.ManagementPolicies {
 // GetProviderConfigReference of this ServiceInstance.
 func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.Reference {
 	return mg.Spec.ProviderConfigReference
-}
-
-// GetPublishConnectionDetailsTo of this ServiceInstance.
-func (mg *ServiceInstance) GetPublishConnectionDetailsTo() *xpv1.PublishConnectionDetailsTo {
-	return mg.Spec.PublishConnectionDetailsTo
 }
 
 // GetWriteConnectionSecretToReference of this ServiceInstance.
@@ -56,11 +51,6 @@ func (mg *ServiceInstance) SetManagementPolicies(r xpv1.ManagementPolicies) {
 // SetProviderConfigReference of this ServiceInstance.
 func (mg *ServiceInstance) SetProviderConfigReference(r *xpv1.Reference) {
 	mg.Spec.ProviderConfigReference = r
-}
-
-// SetPublishConnectionDetailsTo of this ServiceInstance.
-func (mg *ServiceInstance) SetPublishConnectionDetailsTo(r *xpv1.PublishConnectionDetailsTo) {
-	mg.Spec.PublishConnectionDetailsTo = r
 }
 
 // SetWriteConnectionSecretToReference of this ServiceInstance.

@@ -27,14 +27,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/crossplane/crossplane-runtime/pkg/connection"
-	"github.com/crossplane/crossplane-runtime/pkg/controller"
-	"github.com/crossplane/crossplane-runtime/pkg/event"
-	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/ratelimiter"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/v1/binding/v1alpha1"
@@ -42,7 +41,6 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/v1/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/util"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v1/features"
 )
 
 // todo : add constants in a util package to be used by serviceinstance and servicebinding
@@ -64,21 +62,14 @@ const (
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ServiceInstanceGroupKind)
 
-	cps := []managed.ConnectionPublisher{managed.NewAPISecretPublisher(mgr.GetClient(), mgr.GetScheme())}
-	if o.Features.Enabled(features.EnableAlphaExternalSecretStores) {
-		cps = append(cps, connection.NewDetailsManager(mgr.GetClient(), apisv1alpha1.StoreConfigGroupVersionKind))
-	}
-
 	r := managed.NewReconciler(mgr,
 		resource.ManagedKind(v1alpha1.ServiceInstanceGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
 			kube:         mgr.GetClient(),
-			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
 			newOsbClient: util.NewOsbClient}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
-		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
-		managed.WithConnectionPublishers(cps...))
+		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
@@ -92,7 +83,6 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // is called.
 type connector struct {
 	kube                     client.Client
-	usage                    resource.Tracker
 	newOsbClient             func(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
@@ -103,19 +93,7 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	// Assert that the managed resource is of type ServiceInstance.
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
-	if !ok {
-		return nil, errors.New(errNotServiceInstance)
-	}
-
-	// Track usage of the ProviderConfig by this managed resource.
-	if err := c.usage.Track(ctx, mg); err != nil {
-		return nil, errors.Wrap(err, errTrackPCUsage)
-	}
-
-	// Retrieve the ProviderConfig referenced by the managed resource.
-	pc, err := util.GetProviderConfig(ctx, c.kube, cr.Spec.ForProvider.ApplicationData.ProviderConfig)
+	pc, err := util.ResolveProviderConfig(ctx, c.kube, mg)
 	if err != nil {
 		return nil, errors.Wrap(err, errGetPC)
 	}
