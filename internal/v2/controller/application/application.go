@@ -23,7 +23,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
 
 	"github.com/pkg/errors"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -108,17 +107,8 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	cr, ok := mg.(*v1alpha1.Application)
-	if !ok {
-		return nil, errors.New(errNotApplication)
-	}
-
 	pc, err := util.ResolveProviderConfig(ctx, c.kube, mg)
 	if err != nil {
-		return nil, errors.Wrap(err, errTrackPCUsage)
-	}
-
-	if err := c.kube.Get(ctx, types.NamespacedName{Name: cr.GetProviderConfigReference().Name}, pc); err != nil {
 		return nil, errors.Wrap(err, errGetPC)
 	}
 

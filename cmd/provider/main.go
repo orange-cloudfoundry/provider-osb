@@ -36,7 +36,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
 	"github.com/orange-cloudfoundry/provider-osb/apis"
-	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/v2/controller"
+	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/controller"
 	"github.com/orange-cloudfoundry/provider-osb/internal/v2/features"
 )
 
