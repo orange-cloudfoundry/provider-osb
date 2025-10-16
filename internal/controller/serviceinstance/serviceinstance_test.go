@@ -126,7 +126,7 @@ func newMockKubeClientForServiceInstance(ctrl *gomock.Controller, si *v1alpha1.S
 	// Mock le Get() pour retourner l'objet ServiceInstance attendu
 	mockClient.
 		EXPECT().
-		Get(gomock.Any(), client.ObjectKey{Name: "example-instance", Namespace: "default"}, gomock.Any()).
+		Get(gomock.Any(), gomock.Eq(client.ObjectKeyFromObject(si)), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 			*obj.(*v1alpha1.ServiceInstance) = *si
 			return nil
