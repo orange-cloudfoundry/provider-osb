@@ -118,7 +118,9 @@ func AddServiceInstanceStatus(si *v1alpha1.ServiceInstance, status v1alpha1.Serv
 	return cpy
 }
 
-// newMockKubeClientForServiceInstance crée un client Kubernetes simulé pour un ServiceInstance donné.
+// newMockKubeClientForServiceInstance creates a gomock-based mock Kubernetes client
+// that returns the provided ServiceInstance object for Get requests, simulates a
+// ServiceBindingList with one binding for List requests, and mocks Status().Update().
 func newMockKubeClientForServiceInstance(ctrl *gomock.Controller, si *v1alpha1.ServiceInstance) client.Client {
 	// Crée le mock
 	mockClient := mock.NewMockClient(ctrl) // NewMockClient généré par mockgen
@@ -137,13 +139,17 @@ func newMockKubeClientForServiceInstance(ctrl *gomock.Controller, si *v1alpha1.S
 		List(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(ctx context.Context, list client.ObjectList, opts ...client.ListOption) error {
 			bindings := list.(*apisbinding.ServiceBindingList)
-			bindings.Items = append(bindings.Items, apisbinding.ServiceBinding{
-				Spec: apisbinding.ServiceBindingSpec{
-					ForProvider: apisbinding.ServiceBindingParameters{
-						InstanceRef: &common.NamespacedName{Name: "example-instance"},
+			if si.Status.AtProvider.HasActiveBindings {
+				bindings.Items = append(bindings.Items, apisbinding.ServiceBinding{
+					Spec: apisbinding.ServiceBindingSpec{
+						ForProvider: apisbinding.ServiceBindingParameters{
+							InstanceRef: &common.NamespacedName{Name: "example-instance"},
+						},
 					},
-				},
-			})
+				})
+			} else {
+				bindings.Items = []apisbinding.ServiceBinding{}
+			}
 			return nil
 		}).
 		AnyTimes()
@@ -694,7 +700,7 @@ func TestDelete(t *testing.T) {
 				},
 			},
 			want: want{
-				err: errors.New("cannot delete ServiceInstance, it has active bindings---"),
+				err: errors.New("cannot delete ServiceInstance, it has active bindings"),
 			},
 		},
 		"DeprovisionSuccessSync": {
