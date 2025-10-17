@@ -17,19 +17,28 @@ limitations under the License.
 package controller
 
 import (
-	"github.com/crossplane/crossplane-runtime/pkg/controller"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/orange-cloudfoundry/provider-osb/internal/controller/application"
-	"github.com/orange-cloudfoundry/provider-osb/internal/controller/config"
-	"github.com/orange-cloudfoundry/provider-osb/internal/controller/servicebinding"
-	"github.com/orange-cloudfoundry/provider-osb/internal/controller/serviceinstance"
+	applicationv1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/application"
+	configv1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/config"
+	servicebindingv1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/servicebinding"
+	serviceinstancev1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/serviceinstance"
+
+	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/application"
+	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/config"
+	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/servicebinding"
+	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/serviceinstance"
 )
 
 // Setup creates all OSB controllers with the supplied logger and adds them to
 // the supplied manager.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func(ctrl.Manager, controller.Options) error{
+		configv1.Setup,
+		applicationv1.Setup,
+		servicebindingv1.Setup,
+		serviceinstancev1.Setup,
 		config.Setup,
 		application.Setup,
 		servicebinding.Setup,
