@@ -30,24 +30,16 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
+	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	"github.com/orange-cloudfoundry/provider-osb/apis/v2/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/instance/v1alpha1"
+	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v2/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/util"
 )
 
 const (
 	errNotServiceInstance = "managed resource is not a ServiceInstance custom resource"
-	errTrackPCUsage       = "cannot track ProviderConfig usage"
-	errGetPC              = "cannot get ProviderConfig"
-	errGetCreds           = "cannot get credentials"
-
-	errNewClient = "cannot create new Service"
-)
-
-// A NoOpService does nothing.
-type NoOpService struct{}
-
-var (
-	newNoOpService = func(_ []byte) (interface{}, error) { return &NoOpService{}, nil }
+	errConnect            = "cannot connect"
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -57,8 +49,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 	r := managed.NewReconciler(mgr,
 		resource.ManagedKind(v1alpha1.ServiceInstanceGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
-			kube:         mgr.GetClient(),
-			newServiceFn: newNoOpService}),
+			kubeClient:   mgr.GetClient(),
+			newOsbClient: util.NewOsbClient}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
@@ -74,8 +66,9 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // A connector is expected to produce an ExternalClient when its Connect method
 // is called.
 type connector struct {
-	kube         client.Client
-	newServiceFn func(creds []byte) (interface{}, error)
+	kubeClient               client.Client
+	newOsbClient             func(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
+	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
 
 // Connect typically produces an ExternalClient by:
@@ -84,23 +77,17 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	pc, err := util.ResolveProviderConfig(ctx, c.kube, mg)
+	osb, kube, originatingIdentity, err := util.Connect(ctx, c.kubeClient, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, errors.Wrap(err, errGetPC)
+		return nil, fmt.Errorf("%s: %w", errConnect, err)
 	}
 
-	cd := pc.Spec.Credentials
-	data, err := resource.CommonCredentialExtractor(ctx, cd.Source, c.kube, cd.CommonCredentialSelectors)
-	if err != nil {
-		return nil, errors.Wrap(err, errGetCreds)
-	}
-
-	svc, err := c.newServiceFn(data)
-	if err != nil {
-		return nil, errors.Wrap(err, errNewClient)
-	}
-
-	return &external{service: svc}, nil
+	// Return an external client with the OSB client, Kubernetes client, and originating identity.
+	return &external{
+		osb:                 osb,
+		kube:                kube,
+		originatingIdentity: *originatingIdentity,
+	}, nil
 }
 
 // An ExternalClient observes, then either creates, updates, or deletes an
@@ -108,7 +95,9 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	service interface{}
+	osb                 osb.Client
+	kube                client.Client
+	originatingIdentity osb.OriginatingIdentity
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {

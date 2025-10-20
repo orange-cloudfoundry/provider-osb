@@ -21,10 +21,12 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
+	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
 
 // Unlike many Kubernetes projects Crossplane does not use third party testing
@@ -37,7 +39,8 @@ import (
 
 func TestObserve(t *testing.T) {
 	type fields struct {
-		service interface{}
+		kube         client.Client
+		newOsbClient osb.Client
 	}
 
 	type args struct {
@@ -61,7 +64,10 @@ func TestObserve(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{service: tc.fields.service}
+			e := external{
+				kube: tc.fields.kube,
+				osb:  tc.fields.newOsbClient,
+			}
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Observe(...): -want error, +got error:\n%s\n", tc.reason, diff)

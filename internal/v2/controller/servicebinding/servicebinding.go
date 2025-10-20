@@ -55,12 +55,8 @@ import (
 )
 
 const (
-	errNotServiceBinding     = "managed resource is not a ServiceBinding custom resource"
-	errGetPC                 = "cannot get ProviderConfig"
-	errGetCreds              = "cannot get credentials"
-	errGetReferencedResource = "cannot get referenced resource"
-
-	errNewClient = "cannot create new Service"
+	errNotServiceBinding = "managed resource is not a ServiceBinding custom resource"
+	errConnect           = "cannot connect"
 
 	errTechnical  = "error: technical error encountered : %s"
 	errNoResponse = "no errors but the response sent back was empty for request: %v"
@@ -92,7 +88,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 				UID:      mgr.GetConfig().Impersonate.UID,
 				Groups:   mgr.GetConfig().Impersonate.Groups,
 			},
-			newServiceFn:  util.NewOsbClient,
+			newOsbClient:  util.NewOsbClient,
 			rotateBinding: o.Features.Enabled(features.EnableAlphaRotateBindings),
 		}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
@@ -132,8 +128,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // is called.
 type connector struct {
 	kube                     client.Client
+	newOsbClient             func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
-	newServiceFn             func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
 	rotateBinding            bool
 }
 
@@ -143,31 +139,17 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	pc, err := util.ResolveProviderConfig(ctx, c.kube, mg)
+	client, kube, originatingIdentity, err := util.Connect(ctx, c.kube, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, errors.Wrap(err, errGetPC)
+		return nil, fmt.Errorf("%s: %w", errConnect, err)
 	}
 
-	cd := pc.Spec.Credentials
-	creds, err := resource.CommonCredentialExtractor(ctx, cd.Source, c.kube, cd.CommonCredentialSelectors)
-	if err != nil {
-		return nil, errors.Wrap(err, errGetCreds)
-	}
-
-	// Build osb client
-	osbclient, err := c.newServiceFn(*pc, creds)
-	if err != nil {
-		return nil, errors.Wrap(err, errNewClient)
-	}
-
-	// Build originating identity for client
-	c.originatingIdentityValue.Extra = &pc.Spec.OriginatingIdentityExtraData
-	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)
-	if err != nil {
-		return nil, errors.Wrap(err, errNewClient)
-	}
-
-	return &external{client: osbclient, kube: c.kube, originatingIdentity: *oid, rotateBinding: c.rotateBinding}, nil
+	return &external{
+		client:              client,
+		kube:                kube,
+		originatingIdentity: *originatingIdentity,
+		rotateBinding:       c.rotateBinding,
+	}, nil
 }
 
 // An ExternalClient observes, then either creates, updates, or deletes an
