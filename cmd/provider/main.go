@@ -35,10 +35,10 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
-	apis_cluster "github.com/orange-cloudfoundry/provider-osb/apis/v2"
-	apis_namespaced "github.com/orange-cloudfoundry/provider-osb/apis/v2"
+	apis_cluster "github.com/orange-cloudfoundry/provider-osb/apis/cluster"
+	apis_namespaced "github.com/orange-cloudfoundry/provider-osb/apis/namespaced"
 	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/controller"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v2/features"
+	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/features"
 )
 
 func main() {

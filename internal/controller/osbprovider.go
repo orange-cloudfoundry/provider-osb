@@ -25,10 +25,10 @@ import (
 	//servicebindingv1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/servicebinding"
 	//serviceinstancev1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/serviceinstance"
 
-	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/application"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/config"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/servicebinding"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/serviceinstance"
+	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/application"
+	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/config"
+	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/servicebinding"
+	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/serviceinstance"
 )
 
 // Setup creates all OSB controllers with the supplied logger and adds them to
