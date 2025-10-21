@@ -215,7 +215,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	resp, err := c.client.GetBinding(req)
 
 	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
-	eo, err, shouldReturn := util.HandleHttpError(err, "GetBinding")
+	eo, err, shouldReturn := util.HandleHttpErrorForBindingObserver(err, "GetBinding")
 	if shouldReturn {
 		return eo, err
 	}

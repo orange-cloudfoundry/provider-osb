@@ -35,7 +35,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
-	"github.com/orange-cloudfoundry/provider-osb/apis"
+	apis_cluster "github.com/orange-cloudfoundry/provider-osb/apis/v2"
+	apis_namespaced "github.com/orange-cloudfoundry/provider-osb/apis/v2"
 	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/controller"
 	"github.com/orange-cloudfoundry/provider-osb/internal/v2/features"
 )
@@ -89,7 +90,8 @@ func main() {
 		RenewDeadline:              func() *time.Duration { d := 50 * time.Second; return &d }(),
 	})
 	kingpin.FatalIfError(err, "Cannot create controller manager")
-	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs to scheme")
+	kingpin.FatalIfError(apis_cluster.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs cluster to scheme")
+	kingpin.FatalIfError(apis_namespaced.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs namespace to scheme")
 
 	metricRecorder := managed.NewMRMetricRecorder()
 	statemetrics := statemetrics.NewMRStateMetrics()
