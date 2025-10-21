@@ -238,102 +238,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}, nil
 }
 
-func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.ServiceBinding, c *external) (managed.ExternalObservation, error, bool) {
-	if resp.Metadata.RenewBefore != "" {
-		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
-		if err != nil {
-			return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "error while marshalling or parsing renewBefore time", err), true
-		}
-
-		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
-		if renewBeforeTime.Before(time.Now()) {
-			expireAtTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.ExpiresAt)
-			if err != nil {
-				return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "error while marshalling or parsing expireAt time", err), true
-			}
-			expired := false
-			if expireAtTime.Before(time.Now()) {
-				cond := xpv1.Condition{
-					Type:    xpv1.TypeHealthy,
-					Status:  v1.ConditionFalse,
-					Message: fmt.Sprintf("warning : the binding has expired %s", expireAtTime.Format(util.Iso8601dateFormat)),
-				}
-				binding.SetConditions(cond)
-				expired = true
-			}
-			if c.rotateBinding {
-				return managed.ExternalObservation{
-					ResourceExists:   true,
-					ResourceUpToDate: false,
-				}, nil, true
-			} else if !expired {
-				cond := xpv1.Condition{
-					Type:    xpv1.TypeHealthy,
-					Status:  v1.ConditionFalse,
-					Message: fmt.Sprintf("warning : the binding will expire soon %s", expireAtTime.Format(util.Iso8601dateFormat)),
-				}
-				binding.SetConditions(cond)
-			}
-		}
-	}
-	return managed.ExternalObservation{}, nil, false
-}
-
-func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData bindingData) (managed.ExternalObservation, error) {
-	// TODO use poll delay using resp.pollDelay
-
-	// Poll last operation
-	lastOpReq := &osb.BindingLastOperationRequest{
-		InstanceID:          bindingData.instanceData.InstanceId,
-		BindingID:           meta.GetExternalName(binding),
-		ServiceID:           &bindingData.instanceData.ServiceId,
-		PlanID:              &bindingData.instanceData.PlanId,
-		OriginatingIdentity: &c.originatingIdentity,
-		OperationKey:        &binding.Status.AtProvider.LastOperationKey,
-	}
-
-	resp, err := c.osb.PollBindingLastOperation(lastOpReq)
-
-	// Manage errors
-	if err != nil {
-		// HTTP error 410 means that the resource was deleted by the broker
-		// so if the resource on the cluster was effectively deleted,
-		// we can remove its finalizer
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			if httpErr.StatusCode == http.StatusGone && meta.WasDeleted(binding) {
-				// Remove async finalizer from binding
-				if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
-					return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "technical error encountered", err)
-				}
-				// Remove reference finalizer from referenced ServiceInstance
-				if err = c.removeRefFinalizer(ctx, binding); err != nil {
-					return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot remove finalizer from referenced resource", err)
-				}
-				// return resourceexists: false explicitly
-				// This will trigger the removal of crossplane runtime's finalizers
-				return managed.ExternalObservation{
-					ResourceExists: false,
-				}, nil
-			}
-		}
-		// Other errors should be considered as failures
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB PollBindingLastOperation request failed", err)
-	}
-
-	latest, err := util.GetLatestKubeObject(ctx, c.kube, binding)
-	if err != nil {
-		return managed.ExternalObservation{}, err
-	}
-
-	util.UpdateStatusFromLastOp(latest, resp)
-
-	// Requeue, waiting for operation treatment
-	return managed.ExternalObservation{
-		ResourceExists:   true,
-		ResourceUpToDate: true,
-	}, nil
-}
-
 // Create provisions a new ServiceBinding through the OSB client
 // and updates its status and connection details accordingly.
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
@@ -380,68 +284,6 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	return managed.ExternalCreation{
 		ConnectionDetails: creds,
 	}, nil
-}
-
-// handleBindRequest executes an OSB BindRequest and handles asynchronous responses.
-// Returns:
-//   - *osb.BindResponse: the OSB response if synchronous,
-//   - managed.ExternalCreation: creation details for Crossplane,
-//   - error: any occurred error,
-//   - bool: whether the caller should return immediately (true if async or error).
-func handleBindRequest(
-	c *external,
-	bindRequest osb.BindRequest,
-	binding *v1alpha1.ServiceBinding,
-) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
-
-	resp, err := c.osb.Bind(&bindRequest)
-	if err != nil {
-		return nil, managed.ExternalCreation{}, fmt.Errorf("OSB Bind request failed: %w", err), true
-	}
-
-	if resp == nil {
-		return nil, managed.ExternalCreation{}, fmt.Errorf("OSB Bind request returned nil response for bindingID %s", bindRequest.BindingID), true
-	}
-
-	if resp.Async {
-		// Handle asynchronous binding creation
-		if resp.OperationKey != nil {
-			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
-
-		return nil, managed.ExternalCreation{
-			AdditionalDetails: managed.AdditionalDetails{
-				"async": "true",
-			},
-		}, nil, true
-	}
-
-	// Synchronous response: return the OSB response for further processing
-	return resp, managed.ExternalCreation{}, nil, false
-}
-
-// convertSpecsData converts the ServiceBinding spec's Context and Parameters
-// from their Kubernetes types into plain map[string]any structures suitable for OSB requests.
-// - Context is marshaled to JSON and then unmarshaled into a map.
-// - Parameters, stored as raw JSON bytes, are unmarshaled into a map.
-// Returns the converted context and parameters maps, or an error if conversion fails.
-func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, map[string]any, error) {
-	requestContextBytes, err := json.Marshal(spec.Context)
-	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context from ServiceBinding", err)
-	}
-	var requestContext map[string]any
-	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context to bytes from ServiceBinding", err)
-	}
-
-	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
-	var requestParams map[string]any
-	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing paramaters to bytes from ServiceBinding", err)
-	}
-	return requestContext, requestParams, nil
 }
 
 // Calling this function means that the resources on the cluster and from the broker are different.
@@ -521,6 +363,164 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Disconnect(ctx context.Context) error {
 	// not implemented
 	return nil
+}
+
+func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData bindingData) (managed.ExternalObservation, error) {
+	// TODO use poll delay using resp.pollDelay
+
+	// Poll last operation
+	lastOpReq := &osb.BindingLastOperationRequest{
+		InstanceID:          bindingData.instanceData.InstanceId,
+		BindingID:           meta.GetExternalName(binding),
+		ServiceID:           &bindingData.instanceData.ServiceId,
+		PlanID:              &bindingData.instanceData.PlanId,
+		OriginatingIdentity: &c.originatingIdentity,
+		OperationKey:        &binding.Status.AtProvider.LastOperationKey,
+	}
+
+	resp, err := c.osb.PollBindingLastOperation(lastOpReq)
+
+	// Manage errors
+	if err != nil {
+		// HTTP error 410 means that the resource was deleted by the broker
+		// so if the resource on the cluster was effectively deleted,
+		// we can remove its finalizer
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			if httpErr.StatusCode == http.StatusGone && meta.WasDeleted(binding) {
+				// Remove async finalizer from binding
+				if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
+					return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "technical error encountered", err)
+				}
+				// Remove reference finalizer from referenced ServiceInstance
+				if err = c.removeRefFinalizer(ctx, binding); err != nil {
+					return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot remove finalizer from referenced resource", err)
+				}
+				// return resourceexists: false explicitly
+				// This will trigger the removal of crossplane runtime's finalizers
+				return managed.ExternalObservation{
+					ResourceExists: false,
+				}, nil
+			}
+		}
+		// Other errors should be considered as failures
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB PollBindingLastOperation request failed", err)
+	}
+
+	latest, err := util.GetLatestKubeObject(ctx, c.kube, binding)
+	if err != nil {
+		return managed.ExternalObservation{}, err
+	}
+
+	util.UpdateStatusFromLastOp(latest, resp)
+
+	// Requeue, waiting for operation treatment
+	return managed.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: true,
+	}, nil
+}
+
+func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.ServiceBinding, c *external) (managed.ExternalObservation, error, bool) {
+	if resp.Metadata.RenewBefore != "" {
+		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
+		if err != nil {
+			return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "error while marshalling or parsing renewBefore time", err), true
+		}
+
+		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
+		if renewBeforeTime.Before(time.Now()) {
+			expireAtTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.ExpiresAt)
+			if err != nil {
+				return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "error while marshalling or parsing expireAt time", err), true
+			}
+			expired := false
+			if expireAtTime.Before(time.Now()) {
+				cond := xpv1.Condition{
+					Type:    xpv1.TypeHealthy,
+					Status:  v1.ConditionFalse,
+					Message: fmt.Sprintf("warning : the binding has expired %s", expireAtTime.Format(util.Iso8601dateFormat)),
+				}
+				binding.SetConditions(cond)
+				expired = true
+			}
+			if c.rotateBinding {
+				return managed.ExternalObservation{
+					ResourceExists:   true,
+					ResourceUpToDate: false,
+				}, nil, true
+			} else if !expired {
+				cond := xpv1.Condition{
+					Type:    xpv1.TypeHealthy,
+					Status:  v1.ConditionFalse,
+					Message: fmt.Sprintf("warning : the binding will expire soon %s", expireAtTime.Format(util.Iso8601dateFormat)),
+				}
+				binding.SetConditions(cond)
+			}
+		}
+	}
+	return managed.ExternalObservation{}, nil, false
+}
+
+// handleBindRequest executes an OSB BindRequest and handles asynchronous responses.
+// Returns:
+//   - *osb.BindResponse: the OSB response if synchronous,
+//   - managed.ExternalCreation: creation details for Crossplane,
+//   - error: any occurred error,
+//   - bool: whether the caller should return immediately (true if async or error).
+func handleBindRequest(
+	c *external,
+	bindRequest osb.BindRequest,
+	binding *v1alpha1.ServiceBinding,
+) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
+
+	resp, err := c.osb.Bind(&bindRequest)
+	if err != nil {
+		return nil, managed.ExternalCreation{}, fmt.Errorf("OSB Bind request failed: %w", err), true
+	}
+
+	if resp == nil {
+		return nil, managed.ExternalCreation{}, fmt.Errorf("OSB Bind request returned nil response for bindingID %s", bindRequest.BindingID), true
+	}
+
+	if resp.Async {
+		// Handle asynchronous binding creation
+		if resp.OperationKey != nil {
+			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
+
+		return nil, managed.ExternalCreation{
+			AdditionalDetails: managed.AdditionalDetails{
+				"async": "true",
+			},
+		}, nil, true
+	}
+
+	// Synchronous response: return the OSB response for further processing
+	return resp, managed.ExternalCreation{}, nil, false
+}
+
+// convertSpecsData converts the ServiceBinding spec's Context and Parameters
+// from their Kubernetes types into plain map[string]any structures suitable for OSB requests.
+// - Context is marshaled to JSON and then unmarshaled into a map.
+// - Parameters, stored as raw JSON bytes, are unmarshaled into a map.
+// Returns the converted context and parameters maps, or an error if conversion fails.
+func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, map[string]any, error) {
+	requestContextBytes, err := json.Marshal(spec.Context)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context from ServiceBinding", err)
+	}
+	var requestContext map[string]any
+	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context to bytes from ServiceBinding", err)
+	}
+
+	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
+	var requestParams map[string]any
+	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing paramaters to bytes from ServiceBinding", err)
+	}
+	return requestContext, requestParams, nil
 }
 
 // addRefFinalizer adds removes the reference finalizer to the ServiceInstance object referenced by the binding
