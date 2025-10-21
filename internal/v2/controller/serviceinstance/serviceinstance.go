@@ -206,17 +206,35 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	return managed.ExternalCreation{}, nil
 }
 
+// Update sends an update request to the OSB broker for the given ServiceInstance
+// and updates its status in Kubernetes accordingly.
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalUpdate{}, errors.New(errNotServiceInstance)
+		return managed.ExternalUpdate{}, fmt.Errorf("managed resource is not a ServiceInstance custom resource")
 	}
 
-	fmt.Printf("Updating: %+v", cr)
+	// Build the OSB update request.
+	req, err := buildUpdateRequest(instance)
+	if err != nil {
+		return managed.ExternalUpdate{}, err
+	}
+
+	// Send the request to the OSB broker.
+	resp, err := c.osb.UpdateInstance(req)
+	if err != nil {
+		return managed.ExternalUpdate{}, fmt.Errorf("OSB UpdateInstance request failed: %w", err)
+	}
+
+	// Update the instance status based on the response.
+	updateInstanceStatusFromUpdate(instance, resp)
+
+	// Persist the updated status in Kubernetes.
+	if err := c.kube.Status().Update(ctx, instance); err != nil {
+		return managed.ExternalUpdate{}, fmt.Errorf("cannot update ServiceInstance status: %w", err)
+	}
 
 	return managed.ExternalUpdate{
-		// Optionally return any details that may be required to connect to the
-		// external resource. These will be stored as the connection secret.
 		ConnectionDetails: managed.ConnectionDetails{},
 	}, nil
 }
@@ -440,4 +458,46 @@ func updateInstanceStatusFromProvisionResponse(si *v1alpha1.ServiceInstance, res
 
 	si.Status.SetConditions(xpv1.Available())
 	si.Status.AtProvider.LastOperationState = osb.StateSucceeded
+}
+
+// buildUpdateRequest constructs an OSB UpdateInstanceRequest from the given ServiceInstance.
+// It converts the ServiceInstance spec parameters and context into the format expected by the OSB client.
+// Returns the prepared request or an error if the conversion fails.
+func buildUpdateRequest(si *v1alpha1.ServiceInstance) (*osb.UpdateInstanceRequest, error) {
+	params, err := si.Spec.ForProvider.Parameters.ToParameters()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ServiceInstance parameters: %w", err)
+	}
+
+	ctxMap, err := si.Spec.ForProvider.Context.ToMap()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ServiceInstance context: %w", err)
+	}
+
+	return &osb.UpdateInstanceRequest{
+		InstanceID:        si.Spec.ForProvider.InstanceId,
+		ServiceID:         si.Spec.ForProvider.ServiceId,
+		PlanID:            &si.Spec.ForProvider.PlanId,
+		Parameters:        params,
+		AcceptsIncomplete: true,
+		Context:           ctxMap,
+	}, nil
+}
+
+// updateInstanceStatusFromUpdate updates the status of the ServiceInstance
+// based on the OSB UpdateInstanceResponse. It sets the dashboard URL, context,
+// and last operation state. If the update is asynchronous, it also sets the
+// last operation key and marks the operation as in progress.
+func updateInstanceStatusFromUpdate(si *v1alpha1.ServiceInstance, resp *osb.UpdateInstanceResponse) {
+	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
+	si.Status.AtProvider.DashboardURL = resp.DashboardURL
+
+	if resp.Async {
+		si.Status.AtProvider.LastOperationState = osb.StateInProgress
+		if resp.OperationKey != nil {
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+	} else {
+		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
+	}
 }
