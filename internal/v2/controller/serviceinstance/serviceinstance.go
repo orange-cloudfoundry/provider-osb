@@ -34,17 +34,13 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/v1/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v2/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/util"
-)
-
-const (
-	errNotServiceInstance = ""
-	errConnect            = "cannot connect"
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -84,7 +80,7 @@ type connector struct {
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
 	osb, kube, originatingIdentity, err := util.Connect(ctx, c.kubeClient, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errConnect, err)
+		return nil, fmt.Errorf("%s: %w", "cannot connect", err)
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
@@ -176,19 +172,38 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}, nil
 }
 
+// Create provisions a new ServiceInstance through the OSB client
+// and updates its status accordingly.
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalCreation{}, errors.New(errNotServiceInstance)
+		return managed.ExternalCreation{}, errors.New("managed resource is not a ServiceInstance custom resource")
 	}
 
-	fmt.Printf("Creating: %+v", cr)
+	params, err := instance.Spec.ForProvider.Parameters.ToParameters()
+	if err != nil {
+		return managed.ExternalCreation{}, fmt.Errorf("failed to parse ServiceInstance parameters: %w", err)
+	}
 
-	return managed.ExternalCreation{
-		// Optionally return any details that may be required to connect to the
-		// external resource. These will be stored as the connection secret.
-		ConnectionDetails: managed.ConnectionDetails{},
-	}, nil
+	ctxMap, err := instance.Spec.ForProvider.Context.ToMap()
+	if err != nil {
+		return managed.ExternalCreation{}, fmt.Errorf("failed to parse ServiceInstance context: %w", err)
+	}
+
+	req := buildProvisionRequest(instance, params, ctxMap)
+
+	resp, err := c.osb.ProvisionInstance(req)
+	if err != nil {
+		return managed.ExternalCreation{}, fmt.Errorf("OSB ProvisionInstance request failed: %w", err)
+	}
+
+	updateInstanceStatusFromProvisionResponse(instance, resp)
+
+	if err := c.kube.Status().Update(ctx, instance); err != nil {
+		return managed.ExternalCreation{}, fmt.Errorf("cannot update ServiceInstance status: %w", err)
+	}
+
+	return managed.ExternalCreation{}, nil
 }
 
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
@@ -393,4 +408,36 @@ func compareInstanceParameters(instance v1alpha1.ServiceInstance, osbInstance *o
 	}
 
 	return true, nil
+}
+
+// buildProvisionRequest creates an OSB ProvisionRequest from a ServiceInstance spec.
+func buildProvisionRequest(si *v1alpha1.ServiceInstance, params map[string]interface{}, ctxMap map[string]interface{}) *osb.ProvisionRequest {
+	return &osb.ProvisionRequest{
+		InstanceID:        si.Spec.ForProvider.InstanceId,
+		ServiceID:         si.Spec.ForProvider.ServiceId,
+		PlanID:            si.Spec.ForProvider.PlanId,
+		OrganizationGUID:  si.Spec.ForProvider.OrganizationGuid,
+		SpaceGUID:         si.Spec.ForProvider.SpaceGuid,
+		Parameters:        params,
+		AcceptsIncomplete: true,
+		Context:           ctxMap,
+	}
+}
+
+// updateInstanceStatusFromProvisionResponse updates the ServiceInstance status based on the OSB ProvisionInstance response.
+func updateInstanceStatusFromProvisionResponse(si *v1alpha1.ServiceInstance, resp *osb.ProvisionResponse) {
+	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
+	si.Status.AtProvider.DashboardURL = resp.DashboardURL
+
+	if resp.Async {
+		si.Status.SetConditions(xpv1.Creating())
+		si.Status.AtProvider.LastOperationState = osb.StateInProgress
+		if resp.OperationKey != nil {
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		}
+		return
+	}
+
+	si.Status.SetConditions(xpv1.Available())
+	si.Status.AtProvider.LastOperationState = osb.StateSucceeded
 }
