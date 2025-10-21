@@ -349,79 +349,47 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 	}, nil
 }
 
+// Create provisions a new ServiceBinding through the OSB client
+// and updates its status and connection details accordingly.
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
-		return managed.ExternalCreation{}, errors.New(errNotServiceBinding)
+		return managed.ExternalCreation{}, fmt.Errorf("managed resource is not a ServiceBinding custom resource")
 	}
 
-	// Prepare binding creation request
+	// Retrieve instance and application data for the binding.
 	bindingData, err := c.getDataFromServiceBinding(ctx, binding.Spec.ForProvider)
 	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, errGetDataFromBinding)
+		return managed.ExternalCreation{}, fmt.Errorf("failed to retrieve binding data: %w", err)
 	}
 
-	spec := binding.Spec.ForProvider
-
-	// Convert spec.Context and spec.Parameters of type common.KubernetesOSBContext to map[string]any
-	requestContext, requestParams, err := convertSpecsData(spec)
+	// Convert OSB context and parameters from the spec.
+	requestContext, requestParams, err := convertSpecsData(binding.Spec.ForProvider)
 	if err != nil {
-		return managed.ExternalCreation{}, err
+		return managed.ExternalCreation{}, fmt.Errorf("failed to convert binding spec data: %w", err)
 	}
 
-	bindingUuid := meta.GetExternalName(binding)
-	// Immediately set the binding's external name with a new UUID if it did not have one,
-	// even before creation is a success
-	if meta.GetExternalName(binding) != "" {
-		bindingUuid := string(uuid.NewUUID())
-		meta.SetExternalName(binding, bindingUuid)
-	}
+	// Ensure the binding has a valid external name (UUID).
+	bindingUUID := ensureBindingUUID(binding)
 
-	bindRequest := osb.BindRequest{
-		BindingID:  bindingUuid,
-		InstanceID: bindingData.instanceData.InstanceId,
-		BindResource: &osb.BindResource{
-			AppGUID: &bindingData.applicationData.Guid,
-			Route:   &binding.Spec.ForProvider.Route,
-		},
-		AcceptsIncomplete:   true, // TODO: add a config flag to enable async requests or not
-		OriginatingIdentity: &c.originatingIdentity,
-		PlanID:              binding.Spec.ForProvider.InstanceData.PlanId,
-		Context:             requestContext,
-		Parameters:          requestParams,
-		ServiceID:           binding.Spec.ForProvider.InstanceData.ServiceId,
-		AppGUID:             &bindingData.applicationData.Guid,
-	}
+	// Build OSB BindRequest.
+	req := buildBindRequest(binding, bindingData, bindingUUID, c.originatingIdentity, requestContext, requestParams)
 
-	// Request binding creation
-	resp, ec, err, shouldReturn := handleBindRequest(c, bindRequest, binding)
+	// Execute the OSB bind request and handle async responses.
+	resp, creation, err, shouldReturn := handleBindRequest(c, req, binding)
 	if shouldReturn {
-		return ec, err
+		return creation, err
 	}
 
+	// Extract connection credentials from the OSB response.
 	creds, err := getCredsFromResponse(resp)
 	if err != nil {
-		return managed.ExternalCreation{}, err
+		return managed.ExternalCreation{}, fmt.Errorf("failed to extract credentials from OSB response: %w", err)
 	}
 
-	// Set values for endpoints, volumes, syslog drain urls
-	// Avoid rewriting parameters since they are not included in the response
-	params, err := binding.Status.AtProvider.Parameters.ToParameters()
-	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters from resource status"))
-	}
-
-	err = c.setResponseDataInStatus(binding, responseData{
-		Parameters:      params,
-		Endpoints:       resp.Endpoints,
-		VolumeMounts:    resp.VolumeMounts,
-		RouteServiceURL: resp.RouteServiceURL,
-		SyslogDrainURL:  resp.SyslogDrainURL,
-		Metadata:        resp.Metadata,
-	})
-
-	if err != nil {
-		return managed.ExternalCreation{}, err
+	// Update binding status based on OSB response data.
+	if err := c.updateBindingStatusFromResponse(binding, resp); err != nil {
+		return managed.ExternalCreation{}, fmt.Errorf("failed to update binding status: %w", err)
 	}
 
 	return managed.ExternalCreation{
@@ -429,32 +397,50 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}, nil
 }
 
-func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alpha1.ServiceBinding) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
-	resp, err := c.osb.Bind(&bindRequest)
+// handleBindRequest executes an OSB BindRequest and handles asynchronous responses.
+// Returns:
+//   - *osb.BindResponse: the OSB response if synchronous,
+//   - managed.ExternalCreation: creation details for Crossplane,
+//   - error: any occurred error,
+//   - bool: whether the caller should return immediately (true if async or error).
+func handleBindRequest(
+	c *external,
+	bindRequest osb.BindRequest,
+	binding *v1alpha1.ServiceBinding,
+) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
 
+	resp, err := c.osb.Bind(&bindRequest)
 	if err != nil {
-		return nil, managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind")), true
+		return nil, managed.ExternalCreation{}, fmt.Errorf("OSB Bind request failed: %w", err), true
 	}
+
 	if resp == nil {
-		return nil, managed.ExternalCreation{}, fmt.Errorf(errNoResponse, bindRequest), true
+		return nil, managed.ExternalCreation{}, fmt.Errorf("OSB Bind request returned nil response for bindingID %s", bindRequest.BindingID), true
 	}
 
 	if resp.Async {
-		// If the creation was asynchronous, add an annotation
+		// Handle asynchronous binding creation
 		if resp.OperationKey != nil {
 			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
 		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
+
 		return nil, managed.ExternalCreation{
-			// AdditionalDetails is for logs
 			AdditionalDetails: managed.AdditionalDetails{
 				"async": "true",
 			},
 		}, nil, true
 	}
+
+	// Synchronous response: return the OSB response for further processing
 	return resp, managed.ExternalCreation{}, nil, false
 }
 
+// convertSpecsData converts the ServiceBinding spec's Context and Parameters
+// from their Kubernetes types into plain map[string]any structures suitable for OSB requests.
+// - Context is marshaled to JSON and then unmarshaled into a map.
+// - Parameters, stored as raw JSON bytes, are unmarshaled into a map.
+// Returns the converted context and parameters maps, or an error if conversion fails.
 func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, map[string]any, error) {
 	requestContextBytes, err := json.Marshal(spec.Context)
 	if err != nil {
@@ -648,49 +634,53 @@ func (c *external) fetchApplicationDataFromInstance(ctx context.Context, instanc
 	return appData, nil
 }
 
+// getDataFromServiceBinding retrieves both instance and application data required for
+// handling a ServiceBinding. It supports fetching from either a direct reference
+// (InstanceRef) or inlined InstanceData in the spec, and similarly for application data.
+// Returns a bindingData struct containing both instance and application data,
+// or an error if any required data is missing or cannot be retrieved.
 func (c *external) getDataFromServiceBinding(ctx context.Context, spec v1alpha1.ServiceBindingParameters) (bindingData, error) {
-	// Fetch application data
+	// Fetch application data directly from the binding spec if available.
 	appData, err := c.fetchApplicationDataFromBinding(ctx, spec)
 	if err != nil {
-		return bindingData{}, err
+		return bindingData{}, fmt.Errorf("failed to fetch application data from binding: %w", err)
 	}
 
-	// Fetch instance data
+	// Initialize instance data pointer.
 	var instanceData *common.InstanceData
 
 	if spec.InstanceRef != nil {
-		// Fetch from referenced resource
+		// Fetch instance data from the referenced ServiceInstance resource.
 		instance := instancev1alpha1.ServiceInstance{}
 		if err := c.kube.Get(ctx, spec.InstanceRef.ToObjectKey(), &instance); err != nil {
 			if kerrors.IsNotFound(err) {
-				return bindingData{}, errors.New("binding referenced a service instance which does not exist")
+				return bindingData{}, fmt.Errorf("binding references a service instance which does not exist")
 			}
-			return bindingData{}, errors.Wrap(err, "error while retrieving referenced service instance")
+			return bindingData{}, fmt.Errorf("failed to retrieve referenced service instance: %w", err)
 		}
 
 		instanceSpec := instance.Spec.ForProvider
 		instanceData = &instanceSpec
 
-		// If there was not application data found from the binding directly, fetch it from the instance instead
-
+		// If no application data was found on the binding, fetch it from the instance.
 		if appData == nil {
 			appData, err = c.fetchApplicationDataFromInstance(ctx, instanceSpec)
 			if err != nil {
-				return bindingData{}, err
+				return bindingData{}, fmt.Errorf("failed to fetch application data from instance: %w", err)
 			}
 		}
 	} else if spec.InstanceData != nil {
+		// Use inlined instance data if available.
 		instanceData = spec.InstanceData
 	}
 
-	// Checking if we miss instance data, triggering an issue for binding usage.
+	// Validate that both instance data and application data are present.
 	if instanceData == nil {
-		return bindingData{}, errors.New("error: missing either instance data or reference, binding handling impossible.")
+		return bindingData{}, fmt.Errorf("missing instance data: cannot handle binding without instance reference or inlined data")
 	}
 
-	// Checking if we miss application data, triggering an issue for binding usage.
 	if appData == nil {
-		return bindingData{}, errors.New("error: missing either application data or reference, binding handling impossible.")
+		return bindingData{}, fmt.Errorf("missing application data: cannot handle binding without application info")
 	}
 
 	return bindingData{*instanceData, *appData}, nil
@@ -789,17 +779,72 @@ func compareToObserved(cr *v1alpha1.ServiceBinding) bool {
 	return reflect.DeepEqual(cr.Status.AtProvider.Parameters, cr.Spec.ForProvider.Parameters)
 }
 
+// getCredsFromResponse serializes the credentials from an OSB BindResponse
+// into a map[string][]byte suitable for Crossplane connection details.
+// Returns an error if any credential cannot be marshaled to JSON.
 func getCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
-	// Serialize credentials
 	creds := make(map[string][]byte, len(resp.Credentials))
 
-	for k, v := range resp.Credentials {
-		credsBytes, err := json.Marshal(v)
+	for key, value := range resp.Credentials {
+		data, err := json.Marshal(value)
 		if err != nil {
-			return map[string][]byte{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "credentials from response"))
+			return nil, fmt.Errorf("failed to marshal credential '%s' from response: %w", key, err)
 		}
-		creds[k] = credsBytes
+		creds[key] = data
 	}
 
 	return creds, nil
+}
+
+// ensureBindingUUID returns the existing external name or generates a new UUID if missing.
+func ensureBindingUUID(binding *v1alpha1.ServiceBinding) string {
+	if id := meta.GetExternalName(binding); id != "" {
+		return id
+	}
+	newID := string(uuid.NewUUID())
+	meta.SetExternalName(binding, newID)
+	return newID
+}
+
+// buildBindRequest creates an OSB BindRequest from the ServiceBinding spec and related data.
+func buildBindRequest(
+	binding *v1alpha1.ServiceBinding,
+	data bindingData,
+	bindingID string,
+	originatingIdentity osb.OriginatingIdentity,
+	ctxMap, params map[string]any,
+) osb.BindRequest {
+	return osb.BindRequest{
+		BindingID:           bindingID,
+		InstanceID:          data.instanceData.InstanceId,
+		BindResource:        &osb.BindResource{AppGUID: &data.applicationData.Guid, Route: &binding.Spec.ForProvider.Route},
+		AcceptsIncomplete:   true, // TODO: make configurable
+		OriginatingIdentity: &originatingIdentity,
+		PlanID:              data.instanceData.PlanId,
+		Context:             ctxMap,
+		Parameters:          params,
+		ServiceID:           data.instanceData.ServiceId,
+		AppGUID:             &data.applicationData.Guid,
+	}
+}
+
+// updateBindingStatusFromResponse updates the ServiceBinding status with data from the OSB BindResponse.
+func (c *external) updateBindingStatusFromResponse(binding *v1alpha1.ServiceBinding, resp *osb.BindResponse) error {
+	params, err := binding.Status.AtProvider.Parameters.ToParameters()
+	if err != nil {
+		return fmt.Errorf("failed to parse parameters from binding status: %w", err)
+	}
+
+	if err := c.setResponseDataInStatus(binding, responseData{
+		Parameters:      params,
+		Endpoints:       resp.Endpoints,
+		VolumeMounts:    resp.VolumeMounts,
+		RouteServiceURL: resp.RouteServiceURL,
+		SyslogDrainURL:  resp.SyslogDrainURL,
+		Metadata:        resp.Metadata,
+	}); err != nil {
+		return fmt.Errorf("failed to set response data in status: %w", err)
+	}
+
+	return nil
 }
