@@ -145,7 +145,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	return &external{
-		client:              client,
+		osb:                 client,
 		kube:                kube,
 		originatingIdentity: *originatingIdentity,
 		rotateBinding:       c.rotateBinding,
@@ -157,7 +157,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	client              osb.Client
+	osb                 osb.Client
 	kube                client.Client
 	originatingIdentity osb.OriginatingIdentity
 	rotateBinding       bool
@@ -194,7 +194,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		BindingID:  externalName,
 	}
 
-	resp, err := c.client.GetBinding(req)
+	resp, err := c.osb.GetBinding(req)
 
 	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
 	eo, err, shouldReturn := util.HandleHttpErrorForBindingObserver(err, "GetBinding")
@@ -307,7 +307,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 		OperationKey:        &binding.Status.AtProvider.LastOperationKey,
 	}
 
-	resp, err := c.client.PollBindingLastOperation(lastOpReq)
+	resp, err := c.osb.PollBindingLastOperation(lastOpReq)
 
 	// Manage errors
 	if err != nil {
@@ -335,14 +335,12 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "PollBindingLastOperation"))
 	}
 
-	// Set polled operation data in resource status
-	binding.Status.AtProvider.LastOperationState = resp.State
-	if resp.Description != nil {
-		binding.Status.AtProvider.LastOperationDescription = *resp.Description
-	} else {
-		binding.Status.AtProvider.LastOperationDescription = ""
+	latest, err := util.GetLatestKubeObject(ctx, c.kube, binding)
+	if err != nil {
+		return managed.ExternalObservation{}, err
 	}
-	binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
+
+	util.UpdateStatusFromLastOp(latest, resp)
 
 	// Requeue, waiting for operation treatment
 	return managed.ExternalObservation{
@@ -432,7 +430,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 }
 
 func handleBindRequest(c *external, bindRequest osb.BindRequest, binding *v1alpha1.ServiceBinding) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
-	resp, err := c.client.Bind(&bindRequest)
+	resp, err := c.osb.Bind(&bindRequest)
 
 	if err != nil {
 		return nil, managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "Bind")), true
@@ -532,7 +530,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 		OriginatingIdentity: &c.originatingIdentity,
 	}
 
-	resp, err := c.client.Unbind(&reqUnbind)
+	resp, err := c.osb.Unbind(&reqUnbind)
 	if err != nil {
 		return managed.ExternalDelete{}, err
 	}
@@ -748,7 +746,7 @@ func (c *external) setAtProvider(cr *v1alpha1.ServiceBinding, observation v1alph
 func (c *external) triggerRotation(binding *v1alpha1.ServiceBinding, data bindingData) (map[string][]byte, error) {
 	newUuid := string(uuid.NewUUID())
 
-	resp, err := c.client.RotateBinding(&osb.RotateBindingRequest{
+	resp, err := c.osb.RotateBinding(&osb.RotateBindingRequest{
 		InstanceID:           data.instanceData.InstanceId,
 		BindingID:            newUuid,
 		AcceptsIncomplete:    true, // TODO use config param for this

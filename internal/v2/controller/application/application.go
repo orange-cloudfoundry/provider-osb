@@ -45,13 +45,6 @@ const (
 	errConnect        = "cannot connect"
 )
 
-// A NoOpService does nothing.
-type NoOpService struct{}
-
-var (
-	newNoOpService = func(_ []byte) (interface{}, error) { return &NoOpService{}, nil }
-)
-
 // Setup adds a controller that reconciles Application managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ApplicationGroupKind)

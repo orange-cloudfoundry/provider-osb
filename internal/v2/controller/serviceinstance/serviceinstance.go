@@ -19,10 +19,14 @@ package serviceinstance
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"reflect"
 
-	"github.com/pkg/errors"
+	"errors"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
@@ -31,6 +35,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/v1/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v2/v1alpha1"
@@ -38,7 +43,7 @@ import (
 )
 
 const (
-	errNotServiceInstance = "managed resource is not a ServiceInstance custom resource"
+	errNotServiceInstance = ""
 	errConnect            = "cannot connect"
 )
 
@@ -101,14 +106,57 @@ type external struct {
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+	// Assert that the managed resource is of type ServiceInstance.
+	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New(errNotServiceInstance)
+		return managed.ExternalObservation{}, errors.New("managed resource is not a ServiceInstance custom resource")
 	}
 
-	// These fmt statements should be removed in the real implementation.
-	fmt.Printf("Observing: %+v", cr)
+	if err := validateInstanceID(instance); err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "validation failed", err)
+	}
 
+	// Manage pending async operations (poll only for "in progress" state)
+	if instance.Status.AtProvider.LastOperationState == osb.StateInProgress || instance.Status.AtProvider.LastOperationState == "deleting" {
+		return c.handleLastOperationInProgress(ctx, instance)
+	}
+
+	// If the resource is being deleted, check for active bindings before allowing deletion.
+	if !instance.GetDeletionTimestamp().IsZero() {
+		return c.handleDeletionWithActiveBindings(ctx, instance)
+	}
+
+	// Build the GetInstanceRequest uinstanceng the InstanceId from the ServiceInstance spec.
+	req := &osb.GetInstanceRequest{
+		InstanceID: instance.Spec.ForProvider.InstanceId,
+		//ServiceID:  instance.Spec.ForProvider.ServiceId,
+		//PlanID:     instance.Spec.ForProvider.PlanId,
+	}
+
+	// Call the OSB client's GetInstance method to retrieve the current state of the instance.
+	osbInstance, err := c.osb.GetInstance(req)
+	// Manage errors from the GetInstance call.
+	if err != nil {
+		// Check if the error is an HTTP error returned by the OSB client.
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			// If the HTTP status code is 404, the resource does not exist in the external system.
+			if httpErr.StatusCode == http.StatusNotFound {
+				return managed.ExternalObservation{
+					ResourceExists: false,
+				}, nil
+			}
+		}
+		// For all other errors, wrap and return them as unexpected errors.
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB GetInstance request failed", err)
+	}
+
+	// Compare the deinstancered spec from the ServiceInstance with the actual instance returned from OSB.
+	// This determines if the external resource is up to date with the deinstancered state.
+	upToDate, err := compareSpecWithOSB(*instance, osbInstance)
+	if err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot compare ServiceInstance spec with OSB instance", err)
+	}
+	// These fmt statements should be removed in the real implementation.
 	return managed.ExternalObservation{
 		// Return false when the external resource does not exist. This lets
 		// the managed resource reconciler know that it needs to call Create to
@@ -116,13 +164,15 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		ResourceExists: true,
 
 		// Return false when the external resource exists, but it not up to date
-		// with the desired managed resource state. This lets the managed
+		// with the deinstancered managed resource state. This lets the managed
 		// resource reconciler know that it needs to call Update.
-		ResourceUpToDate: true,
+		ResourceUpToDate: upToDate,
 
 		// Return any details that may be required to connect to the external
 		// resource. These will be stored as the connection secret.
-		ConnectionDetails: managed.ConnectionDetails{},
+		ConnectionDetails: managed.ConnectionDetails{
+			"dashboardURL": []byte(osbInstance.DashboardURL),
+		},
 	}, nil
 }
 
@@ -169,4 +219,178 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 
 func (c *external) Disconnect(ctx context.Context) error {
 	return nil
+}
+
+// removeFinalizer removes the specified finalizer from the ServiceInstance if it exists.
+func (c *external) removeFinalizer(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
+	latest, err := util.GetLatestKubeObject(ctx, c.kube, instance)
+	if err != nil {
+		return managed.ExternalObservation{}, err
+	}
+
+	// Remove the specified finalizer if it exists.
+	for _, f := range latest.GetFinalizers() {
+		controllerutil.RemoveFinalizer(latest, f)
+	}
+
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, latest); err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot update ServiceInstance status", err)
+	}
+
+	// If the last operation was a deletion and it has succeeded, we consider the resource as deleted.
+	return managed.ExternalObservation{
+		ResourceExists: false,
+	}, nil
+}
+
+// Ensure the InstanceId is set in the ServiceInstance spec before proceeding.
+func validateInstanceID(si resource.Managed) error {
+	if siSpec, ok := si.(interface {
+		GetForProvider() interface{ InstanceId() string }
+	}); ok {
+		if siSpec.GetForProvider().InstanceId() == "" {
+			return errors.New("InstanceId must be set in the ServiceInstance spec")
+		}
+		return nil
+	}
+	return errors.New("unable to access InstanceId in the ServiceInstance spec")
+}
+
+func (c *external) handleLastOperationInProgress(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
+	// Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
+
+	req := &osb.LastOperationRequest{
+		InstanceID:          instance.Spec.ForProvider.InstanceId,
+		ServiceID:           &instance.Spec.ForProvider.ServiceId,
+		PlanID:              &instance.Spec.ForProvider.PlanId,
+		OriginatingIdentity: &c.originatingIdentity,
+		OperationKey:        &instance.Status.AtProvider.LastOperationKey,
+	}
+	resp, err := c.osb.PollLastOperation(req)
+
+	if err != nil {
+		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
+			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+				// The resource is gone, we consider it as not existing.
+				return managed.ExternalObservation{
+					ResourceExists: false,
+				}, nil
+			}
+		}
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB request failed", errors.New("PollLastOperation"))
+	}
+
+	latest, err := util.GetLatestKubeObject(ctx, c.kube, instance)
+	if err != nil {
+		return managed.ExternalObservation{}, err
+	}
+
+	util.UpdateStatusFromLastOp(latest, resp)
+
+	if instance.IsDeletable() {
+		return c.removeFinalizer(ctx, instance)
+	}
+
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, latest); err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot update ServiceInstance status", err)
+	}
+
+	return managed.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: true,
+	}, nil
+}
+
+// hasActiveBindingsForInstance checks if any of the given ServiceBindings
+// reference the provided ServiceInstance and are not marked for deletion.
+func hasActiveBindingsForInstance(instance *v1alpha1.ServiceInstance, bindings []apisbinding.ServiceBinding) bool {
+	for _, b := range bindings {
+		if b.Spec.ForProvider.InstanceRef == nil {
+			continue
+		}
+		if b.Spec.ForProvider.InstanceRef.Name == instance.GetName() && b.DeletionTimestamp.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+// UpdateActiveBindingsStatus updates the ServiceInstance status to reflect whether
+// it has any active ServiceBindings in the same namespace.
+func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1alpha1.ServiceInstance) error {
+	var bindingList apisbinding.ServiceBindingList
+	if err := c.kube.List(ctx, &bindingList, client.InNamespace(instance.GetNamespace())); err != nil {
+		return fmt.Errorf("cannot list ServiceBindings: %w", err)
+	}
+
+	instance.Status.AtProvider.HasActiveBindings = hasActiveBindingsForInstance(instance, bindingList.Items)
+	return nil
+}
+
+// handleActiveBindings checks for active ServiceBindings before allowing deletion of the ServiceInstance.
+// If active bindings are found, it updates the ServiceInstance status to reflect this and prevents deletion.
+// If no active bindings are found, it allows the deletion process to proceed.
+// It returns an ExternalObservation indicating that the resource exists and is up to date,
+// along with any error encountered during the process.
+func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
+	if err := c.UpdateActiveBindingsStatus(ctx, instance); err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot update active bindings status", err)
+	}
+
+	// Update the status of the ServiceInstance resource in Kubernetes.
+	if err := c.kube.Status().Update(ctx, instance); err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot update ServiceInstance ressource status", err)
+	}
+
+	// If the resource is being deleted, we consider it as existing and up to date.
+	return managed.ExternalObservation{
+		ResourceExists:   true,
+		ResourceUpToDate: true,
+	}, nil
+}
+
+// compareSpecWithOSB compares a ServiceInstance spec with the corresponding OSB instance response.
+// It returns true if both representations are consistent, false otherwise.
+func compareSpecWithOSB(instance v1alpha1.ServiceInstance, osbInstance *osb.GetInstanceResponse) (bool, error) {
+	if osbInstance == nil {
+		return false, nil
+	}
+
+	// Compare PlanID
+	if instance.Spec.ForProvider.PlanId != "" && instance.Spec.ForProvider.PlanId != osbInstance.PlanID {
+		return false, nil
+	}
+
+	// Compare parameters
+	if ok, err := compareInstanceParameters(instance, osbInstance); err != nil || !ok {
+		return ok, err
+	}
+
+	// Compare context
+	if !reflect.DeepEqual(instance.Spec.ForProvider.Context, instance.Status.AtProvider.Context) {
+		return false, nil
+	}
+
+	return true, nil
+}
+
+// compareInstanceParameters compares parameters between a ServiceInstance spec
+// and its OSB instance response.
+func compareInstanceParameters(instance v1alpha1.ServiceInstance, osbInstance *osb.GetInstanceResponse) (bool, error) {
+	if len(instance.Spec.ForProvider.Parameters) == 0 {
+		return true, nil
+	}
+
+	params, err := instance.Spec.ForProvider.Parameters.ToParameters()
+	if err != nil {
+		return false, fmt.Errorf("failed to parse ServiceInstance parameters: %w", err)
+	}
+
+	if !reflect.DeepEqual(params, osbInstance.Parameters) {
+		return false, nil
+	}
+
+	return true, nil
 }

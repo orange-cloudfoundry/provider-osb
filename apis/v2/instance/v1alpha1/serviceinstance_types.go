@@ -97,3 +97,22 @@ func init() {
 func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.ProviderConfigReference {
 	return mg.Spec.ForProvider.ApplicationData.ProviderConfigReference
 }
+
+// SetLastOperationState sets the LastOperationState in the ServiceInstance status.
+// This is used to track the state of the last operation performed on the instance.
+func (mg *ServiceInstance) SetLastOperationState(state osb.LastOperationState) {
+	mg.Status.AtProvider.LastOperationState = state
+}
+
+// SetLastOperationDescription sets the LastOperationDescription in the ServiceInstance status.
+// This is used to store a human-readable description of the last operation performed.
+func (mg *ServiceInstance) SetLastOperationDescription(desc string) {
+	mg.Status.AtProvider.LastOperationDescription = desc
+}
+
+// IsDeletable returns true if the ServiceInstance is in deleting state
+// and has no active bindings.
+func (mg *ServiceInstance) IsDeletable() bool {
+	return mg.Status.AtProvider.LastOperationState == "deleting" &&
+		!mg.Status.AtProvider.HasActiveBindings
+}

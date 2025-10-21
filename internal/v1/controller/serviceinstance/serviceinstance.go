@@ -46,7 +46,6 @@ import (
 // todo : add constants in a util package to be used by serviceinstance and servicebinding
 const (
 	errNotServiceInstance = "managed resource is not a ServiceInstance custom resource"
-	errTrackPCUsage       = "cannot track ProviderConfig usage"
 	errGetPC              = "cannot get ProviderConfig"
 	errGetCreds           = "cannot get credentials"
 
