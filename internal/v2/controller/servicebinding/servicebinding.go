@@ -459,28 +459,27 @@ func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, m
 	return requestContext, requestParams, nil
 }
 
+// Calling this function means that the resources on the cluster and from the broker are different.
+// Anything that is changed should trigger an error, since bindings are never updatable.
+// The only situation when calling this function is valid is when
+// the service binding's should be rotated
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
-	// Calling this function means that the resources on the cluster and from the broker are different.
-	// Anything that is changed should trigger an error, since bindings are never updatable.
-	// The only situation when calling this function is valid is when
-	// the service binding's should be rotated
-
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
-		return managed.ExternalUpdate{}, errors.New(errNotServiceBinding)
+		return managed.ExternalUpdate{}, errors.New("managed resource is not a ServiceBinding custom resource")
 	}
 
 	// Prepare binding rotation request
 	bindingData, err := c.getDataFromServiceBinding(ctx, binding.Spec.ForProvider)
 	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, errGetDataFromBinding)
+		return managed.ExternalUpdate{}, fmt.Errorf("%s: %w", "cannot get data from service binding", err)
 	}
 
 	// Trigger binding rotation.
 	// We count on the next reconciliation to update renew_before and expires_at (Observe)
 	creds, err := c.triggerRotation(binding, bindingData)
 	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "RotateBinding"))
+		return managed.ExternalUpdate{}, fmt.Errorf("%s: %w", "OSB RotateBinding request failed", err)
 	}
 
 	// nil credentials will not erase the pre-existing ones.
@@ -495,10 +494,6 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 	if !ok {
 		return managed.ExternalDelete{}, errors.New(errNotServiceBinding)
 	}
-
-	fmt.Printf("Deleting: %+v", binding)
-
-	// Make the unbind request
 
 	spec := binding.Spec.ForProvider
 
@@ -733,41 +728,68 @@ func (c *external) setAtProvider(cr *v1alpha1.ServiceBinding, observation v1alph
 	return nil
 }
 
+// triggerRotation triggers a credentials rotation for the given ServiceBinding.
+// It creates a new binding ID (UUID) and calls the OSB RotateBinding API.
+// Returns the new connection credentials if the operation is synchronous, or nil otherwise.
+// Updates the ServiceBinding status with LastOperation info in case of async rotation.
+// triggerRotation triggers a credentials rotation for the given ServiceBinding.
+// It returns the new credentials if the rotation is synchronous, or nil otherwise.
 func (c *external) triggerRotation(binding *v1alpha1.ServiceBinding, data bindingData) (map[string][]byte, error) {
-	newUuid := string(uuid.NewUUID())
+	newUUID := string(uuid.NewUUID())
 
-	resp, err := c.osb.RotateBinding(&osb.RotateBindingRequest{
-		InstanceID:           data.instanceData.InstanceId,
-		BindingID:            newUuid,
-		AcceptsIncomplete:    true, // TODO use config param for this
-		PredecessorBindingID: meta.GetExternalName(binding),
-		OriginatingIdentity:  &c.originatingIdentity,
-	})
+	req := c.buildRotateBindingRequest(binding, data, newUUID)
+	resp, err := c.osb.RotateBinding(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("OSB RotateBinding request failed: %w", err)
 	}
 
-	// If the rotate request had no error, we can safely update the external name
-	meta.SetExternalName(binding, newUuid)
+	// Update the binding's external name only if the request succeeded
+	meta.SetExternalName(binding, newUUID)
 
-	// We only return ConnectionDetails in case the operation is synchronous.
 	if !resp.Async {
-		creds, err := getCredsFromResponse(resp)
+		creds, err := extractCredentials(resp)
 		if err != nil {
 			return nil, err
 		}
 		return creds, nil
-	} else {
-		// In asynchronous workflow, just update LastOperation status
-		if resp.OperationKey != nil {
-			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
-		binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
-		binding.Status.AtProvider.LastOperationDescription = ""
 	}
 
+	updateBindingStatusForAsyncRotation(binding, resp)
 	return nil, nil
+}
+
+// buildRotateBindingRequest constructs an OSB RotateBindingRequest for a binding.
+func (c *external) buildRotateBindingRequest(binding *v1alpha1.ServiceBinding, data bindingData, newUUID string) *osb.RotateBindingRequest {
+	return &osb.RotateBindingRequest{
+		InstanceID:           data.instanceData.InstanceId,
+		BindingID:            newUUID,
+		AcceptsIncomplete:    true, // TODO: make configurable
+		PredecessorBindingID: meta.GetExternalName(binding),
+		OriginatingIdentity:  &c.originatingIdentity,
+	}
+}
+
+// extractCredentials marshals OSB BindResponse credentials into map[string][]byte.
+func extractCredentials(resp *osb.BindResponse) (map[string][]byte, error) {
+	creds := make(map[string][]byte, len(resp.Credentials))
+	for key, value := range resp.Credentials {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal credential '%s' from response: %w", key, err)
+		}
+		creds[key] = data
+	}
+	return creds, nil
+}
+
+// updateBindingStatusForAsyncRotation updates the binding status when the rotation is asynchronous.
+func updateBindingStatusForAsyncRotation(binding *v1alpha1.ServiceBinding, resp *osb.BindResponse) {
+	if resp.OperationKey != nil {
+		binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
+	}
+	binding.Status.AtProvider.LastOperationState = osb.StateInProgress
+	binding.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
+	binding.Status.AtProvider.LastOperationDescription = ""
 }
 
 func compareToObserved(cr *v1alpha1.ServiceBinding) bool {
