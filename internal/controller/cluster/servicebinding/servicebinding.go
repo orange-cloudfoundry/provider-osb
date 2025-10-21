@@ -46,7 +46,7 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 	instancev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/cluster/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/cluster/v1alpha1"
-	"github.com/orange-cloudfoundry/provider-osb/internal/cluster/controller/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 
@@ -54,11 +54,9 @@ import (
 )
 
 const (
-	errNotServiceBinding     = "managed resource is not a ServiceBinding custom resource"
-	errTrackPCUsage          = "cannot track ProviderConfig usage"
-	errGetPC                 = "cannot get ProviderConfig"
-	errGetCreds              = "cannot get credentials"
-	errGetReferencedResource = "cannot get referenced resource"
+	errNotServiceBinding = "managed resource is not a ServiceBinding custom resource"
+	errGetPC             = "cannot get ProviderConfig"
+	errGetCreds          = "cannot get credentials"
 
 	errNewClient = "cannot create new Service"
 
@@ -73,7 +71,6 @@ const (
 	errGetDataFromBinding     = "cannot get data from service binding"
 	errRequestFailed          = "OSB %s request failed"
 	errParseMarshall          = "error while marshalling or parsing %s"
-	errBindingExpired         = "binding has expired at %s"
 
 	bindingMetadataPrefix = "binding." + util.MetadataPrefix
 
