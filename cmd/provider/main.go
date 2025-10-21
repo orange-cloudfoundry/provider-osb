@@ -37,8 +37,9 @@ import (
 
 	apis_cluster "github.com/orange-cloudfoundry/provider-osb/apis/cluster"
 	apis_namespaced "github.com/orange-cloudfoundry/provider-osb/apis/namespaced"
-	osbprovider "github.com/orange-cloudfoundry/provider-osb/internal/controller"
-	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/features"
+	controller_cluster "github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster"
+	controller_namespaced "github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced"
+	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 )
 
 func main() {
@@ -117,6 +118,7 @@ func main() {
 		log.Info("Alpha feature enabled", "flag", features.EnableBetaManagementPolicies)
 	}
 
-	kingpin.FatalIfError(osbprovider.Setup(mgr, o), "Cannot setup OSB controllers")
+	kingpin.FatalIfError(controller_cluster.Setup(mgr, o), "Cannot setup OSB controllers cluster mode")
+	kingpin.FatalIfError(controller_namespaced.Setup(mgr, o), "Cannot setup OSB controllers namespaced mode")
 	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
 }

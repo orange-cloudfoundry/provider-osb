@@ -28,7 +28,6 @@ const (
 	AsyncAnnotation                 = MetadataPrefix + "/async"
 	Iso8601dateFormat               = "2006-01-02T15:04:05.9Z"
 	OriginatingIdentityPlatformName = "kubernetes"
-	errRequestFailed                = "OSB %s request failed"
 )
 
 // TimeNow returns the current time formatted as an ISO 8601 string.

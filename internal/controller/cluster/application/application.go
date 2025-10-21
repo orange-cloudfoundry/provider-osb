@@ -32,7 +32,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/application/v1alpha1"
-	"github.com/orange-cloudfoundry/provider-osb/internal/cluster/controller/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
 )
 
 const (

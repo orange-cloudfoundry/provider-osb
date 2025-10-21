@@ -37,7 +37,7 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/application/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/v1alpha1"
-	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
 )
 
 const (

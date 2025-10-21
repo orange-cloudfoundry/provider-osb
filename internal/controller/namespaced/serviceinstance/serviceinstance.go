@@ -40,7 +40,7 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/v1alpha1"
-	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.

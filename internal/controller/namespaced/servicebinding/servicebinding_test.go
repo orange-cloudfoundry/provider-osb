@@ -27,7 +27,7 @@ import (
 	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
-	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
 	"github.com/pkg/errors"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"

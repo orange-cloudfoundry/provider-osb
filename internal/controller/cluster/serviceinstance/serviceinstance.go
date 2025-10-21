@@ -40,7 +40,7 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/cluster/v1alpha1"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
 )
 
 // todo : add constants in a util package to be used by serviceinstance and servicebinding

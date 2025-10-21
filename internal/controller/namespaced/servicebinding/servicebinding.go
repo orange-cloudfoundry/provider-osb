@@ -46,8 +46,8 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
 	instancev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/v1alpha1"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v2/controller/util"
-	"github.com/orange-cloudfoundry/provider-osb/internal/v2/features"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 

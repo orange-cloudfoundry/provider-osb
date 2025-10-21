@@ -20,25 +20,16 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	//applicationv1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/application"
-	//configv1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/config"
-	//servicebindingv1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/servicebinding"
-	//serviceinstancev1 "github.com/orange-cloudfoundry/provider-osb/internal/v1/controller/serviceinstance"
-
-	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/application"
-	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/config"
-	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/servicebinding"
-	"github.com/orange-cloudfoundry/provider-osb/internal/namespaced/controller/serviceinstance"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/application"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/config"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/servicebinding"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/serviceinstance"
 )
 
 // Setup creates all OSB controllers with the supplied logger and adds them to
 // the supplied manager.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func(ctrl.Manager, controller.Options) error{
-		//configv1.Setup,
-		//applicationv1.Setup,
-		//servicebindingv1.Setup,
-		//serviceinstancev1.Setup,
 		config.Setup,
 		application.Setup,
 		servicebinding.Setup,
