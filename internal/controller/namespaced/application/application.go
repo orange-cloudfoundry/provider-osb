@@ -18,11 +18,11 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
 
-	"github.com/pkg/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -38,11 +38,6 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
-)
-
-const (
-	errNotApplication = "managed resource is not a Application custom resource"
-	errConnect        = "cannot connect"
 )
 
 // Setup adds a controller that reconciles Application managed resources.
@@ -73,7 +68,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1alpha1.ApplicationList{}, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return errors.Wrap(err, "cannot register MR state metrics recorder for kind v1alpha1.ApplicationList")
+			return fmt.Errorf("%s: %w", "cannot register MR state metrics recorder for kind v1alpha1.ApplicationList", err)
 		}
 	}
 
@@ -103,7 +98,7 @@ type connector struct {
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
 	osb, kube, originatingIdentity, err := util.Connect(ctx, c.kube, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errConnect, err)
+		return nil, fmt.Errorf("%s: %w", "cannot connect", err)
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
@@ -127,7 +122,7 @@ type external struct {
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New(errNotApplication)
+		return managed.ExternalObservation{}, errors.New("managed resource is not a Application custom resource")
 	}
 
 	// These fmt statements should be removed in the real implementation.
@@ -153,7 +148,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalCreation{}, errors.New(errNotApplication)
+		return managed.ExternalCreation{}, errors.New("managed resource is not a Application custom resource")
 	}
 
 	fmt.Printf("Creating: %+v", cr)
@@ -168,7 +163,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalUpdate{}, errors.New(errNotApplication)
+		return managed.ExternalUpdate{}, errors.New("managed resource is not a Application custom resource")
 	}
 
 	fmt.Printf("Updating: %+v", cr)
@@ -183,7 +178,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalDelete{}, errors.New(errNotApplication)
+		return managed.ExternalDelete{}, errors.New("managed resource is not a Application custom resource")
 	}
 
 	fmt.Printf("Deleting: %+v", cr)
