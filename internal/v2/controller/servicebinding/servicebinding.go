@@ -55,20 +55,6 @@ import (
 )
 
 const (
-	errNotServiceBinding = "managed resource is not a ServiceBinding custom resource"
-	errConnect           = "cannot connect"
-
-	errTechnical = "error: technical error encountered : %s"
-
-	errAddReferenceFinalizer    = "cannot add finalizer to referenced resource"
-	errRemoveReferenceFinalizer = "cannot remove finalizer from referenced resource"
-
-	errCannotParseCredentials = "cannot parse credentials"
-	errGetDataFromBinding     = "cannot get data from service binding"
-	errRequestFailed          = "OSB %s request failed"
-	errParseMarshall          = "error while marshalling or parsing %s"
-	// errBindingExpired         = "binding has expired at %s"
-
 	bindingMetadataPrefix = "binding." + util.MetadataPrefix
 
 	referenceFinalizerName = bindingMetadataPrefix + "/service-binding"
@@ -109,7 +95,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1alpha1.ServiceBindingList{}, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return errors.Wrap(err, "cannot register MR state metrics recorder for kind v1alpha1.TestKindList")
+			return fmt.Errorf("%s: %w", "cannot register MR state metrics recorder for kind v1alpha1.TestKindList", err)
 		}
 	}
 
@@ -140,7 +126,7 @@ type connector struct {
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
 	client, kube, originatingIdentity, err := util.Connect(ctx, c.kube, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errConnect, err)
+		return nil, fmt.Errorf("%s: %w", "cannot connect", err)
 	}
 
 	return &external{
@@ -166,12 +152,12 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// NOTE: This method is over our cyclomatic complexity goal.
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New(errNotServiceBinding)
+		return managed.ExternalObservation{}, errors.New("managed resource is not a ServiceBinding custom resource")
 	}
 
 	bindingData, err := c.getDataFromServiceBinding(ctx, binding.Spec.ForProvider)
 	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errGetDataFromBinding)
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot get data from service binding", err)
 	}
 
 	// Manage pending async operations (poll only for "in progress" state)
@@ -219,7 +205,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	for k, v := range resp.Credentials {
 		marshaled, err := json.Marshal(v)
 		if err != nil {
-			return managed.ExternalObservation{}, errors.Wrap(err, errCannotParseCredentials)
+			return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot parse credentials", err)
 		}
 		credentialsJson[k] = marshaled
 	}
@@ -233,7 +219,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// If there is a diff, return an error, since bindings are not updatable
 	isEqual := compareToObserved(binding)
 	if !isEqual {
-		return managed.ExternalObservation{}, errors.Wrap(err, "bindings cannot be updated")
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "bindings cannot be updated", err)
 	}
 
 	// Handle the ServiceInstance referenced by this binding, if there is one.
@@ -242,7 +228,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Doing so in the Observe() function enable adding a ServiceInstance
 	// resource after the creation of the ServiceBinding.
 	if err = c.addRefFinalizer(ctx, binding); err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errAddReferenceFinalizer)
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot add finalizer to referenced resource", err)
 	}
 
 	return managed.ExternalObservation{
@@ -256,14 +242,14 @@ func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.Servi
 	if resp.Metadata.RenewBefore != "" {
 		renewBeforeTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.RenewBefore)
 		if err != nil {
-			return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "renewBefore time")), true
+			return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "error while marshalling or parsing renewBefore time", err), true
 		}
 
 		// If the binding should be rotated, set ResourceUpToDate as false to trigger update
 		if renewBeforeTime.Before(time.Now()) {
 			expireAtTime, err := time.Parse(util.Iso8601dateFormat, resp.Metadata.ExpiresAt)
 			if err != nil {
-				return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "expireAt time")), true
+				return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "error while marshalling or parsing expireAt time", err), true
 			}
 			expired := false
 			if expireAtTime.Before(time.Now()) {
@@ -317,11 +303,11 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 			if httpErr.StatusCode == http.StatusGone && meta.WasDeleted(binding) {
 				// Remove async finalizer from binding
 				if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
-					return managed.ExternalObservation{}, errors.Wrap(err, errTechnical)
+					return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "technical error encountered", err)
 				}
 				// Remove reference finalizer from referenced ServiceInstance
 				if err = c.removeRefFinalizer(ctx, binding); err != nil {
-					return managed.ExternalObservation{}, errors.Wrap(err, errRemoveReferenceFinalizer)
+					return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot remove finalizer from referenced resource", err)
 				}
 				// return resourceexists: false explicitly
 				// This will trigger the removal of crossplane runtime's finalizers
@@ -331,7 +317,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v
 			}
 		}
 		// Other errors should be considered as failures
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "PollBindingLastOperation"))
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB PollBindingLastOperation request failed", err)
 	}
 
 	latest, err := util.GetLatestKubeObject(ctx, c.kube, binding)
@@ -443,17 +429,17 @@ func handleBindRequest(
 func convertSpecsData(spec v1alpha1.ServiceBindingParameters) (map[string]any, map[string]any, error) {
 	requestContextBytes, err := json.Marshal(spec.Context)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context from ServiceBinding"))
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context from ServiceBinding", err)
 	}
 	var requestContext map[string]any
 	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
-		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to bytes from ServiceBinding"))
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context to bytes from ServiceBinding", err)
 	}
 
 	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
 	var requestParams map[string]any
 	if err = json.Unmarshal([]byte(spec.Parameters), &requestParams); err != nil {
-		return nil, nil, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing paramaters to bytes from ServiceBinding", err)
 	}
 	return requestContext, requestParams, nil
 }
@@ -494,7 +480,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
-		return managed.ExternalDelete{}, fmt.Errorf("managed resource is not a ServiceBinding")
+		return managed.ExternalDelete{}, errors.New("managed resource is not a ServiceBinding")
 	}
 
 	// Fetch binding data (instance & application)
@@ -587,7 +573,7 @@ func (c *external) fetchApplicationDataFromBinding(ctx context.Context, spec v1a
 			if kerrors.IsNotFound(err) {
 				return nil, errors.New("binding referenced an application which does not exist")
 			}
-			return nil, errors.Wrap(err, "error while retrieving referenced application")
+			return nil, fmt.Errorf("%s: %w", "error while retrieving referenced application", err)
 		}
 		appData = &application.Spec.ForProvider
 	} else if spec.ApplicationData != nil {
@@ -607,7 +593,7 @@ func (c *external) fetchApplicationDataFromInstance(ctx context.Context, instanc
 			if kerrors.IsNotFound(err) {
 				return nil, errors.New("binding referenced an instance which referenced an application which does not exist")
 			}
-			return nil, errors.Wrap(err, "error while retrieving referenced application from referenced instance")
+			return nil, fmt.Errorf("%s: %w", "error while retrieving referenced application from referenced instance", err)
 		}
 		appData = &application.Spec.ForProvider
 	} else if instanceSpec.ApplicationData != nil {
@@ -682,17 +668,17 @@ type responseData struct {
 func (c *external) setResponseDataInStatus(binding *v1alpha1.ServiceBinding, data responseData) error {
 	params, err := json.Marshal(data.Parameters)
 	if err != nil {
-		return errors.New(fmt.Sprintf(errParseMarshall, "parameters from response"))
+		return errors.New("error while marshalling or parsing parameters from response")
 	}
 
 	endpoints, err := json.Marshal(data.Endpoints)
 	if err != nil {
-		return errors.New(fmt.Sprintf(errParseMarshall, "endpoints from response"))
+		return errors.New("error while marshalling or parsing endpoints from response")
 	}
 
 	volumeMounts, err := json.Marshal(data.VolumeMounts)
 	if err != nil {
-		return errors.New(fmt.Sprintf(errParseMarshall, "volume mounts from response"))
+		return errors.New("error while marshalling or parsing volume mounts from response")
 	}
 
 	return c.setAtProvider(binding, v1alpha1.ServiceBindingObservation{

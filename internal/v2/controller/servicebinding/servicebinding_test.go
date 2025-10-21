@@ -18,7 +18,6 @@ package servicebinding
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -219,7 +218,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: errors.New(errNotServiceBinding),
+				err: errors.New("managed resource is not a ServiceBinding custom resource"),
 			},
 		},
 		"NotResourceExists": {
@@ -258,7 +257,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: errors.Wrap(panicError, fmt.Sprintf(errRequestFailed, "GetBinding")),
+				err: errors.Wrap(panicError, "OSB GetBinding request failed"),
 			},
 		},
 		"ResourceUpToDateCredentialsChanged": {
@@ -455,7 +454,7 @@ func TestCreate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: errors.New(errNotServiceBinding),
+				err: errors.New("managed resource is not a ServiceBinding custom resource"),
 			},
 		},
 		"ErrorCreate": {
@@ -471,7 +470,7 @@ func TestCreate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: errors.Wrap(panicError, fmt.Sprintf(errRequestFailed, "Bind")),
+				err: errors.Wrap(panicError, "OSB Bind request failed"),
 			},
 		},
 		"SuccessCreate": {
@@ -558,7 +557,7 @@ func TestUpdate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalUpdate{},
-				err: errors.New(errNotServiceBinding),
+				err: errors.New("managed resource is not a ServiceBinding custom resource"),
 			},
 		},
 		"SuccessUpdateBindingRotation": {
@@ -623,7 +622,7 @@ func TestDelete(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalDelete{},
-				err: errors.New(errNotServiceBinding),
+				err: errors.New("managed resource is not a ServiceBinding custom resource"),
 			},
 		},
 		"SuccessDelete": {
