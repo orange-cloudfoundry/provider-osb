@@ -58,8 +58,7 @@ const (
 	errNotServiceBinding = "managed resource is not a ServiceBinding custom resource"
 	errConnect           = "cannot connect"
 
-	errTechnical  = "error: technical error encountered : %s"
-	errNoResponse = "no errors but the response sent back was empty for request: %v"
+	errTechnical = "error: technical error encountered : %s"
 
 	errAddReferenceFinalizer    = "cannot add finalizer to referenced resource"
 	errRemoveReferenceFinalizer = "cannot remove finalizer from referenced resource"
@@ -489,56 +488,46 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	}, nil
 }
 
+// Delete handles the deletion of a ServiceBinding in the external system.
+// If the unbind operation is asynchronous, it updates the status and sets a finalizer.
+// Returns managed.ExternalDelete with additional details for async operations.
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
-		return managed.ExternalDelete{}, errors.New(errNotServiceBinding)
+		return managed.ExternalDelete{}, fmt.Errorf("managed resource is not a ServiceBinding")
 	}
 
-	spec := binding.Spec.ForProvider
-
-	bindingData, err := c.getDataFromServiceBinding(ctx, spec)
+	// Fetch binding data (instance & application)
+	data, err := c.getDataFromServiceBinding(ctx, binding.Spec.ForProvider)
 	if err != nil {
-		return managed.ExternalDelete{}, errors.Wrap(err, errGetDataFromBinding)
+		return managed.ExternalDelete{}, fmt.Errorf("failed to get data from binding: %w", err)
 	}
 
-	reqUnbind := osb.UnbindRequest{
-		InstanceID:          bindingData.instanceData.InstanceId,
-		BindingID:           meta.GetExternalName(binding),
-		AcceptsIncomplete:   true, // TODO based on async configuration
-		ServiceID:           spec.InstanceData.ServiceId,
-		PlanID:              spec.InstanceData.PlanId,
-		OriginatingIdentity: &c.originatingIdentity,
-	}
+	req := buildUnbindRequest(binding, data, &c.originatingIdentity)
 
-	resp, err := c.osb.Unbind(&reqUnbind)
+	resp, err := c.osb.Unbind(req)
 	if err != nil {
-		return managed.ExternalDelete{}, err
+		return managed.ExternalDelete{}, fmt.Errorf("OSB Unbind request failed: %w", err)
 	}
 	if resp == nil {
-		return managed.ExternalDelete{}, fmt.Errorf(errNoResponse, reqUnbind)
+		return managed.ExternalDelete{}, fmt.Errorf("OSB Unbind returned nil response for request: %+v", req)
 	}
 
-	// If the deletion is asynchronous, simply update the resource status and add a finalizer
-	// The finalizer will be removed (triggering the actual deletion of the resource)
-	// in the Observe function
 	if resp.Async {
-		if resp.OperationKey != nil {
-			binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
+		handleAsyncUnbindStatus(binding, resp)
+
+		if err := c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.AddFinalizerIfNotExists); err != nil {
+			return managed.ExternalDelete{}, fmt.Errorf("failed to add async deletion finalizer: %w", err)
 		}
-		binding.Status.AtProvider.LastOperationState = osb.StateInProgress
-		if err = c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.AddFinalizerIfNotExists); err != nil {
-			return managed.ExternalDelete{}, errors.Wrap(err, errTechnical)
-		}
+
 		return managed.ExternalDelete{
-			// AdditionalDetails is for logs
 			AdditionalDetails: managed.AdditionalDetails{
 				"async": "true",
 			},
 		}, nil
 	}
 
-	// TODO delete referenced instance finalizer
+	// TODO: delete referenced instance finalizer if necessary
 
 	return managed.ExternalDelete{}, nil
 }
@@ -869,4 +858,24 @@ func (c *external) updateBindingStatusFromResponse(binding *v1alpha1.ServiceBind
 	}
 
 	return nil
+}
+
+// buildUnbindRequest constructs an OSB UnbindRequest for the given ServiceBinding.
+func buildUnbindRequest(binding *v1alpha1.ServiceBinding, data bindingData, oid *osb.OriginatingIdentity) *osb.UnbindRequest {
+	return &osb.UnbindRequest{
+		InstanceID:          data.instanceData.InstanceId,
+		BindingID:           meta.GetExternalName(binding),
+		AcceptsIncomplete:   true, // TODO: make configurable
+		ServiceID:           data.instanceData.ServiceId,
+		PlanID:              data.instanceData.PlanId,
+		OriginatingIdentity: oid,
+	}
+}
+
+// handleAsyncUnbindStatus updates the ServiceBinding status when the unbind is asynchronous.
+func handleAsyncUnbindStatus(binding *v1alpha1.ServiceBinding, resp *osb.UnbindResponse) {
+	if resp.OperationKey != nil {
+		binding.Status.AtProvider.LastOperationKey = *resp.OperationKey
+	}
+	binding.Status.AtProvider.LastOperationState = osb.StateInProgress
 }
