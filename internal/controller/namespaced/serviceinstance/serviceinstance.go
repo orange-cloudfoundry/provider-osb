@@ -19,7 +19,6 @@ package serviceinstance
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"reflect"
 
 	"errors"
@@ -131,18 +130,15 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	// Call the OSB client's GetInstance method to retrieve the current state of the instance.
 	osbInstance, err := c.osb.GetInstance(req)
-	// Manage errors from the GetInstance call.
+
 	if err != nil {
-		// Check if the error is an HTTP error returned by the OSB client.
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			// If the HTTP status code is 404, the resource does not exist in the external system.
-			if httpErr.StatusCode == http.StatusNotFound {
-				return managed.ExternalObservation{
-					ResourceExists: false,
-				}, nil
-			}
+		if util.IsResourceGone(err) {
+			// The resource does not exist externally — treat as non-existent
+			return managed.ExternalObservation{
+				ResourceExists: false,
+			}, nil
 		}
-		// For all other errors, wrap and return them as unexpected errors.
+		// Other errors are unexpected
 		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB GetInstance request failed", err)
 	}
 
@@ -298,28 +294,21 @@ func validateInstanceID(si resource.Managed) error {
 	return errors.New("unable to access InstanceId in the ServiceInstance spec")
 }
 
+// Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
 func (c *external) handleLastOperationInProgress(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
-	// Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
+	req := createRequestPollLastOperation(instance, c.originatingIdentity)
 
-	req := &osb.LastOperationRequest{
-		InstanceID:          instance.Spec.ForProvider.InstanceId,
-		ServiceID:           &instance.Spec.ForProvider.ServiceId,
-		PlanID:              &instance.Spec.ForProvider.PlanId,
-		OriginatingIdentity: &c.originatingIdentity,
-		OperationKey:        &instance.Status.AtProvider.LastOperationKey,
-	}
 	resp, err := c.osb.PollLastOperation(req)
 
 	if err != nil {
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
-				// The resource is gone, we consider it as not existing.
-				return managed.ExternalObservation{
-					ResourceExists: false,
-				}, nil
-			}
+		if util.IsResourceGone(err) {
+			// The resource is gone — treat as non-existent
+			return managed.ExternalObservation{
+				ResourceExists: false,
+			}, nil
 		}
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB request failed", errors.New("PollLastOperation"))
+		// Other errors are unexpected
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB PollLastOperation request failed", err)
 	}
 
 	latest, err := util.GetLatestKubeObject(ctx, c.kube, instance)
@@ -517,7 +506,7 @@ func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceIn
 
 	resp, err := c.osb.DeprovisionInstance(req)
 	if err != nil {
-		if httpErr, isHTTP := osb.IsHTTPError(err); isHTTP && (httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound) {
+		if util.IsResourceGone(err) {
 			// Resource is already gone; nothing to do.
 			return managed.ExternalDelete{}, nil
 		}
@@ -553,5 +542,39 @@ func updateInstanceStatusForAsyncDeletion(si *v1alpha1.ServiceInstance, resp *os
 	si.Status.AtProvider.LastOperationState = "deleting"
 	if resp.OperationKey != nil {
 		si.Status.AtProvider.LastOperationKey = *resp.OperationKey
+	}
+}
+
+// createRequestPollLastOperation builds and returns an OSB LastOperationRequest
+// for polling the current status of an asynchronous operation on a service instance.
+//
+// Parameters:
+// - instance: the service instance for which to create the request
+// - originatingIdentity: the OSB originating identity associated with the request
+//
+// Returns:
+// - *osb.LastOperationRequest: the constructed request ready to be sent to the broker
+func createRequestPollLastOperation(
+	instance *v1alpha1.ServiceInstance,
+	originatingIdentity osb.OriginatingIdentity,
+) *osb.LastOperationRequest {
+
+	return &osb.LastOperationRequest{
+		// InstanceID identifies the service instance whose operation is being polled.
+		InstanceID: instance.Spec.ForProvider.InstanceId,
+
+		// ServiceID identifies the service offering (from the broker catalog).
+		ServiceID: &instance.Spec.ForProvider.ServiceId,
+
+		// PlanID identifies the plan of the service offering used by this instance.
+		PlanID: &instance.Spec.ForProvider.PlanId,
+
+		// OriginatingIdentity contains information about the user or system
+		// making the OSB request (useful for auditing and multi-tenancy).
+		OriginatingIdentity: &originatingIdentity,
+
+		// OperationKey uniquely identifies the asynchronous operation being checked.
+		// It is provided by the broker when the operation was initiated asynchronously.
+		OperationKey: &instance.Status.AtProvider.LastOperationKey,
 	}
 }

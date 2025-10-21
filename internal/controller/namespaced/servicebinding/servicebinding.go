@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"reflect"
 	"time"
 
@@ -182,9 +181,14 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	resp, err := c.osb.GetBinding(req)
 
 	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
-	eo, err, shouldReturn := util.HandleHttpErrorForBindingObserver(err)
-	if shouldReturn {
-		return eo, err
+	if err != nil {
+		if util.IsResourceGone(err) {
+			return managed.ExternalObservation{
+				ResourceExists: false,
+			}, nil
+		}
+		// Other errors are unexpected
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB GetBinfind request failed", err)
 	}
 
 	// Set observed fields values in cr.Status.AtProvider
@@ -407,7 +411,7 @@ func (c external) buildBindingLastOperationRequest(binding *v1alpha1.ServiceBind
 // handlePollError handles errors returned by PollBindingLastOperation.
 // Returns (handled bool, observation, error) indicating whether the error was handled.
 func (c *external) handlePollError(ctx context.Context, binding *v1alpha1.ServiceBinding, err error) (bool, managed.ExternalObservation, error) {
-	if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr && httpErr.StatusCode == http.StatusGone && meta.WasDeleted(binding) {
+	if util.IsResourceGone(err) && meta.WasDeleted(binding) {
 		// Remove async finalizer from binding
 		if err := c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
 			return true, managed.ExternalObservation{}, fmt.Errorf("technical error encountered: %w", err)

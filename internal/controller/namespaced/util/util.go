@@ -11,7 +11,6 @@ import (
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
@@ -156,18 +155,22 @@ func RemoveFinalizerIfExists(obj metav1.Object, finalizerName string) bool {
 	return false
 }
 
-func HandleHttpErrorForBindingObserver(err error) (managed.ExternalObservation, error, bool) {
-	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
-	if err != nil {
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr && httpErr.StatusCode == http.StatusNotFound {
-			return managed.ExternalObservation{
-				ResourceExists: false,
-			}, nil, true
+// IsResourceGoneError checks if the provided error is an OSB HTTP error indicating
+// that the resource no longer exists (HTTP 404 Not Found or 410 Gone).
+//
+// Parameters:
+// - err: the error returned by an OSB request
+//
+// Returns:
+// - bool: true if the resource is gone, false otherwise
+func IsResourceGone(err error) bool {
+	if httpErr, isHTTP := osb.IsHTTPError(err); isHTTP {
+		if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+			// Resource is already gone
+			return true
 		}
-		// Other errors are unexpected
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB GetBinfind request failed", err), true
 	}
-	return managed.ExternalObservation{}, nil, false
+	return false
 }
 
 // TODO: actually implement an no op client, since the osb.fake client
