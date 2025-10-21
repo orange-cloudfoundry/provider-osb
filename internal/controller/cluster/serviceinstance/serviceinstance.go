@@ -367,9 +367,8 @@ func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceRe
 	return true, nil
 }
 
+// Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
 func (c *external) handleLastOperationInProgress(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
-	// Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
-
 	req := &osb.LastOperationRequest{
 		InstanceID:          si.Spec.ForProvider.InstanceId,
 		ServiceID:           &si.Spec.ForProvider.ServiceId,
