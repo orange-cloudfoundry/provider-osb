@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -16,7 +17,6 @@ import (
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/v2/v1alpha1"
-	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -97,7 +97,7 @@ func NewOsbClient(conf v1alpha1.ProviderConfig, creds []byte) (osb.Client, error
 		credsString := string(creds)
 		basicAuth, err := decodeB64StringToBasicAuthConfig(credsString)
 		if err != nil {
-			return nil, errors.Wrap(err, "error : can't decode string into basic auth struct")
+			return nil, fmt.Errorf("%s: %w", "can't decode string into basic auth struct", err)
 		}
 		authConfig := osb.AuthConfig{
 			BasicAuthConfig: &basicAuth,
@@ -157,7 +157,7 @@ func RemoveFinalizerIfExists(obj metav1.Object, finalizerName string) bool {
 	return false
 }
 
-func HandleHttpErrorForBindingObserver(err error, errorType string) (managed.ExternalObservation, error, bool) {
+func HandleHttpErrorForBindingObserver(err error) (managed.ExternalObservation, error, bool) {
 	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
 	if err != nil {
 		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr && httpErr.StatusCode == http.StatusNotFound {
@@ -166,7 +166,7 @@ func HandleHttpErrorForBindingObserver(err error, errorType string) (managed.Ext
 			}, nil, true
 		}
 		// Other errors are unexpected
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, errorType)), true
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB GetBinfind request failed", err), true
 	}
 	return managed.ExternalObservation{}, nil, false
 }
@@ -253,13 +253,13 @@ func resolveProviderConfigModern(ctx context.Context, kube client.Client, mg res
 	// Create a new runtime object for the ProviderConfig kind
 	pcRuntimeObj, err := kube.Scheme().New(pcGVK)
 	if err != nil {
-		return nil, errors.Wrapf(err, "referenced provider config kind %q is invalid for %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
+		return nil, fmt.Errorf("referenced provider config kind %q is invalid for %s/%s: %w", configRef.Kind, mg.GetNamespace(), mg.GetName(), err)
 	}
 
 	// Assert that the runtime object implements the ProviderConfig interface
 	pcObj, ok := pcRuntimeObj.(resource.ProviderConfig)
 	if !ok {
-		return nil, errors.Errorf("referenced provider config kind %q is not a provider config type %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
+		return nil, fmt.Errorf("referenced provider config kind %q is not a provider config type %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
 	}
 
 	// Fetch the actual ProviderConfig from the cluster.

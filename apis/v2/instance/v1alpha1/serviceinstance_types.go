@@ -110,6 +110,10 @@ func (mg *ServiceInstance) SetLastOperationDescription(desc string) {
 	mg.Status.AtProvider.LastOperationDescription = desc
 }
 
+func (mg *ServiceInstance) SetLastOperationKey(operationKey *osb.OperationKey) {
+	mg.Status.AtProvider.LastOperationKey = *operationKey
+}
+
 // IsDeletable returns true if the ServiceInstance is in deleting state
 // and has no active bindings.
 func (mg *ServiceInstance) IsDeletable() bool {

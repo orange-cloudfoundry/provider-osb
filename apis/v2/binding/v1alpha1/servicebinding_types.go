@@ -151,3 +151,7 @@ func (mg *ServiceBinding) SetLastOperationState(state osb.LastOperationState) {
 func (mg *ServiceBinding) SetLastOperationDescription(desc string) {
 	mg.Status.AtProvider.LastOperationDescription = desc
 }
+
+func (mg *ServiceBinding) SetLastOperationKey(operationKey *osb.OperationKey) {
+	mg.Status.AtProvider.LastOperationKey = *operationKey
+}
