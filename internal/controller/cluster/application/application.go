@@ -18,9 +18,11 @@ package application
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
-	"github.com/pkg/errors"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -31,23 +33,11 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
+	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/application/v1alpha1"
+	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
+	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/cluster/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
-)
-
-const (
-	errNotApplication = "managed resource is not a Application custom resource"
-	errGetPC          = "cannot get ProviderConfig"
-	errGetCreds       = "cannot get credentials"
-
-	errNewClient = "cannot create new Service"
-)
-
-// A NoOpService does nothing.
-type NoOpService struct{}
-
-var (
-	newNoOpService = func(_ []byte) (interface{}, error) { return &NoOpService{}, nil }
 )
 
 // Setup adds a controller that reconciles Application managed resources.
@@ -57,11 +47,16 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 	opts := []managed.ReconcilerOption{
 		managed.WithExternalConnecter(&connector{
 			kube:         mgr.GetClient(),
-			newServiceFn: newNoOpService}),
+			newOsbClient: util.NewOsbClient,
+		}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 		managed.WithManagementPolicies(),
+	}
+
+	if o.Features.Enabled(feature.EnableAlphaChangeLogs) {
+		opts = append(opts, managed.WithChangeLogger(o.ChangeLogOptions.ChangeLogger))
 	}
 
 	if o.MetricOptions != nil {
@@ -73,7 +68,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1alpha1.ApplicationList{}, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return errors.Wrap(err, "cannot register MR state metrics recorder for kind v1alpha1.ApplicationList")
+			return fmt.Errorf("%s: %w", "cannot register MR state metrics recorder for kind v1alpha1.ApplicationList", err)
 		}
 	}
 
@@ -90,8 +85,9 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // A connector is expected to produce an ExternalClient when its Connect method
 // is called.
 type connector struct {
-	kube         client.Client
-	newServiceFn func(creds []byte) (interface{}, error)
+	kube                     client.Client
+	newOsbClient             func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
+	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
 
 // Connect typically produces an ExternalClient by:
@@ -100,23 +96,17 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	pc, err := util.ResolveProviderConfig(ctx, c.kube, mg)
+	osb, kube, originatingIdentity, err := util.Connect(ctx, c.kube, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, errors.Wrap(err, errGetPC)
+		return nil, fmt.Errorf("%s: %w", "cannot connect", err)
 	}
 
-	cd := pc.Spec.Credentials
-	data, err := resource.CommonCredentialExtractor(ctx, cd.Source, c.kube, cd.CommonCredentialSelectors)
-	if err != nil {
-		return nil, errors.Wrap(err, errGetCreds)
-	}
-
-	svc, err := c.newServiceFn(data)
-	if err != nil {
-		return nil, errors.Wrap(err, errNewClient)
-	}
-
-	return &external{service: svc}, nil
+	// Return an external client with the OSB client, Kubernetes client, and originating identity.
+	return &external{
+		osb:                 osb,
+		kube:                kube,
+		originatingIdentity: *originatingIdentity,
+	}, nil
 }
 
 // An ExternalClient observes, then either creates, updates, or deletes an
@@ -124,13 +114,15 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	service interface{}
+	osb                 osb.Client
+	kube                client.Client
+	originatingIdentity osb.OriginatingIdentity
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New(errNotApplication)
+		return managed.ExternalObservation{}, errors.New("managed resource is not a Application custom resource")
 	}
 
 	// These fmt statements should be removed in the real implementation.
@@ -156,7 +148,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalCreation{}, errors.New(errNotApplication)
+		return managed.ExternalCreation{}, errors.New("managed resource is not a Application custom resource")
 	}
 
 	fmt.Printf("Creating: %+v", cr)
@@ -171,7 +163,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalUpdate{}, errors.New(errNotApplication)
+		return managed.ExternalUpdate{}, errors.New("managed resource is not a Application custom resource")
 	}
 
 	fmt.Printf("Updating: %+v", cr)
@@ -186,7 +178,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalDelete{}, errors.New(errNotApplication)
+		return managed.ExternalDelete{}, errors.New("managed resource is not a Application custom resource")
 	}
 
 	fmt.Printf("Deleting: %+v", cr)

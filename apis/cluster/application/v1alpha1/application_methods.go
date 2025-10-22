@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
+	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 	"github.com/orange-cloudfoundry/provider-osb/internal/interfaces"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -16,7 +16,7 @@ import (
 // If the reference does not exist, it returns an error. If no reference is set but ApplicationData exists
 // directly in the binding parameters, it returns that data instead.
 // Returns nil if neither a reference nor inline data is provided.
-func NewApplicationDataFromRef(ctx context.Context, kube client.Client, spec interfaces.ApplicationDataProviderNamespaced) (*common.ApplicationData, error) {
+func NewApplicationDataFromRef(ctx context.Context, kube client.Client, spec interfaces.ApplicationDataProviderCluster) (*common.ApplicationData, error) {
 	var appData *common.ApplicationData
 
 	if spec.HasApplicationRef() {

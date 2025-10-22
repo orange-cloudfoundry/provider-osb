@@ -10,8 +10,8 @@ import (
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
-	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
-	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
+	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -225,7 +225,7 @@ func (mg *ServiceBinding) HasNoProviderInstanceRef() bool {
 
 // GetInstanceRef returns the reference to the ServiceInstance that this
 // ServiceBinding is associated with. The returned value is a pointer to a
-// NamespacedName, containing the name and namespace of the referenced instance.
+// clusterName, containing the name and namespace of the referenced instance.
 func (spec *ServiceBindingParameters) GetInstanceRef() *common.NamespacedName {
 	return spec.InstanceRef
 }

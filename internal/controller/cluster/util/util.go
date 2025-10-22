@@ -4,23 +4,22 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
-	"slices"
 	"time"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
-	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/cluster/v1alpha1"
-	"github.com/pkg/errors"
+	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -28,80 +27,64 @@ const (
 	AsyncAnnotation                 = MetadataPrefix + "/async"
 	Iso8601dateFormat               = "2006-01-02T15:04:05.9Z"
 	OriginatingIdentityPlatformName = "kubernetes"
-	errRequestFailed                = "OSB %s request failed"
 )
 
-// func AddFinalizer(ctx context.Context, mg resource.Managed) error {
-// 	obj, ok := mg.(*v1alpha1.ServiceBinding)
-// 	if !ok {
-// 		return errors.New(errNotKubernetesServiceBinding)
-// 	}
-
-// 	if meta.FinalizerExists(obj, objFinalizerName) {
-// 		return nil
-// 	}
-// 	meta.AddFinalizer(obj, objFinalizerName)
-
-// 	err := c.kube.Update(ctx, obj)
-// 	if err != nil {
-// 		return errors.Wrap(err, errAddFinalizer)
-// 	}
-
-// 	// Add finalizer to referenced resources if not exists
-// 	err = c.handleRefFinalizer(ctx, obj, func(
-// 		ctx context.Context, res *unstructured.Unstructured, finalizer string,
-// 	) error {
-// 		if !meta.FinalizerExists(res, finalizer) {
-// 			meta.AddFinalizer(res, finalizer)
-// 		}
-// 		return nil
-// 	}, false)
-// 	return errors.Wrap(err, errAddFinalizer)
-// }
-
-func EndpointEqual(e1, e2 osb.Endpoint) bool {
-	// Use sorted copies of the endpoint's ports slices
-	// to ignore elements order
-	sortedPorts1 := slices.Clone(e1.Ports)
-	sortedPorts2 := slices.Clone(e2.Ports)
-
-	slices.Sort(sortedPorts1)
-	slices.Sort(sortedPorts2)
-
-	return e1.Host == e2.Host && *e1.Protocol == *e2.Protocol && slices.Equal(sortedPorts1, sortedPorts2)
-}
-
-func VolumeMountEqual(e1, e2 osb.VolumeMount) bool {
-	return reflect.DeepEqual(e1, e2)
-}
-
+// TimeNow returns the current time formatted as an ISO 8601 string.
+//
+// The function returns a pointer to the formatted string.
+//
+// Returns:
+// - *string: pointer to the current time in ISO 8601 format
 func TimeNow() *string {
 	res := time.Now().Format(Iso8601dateFormat)
 	return &res
 }
 
+// decodeB64StringToBasicAuthConfig decodes a base64-encoded JSON string
+// into an OSB BasicAuthConfig containing a username and password.
+//
+// The expected input is a base64-encoded JSON object with the fields:
+//
+//	{
+//	  "user": "<username>",
+//	  "password": "<password>"
+//	}
+//
+// Parameters:
+// - s: the base64-encoded string
+//
+// Returns:
+// - osb.BasicAuthConfig: struct containing Username and Password
+// - error: any error encountered during decoding or unmarshalling
 func decodeB64StringToBasicAuthConfig(s string) (osb.BasicAuthConfig, error) {
+	// Decode the base64 string into bytes
 	data, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
 		return osb.BasicAuthConfig{}, err
 	}
+
+	// Temporary struct to unmarshal JSON into
 	jsonDecode := struct {
 		User     string `json:"user"`
 		Password string `json:"password"`
 	}{}
+
+	// Unmarshal the JSON data into the temporary struct
 	err = json.Unmarshal(data, &jsonDecode)
 	if err != nil {
 		return osb.BasicAuthConfig{}, err
 	}
+
+	// Convert to osb.BasicAuthConfig and return
 	return osb.BasicAuthConfig{
 		Username: jsonDecode.User,
 		Password: jsonDecode.Password,
-	}, err
+	}, nil
 }
 
 // TODO: take into account controller.options:
 // - to enable OSB client alpha features
-func NewOsbClient(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error) {
+func NewOsbClient(conf v1alpha1.ProviderConfig, creds []byte) (osb.Client, error) {
 	config := osb.DefaultClientConfiguration()
 	config.URL = conf.Spec.BrokerURL
 	apiVersions := osb.APIVersions()
@@ -112,7 +95,7 @@ func NewOsbClient(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, e
 		credsString := string(creds)
 		basicAuth, err := decodeB64StringToBasicAuthConfig(credsString)
 		if err != nil {
-			return nil, errors.Wrap(err, "error : can't decode string into basic auth struct")
+			return nil, fmt.Errorf("%s: %w", "can't decode string into basic auth struct", err)
 		}
 		authConfig := osb.AuthConfig{
 			BasicAuthConfig: &basicAuth,
@@ -138,6 +121,15 @@ func MakeOriginatingIdentityFromValue(val common.KubernetesOSBOriginatingIdentit
 	}, nil
 }
 
+// AddFinalizerIfNotExists adds the specified finalizer to a Kubernetes object
+// if it does not already exist.
+//
+// Parameters:
+// - obj: the Kubernetes object to update (implements metav1.Object)
+// - finalizerName: the name of the finalizer to add
+//
+// Returns:
+// - bool: true if the finalizer was added, false if it already existed
 func AddFinalizerIfNotExists(obj metav1.Object, finalizerName string) bool {
 	if !meta.FinalizerExists(obj, finalizerName) {
 		meta.AddFinalizer(obj, finalizerName)
@@ -146,6 +138,15 @@ func AddFinalizerIfNotExists(obj metav1.Object, finalizerName string) bool {
 	return false
 }
 
+// RemoveFinalizerIfExists removes the specified finalizer from a Kubernetes object
+// if it exists.
+//
+// Parameters:
+// - obj: the Kubernetes object to update (implements metav1.Object)
+// - finalizerName: the name of the finalizer to remove
+//
+// Returns:
+// - bool: true if the finalizer was removed, false if it did not exist
 func RemoveFinalizerIfExists(obj metav1.Object, finalizerName string) bool {
 	if meta.FinalizerExists(obj, finalizerName) {
 		meta.RemoveFinalizer(obj, finalizerName)
@@ -154,18 +155,22 @@ func RemoveFinalizerIfExists(obj metav1.Object, finalizerName string) bool {
 	return false
 }
 
-func HandleHttpError(err error, errorType string) (managed.ExternalObservation, error, bool) {
-	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
-	if err != nil {
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr && httpErr.StatusCode == http.StatusNotFound {
-			return managed.ExternalObservation{
-				ResourceExists: false,
-			}, nil, true
+// IsResourceGoneError checks if the provided error is an OSB HTTP error indicating
+// that the resource no longer exists (HTTP 404 Not Found or 410 Gone).
+//
+// Parameters:
+// - err: the error returned by an OSB request
+//
+// Returns:
+// - bool: true if the resource is gone, false otherwise
+func IsResourceGone(err error) bool {
+	if httpErr, isHTTP := osb.IsHTTPError(err); isHTTP {
+		if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+			// Resource is already gone
+			return true
 		}
-		// Other errors are unexpected
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, errorType)), true
 	}
-	return managed.ExternalObservation{}, nil, false
+	return false
 }
 
 // TODO: actually implement an no op client, since the osb.fake client
@@ -176,63 +181,289 @@ type NoOpOsbClient fake.FakeClient
 // 	return nil, nil
 // }
 
-const (
-	errNoProviderConfig  = "no providerConfigRef provided"
-	errGetProviderConfig = "cannot get referenced ProviderConfig"
-	errTrackUsage        = "cannot track ProviderConfig usage"
-)
+// enrichLocalSecretRefs updates the namespace of any local secret references
+// in the ProviderConfig to match the namespace of the managed resource.
+//
+// Parameters:
+// - pc: the ProviderConfig whose secret references need to be enriched
+// - mg: the managed resource used to determine the namespace
+func enrichLocalSecretRefs(pc *v1alpha1.ProviderConfig, mg resource.Managed) {
+	// If the ProviderConfig is nil, do nothing
+	if pc == nil {
+		return
+	}
 
-func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resource.Managed) (*apisv1alpha1.ProviderConfig, error) {
+	// If there is a secret reference in the credentials, set its namespace
+	// to the namespace of the managed resource
+	if pc.Spec.Credentials.SecretRef != nil {
+		pc.Spec.Credentials.SecretRef.Namespace = mg.GetNamespace()
+	}
+}
+
+// ResolveProviderConfig resolves the ProviderConfig for a given managed resource.
+//
+// This function handles different types of managed resources and delegates
+// resolution to the appropriate implementation.
+//
+// Parameters:
+// - ctx: the context for request lifetime and cancellation
+// - crClient: a Kubernetes client used to fetch resources
+// - mg: the managed resource whose ProviderConfig is being resolved
+//
+// Returns:
+// - *v1alpha1.ProviderConfig: the resolved ProviderConfig if successful
+// - error: any error that occurs during resolution
+func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resource.Managed) (*v1alpha1.ProviderConfig, error) {
 	switch managed := mg.(type) {
 	case resource.ModernManaged:
-		return nil, errors.New("ressource is not LegacyManaged: ModernManaged")
+		// If the resource is a ModernManaged, delegate to resolveProviderConfigModern
+		return resolveProviderConfigModern(ctx, crClient, managed)
 	case resource.LegacyManaged:
-		return resolveProviderConfigLegacy(ctx, crClient, managed)
+		// LegacyManaged resources are not supported for this resolution
+		return nil, errors.New("resource is not ModernManaged: LegacyManaged")
 	case resource.Managed:
-		return nil, errors.New("ressource is not LegacyManaged: Managed")
+		// Base Managed resources without ModernManaged interface are also unsupported
+		return nil, errors.New("resource is not ModernManaged: Managed")
 	default:
-		return nil, errors.New("resource is not a managed")
+		// Any other type is invalid
+		return nil, errors.New("resource is not a managed type")
 	}
 }
 
-func legacyToModernProviderConfigSpec(pc *apisv1alpha1.ProviderConfig) (*apisv1alpha1.ProviderConfig, error) {
-	// TODO(erhan): this is hacky and potentially lossy, generate or manually implement
-	if pc == nil {
-		return nil, nil
-	}
-	data, err := json.Marshal(pc)
-	if err != nil {
-		return nil, err
-	}
+// resolveProviderConfigModern resolves and returns the ProviderConfig for a given managed resource.
+//
+// Parameters:
+// - ctx: the context for request lifetime and cancellation
+// - kube: a Kubernetes client for interacting with K8s resources
+// - mg: the managed resource whose ProviderConfig is being resolved
+//
+// Returns:
+// - *v1alpha1.ProviderConfig: the resolved and enriched ProviderConfig
+// - error: any error that occurred during resolution
+func resolveProviderConfigModern(ctx context.Context, kube client.Client, mg resource.ModernManaged) (*v1alpha1.ProviderConfig, error) {
+	logger := log.FromContext(ctx)
 
-	var mSpec apisv1alpha1.ProviderConfig
-	err = json.Unmarshal(data, &mSpec)
-	mSpec.Kind = apisv1alpha1.ProviderConfigKind
-	mSpec.APIVersion = apisv1alpha1.SchemeGroupVersion.String()
-	mSpec.ObjectMeta = metav1.ObjectMeta{
-		Name:        pc.GetName(),
-		Labels:      pc.GetLabels(),
-		Annotations: pc.GetAnnotations(),
-		Generation:  pc.GetGeneration(),
-		UID:         pc.GetUID(),
-	}
-	return &mSpec, err
-}
-
-func resolveProviderConfigLegacy(ctx context.Context, client client.Client, mg resource.LegacyManaged) (*apisv1alpha1.ProviderConfig, error) {
+	// Retrieve the ProviderConfig reference from the managed resource
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
-		return nil, errors.New(errNoProviderConfig)
-	}
-	pc := &apisv1alpha1.ProviderConfig{}
-	if err := client.Get(ctx, types.NamespacedName{Name: configRef.Name}, pc); err != nil {
-		return nil, errors.Wrap(err, errGetProviderConfig)
+		return nil, errors.New("no providerConfigRef provided")
 	}
 
-	t := resource.NewLegacyProviderConfigUsageTracker(client, &apisv1alpha1.ProviderConfigUsage{})
+	// Construct the GroupVersionKind for the referenced ProviderConfig
+	pcGVK := v1alpha1.SchemeGroupVersion.WithKind(configRef.Kind)
+
+	// Create a new runtime object for the ProviderConfig kind
+	pcRuntimeObj, err := kube.Scheme().New(pcGVK)
+	if err != nil {
+		return nil, fmt.Errorf("referenced provider config kind %q is invalid for %s/%s: %w", configRef.Kind, mg.GetNamespace(), mg.GetName(), err)
+	}
+
+	// Assert that the runtime object implements the ProviderConfig interface
+	pcObj, ok := pcRuntimeObj.(resource.ProviderConfig)
+	if !ok {
+		return nil, fmt.Errorf("referenced provider config kind %q is not a provider config type %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
+	}
+
+	// Fetch the actual ProviderConfig from the cluster.
+	// Namespace is ignored if the ProviderConfig is cluster-scoped
+	if err := kube.Get(ctx, types.NamespacedName{Name: configRef.Name, Namespace: mg.GetNamespace()}, pcObj); err != nil {
+		return nil, fmt.Errorf("%s: %w", "cannot get referenced ProviderConfig", err)
+	}
+
+	var effectivePC *v1alpha1.ProviderConfig
+	switch pc := pcObj.(type) {
+	case *v1alpha1.ProviderConfig:
+		// Log and enrich any local secret references in the ProviderConfig
+		logger.Info("Enriching local secret refs", "providerConfig", pc.GetName())
+		enrichLocalSecretRefs(pc, mg)
+
+		// Construct a copy of the ProviderConfig with TypeMeta and ObjectMeta
+		effectivePC = &v1alpha1.ProviderConfig{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: v1alpha1.SchemeGroupVersion.String(),
+				Kind:       v1alpha1.ProviderConfigKind,
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        pc.GetName(),
+				Labels:      pc.GetLabels(),
+				Annotations: pc.GetAnnotations(),
+				Generation:  pc.GetGeneration(),
+				UID:         pc.GetUID(),
+			},
+			Spec: pc.Spec,
+		}
+	default:
+		return nil, errors.New("unknown provider config type")
+	}
+
+	// Track usage of this ProviderConfig for the managed resource
+	t := resource.NewProviderConfigUsageTracker(kube, &v1alpha1.ProviderConfigUsage{})
 	if err := t.Track(ctx, mg); err != nil {
-		return nil, errors.Wrap(err, errTrackUsage)
+		logger.Error(err, "Failed to track ProviderConfig usage")
+		return nil, fmt.Errorf("%s: %w", "cannot track ProviderConfig usage", err)
 	}
 
-	return legacyToModernProviderConfigSpec(pc)
+	// Return the enriched ProviderConfig
+	return effectivePC, nil
+}
+
+// Connect creates and returns an OSB (Open Service Broker) client, the Kubernetes client,
+// and the originating identity for a given managed resource.
+//
+// Parameters:
+// - ctx: the context for managing request lifetime and cancellation
+// - kubeClient: a Kubernetes client for interacting with K8s resources
+// - newOsbClient: a function that takes a ProviderConfig and credentials and returns an OSB client
+// - mg: the managed resource to operate on
+// - oidValue: the initial originating identity value used to create the full identity
+//
+// Returns:
+// - osb.Client: the instantiated OSB client
+// - client.Client: the same Kubernetes client passed in
+// - *osb.OriginatingIdentity: the originating identity object
+// - error: any error that occurred during the process
+func Connect(
+	ctx context.Context,
+	kubeClient client.Client,
+	newOsbClient func(v1alpha1.ProviderConfig, []byte) (osb.Client, error),
+	mg resource.Managed,
+	oidValue common.KubernetesOSBOriginatingIdentityValue,
+) (osb.Client, client.Client, *osb.OriginatingIdentity, error) {
+
+	// Resolve the ProviderConfig associated with the managed resource
+	pc, err := ResolveProviderConfig(ctx, kubeClient, mg)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot get ProviderConfig", err)
+	}
+
+	// Extract credentials from the ProviderConfig
+	creds, err := resource.CommonCredentialExtractor(ctx, pc.Spec.Credentials.Source, kubeClient, pc.Spec.Credentials.CommonCredentialSelectors)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot get credentials", err)
+	}
+
+	// Create a new OSB client using the resolved ProviderConfig and extracted credentials
+	osbclient, err := newOsbClient(*pc, creds)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot create new osb client", err)
+	}
+
+	// Add extra data to the originating identity from the ProviderConfig
+	oidValue.Extra = &pc.Spec.OriginatingIdentityExtraData
+
+	// Create the originating identity object
+	oid, err := MakeOriginatingIdentityFromValue(oidValue)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot make originating identity from value", err)
+	}
+
+	// Return the OSB client, the Kubernetes client, and the originating identity
+	return osbclient, kubeClient, oid, nil
+}
+
+// Predefined error for failed GET operations
+var ErrCannotGetResource = errors.New("cannot get latest version of resource")
+
+// GetLatestKubeObject retrieves the latest version of a Kubernetes object.
+// obj should be a pointer to a Kubernetes object (implements client.Object).
+func GetLatestKubeObject[T client.Object](ctx context.Context, kube client.Client, obj T) (T, error) {
+	key := client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}
+	if err := kube.Get(ctx, key, obj); err != nil {
+		return obj, fmt.Errorf("failed to get latest version of %T: %w", obj, ErrCannotGetResource)
+	}
+	return obj, nil
+}
+
+// LastOperationStatusSetter defines the interface for Kubernetes objects
+// whose status can be updated based on the last OSB operation.
+// Any object implementing this interface must provide methods to set
+// the last operation state, description, and conditions.
+type LastOperationStatusSetter interface {
+	client.Object
+	SetLastOperationState(osb.LastOperationState)
+	SetLastOperationDescription(desc string)
+	SetConditions(conds ...xpv1.Condition)
+}
+
+// UpdateStatusFromLastOp updates the status of any Kubernetes object
+// implementing LastOperationStatusSetter based on the response from the OSB last operation.
+// It sets the LastOperationState, LastOperationDescription, and updates conditions
+// according to the operation state (Succeeded / Failed).
+func UpdateStatusFromLastOp[T LastOperationStatusSetter](obj T, resp *osb.LastOperationResponse) {
+	obj.SetLastOperationState(resp.State)
+	if resp.Description != nil {
+		obj.SetLastOperationDescription(*resp.Description)
+	}
+
+	switch resp.State {
+	case osb.StateSucceeded:
+		obj.SetConditions(xpv1.Available())
+	case osb.StateFailed:
+		obj.SetConditions(xpv1.Unavailable())
+	}
+}
+
+// HandleAsyncStatusSetter is an interface for objects that can have their asynchronous
+// operation status updated. Any type implementing this interface must also implement
+// client.Object and provide methods to set the last operation state and key.
+type HandleAsyncStatusSetter interface {
+	client.Object
+	SetLastOperationState(osb.LastOperationState)
+	SetLastOperationKey(*osb.OperationKey)
+}
+
+// HandleAsyncStatus updates the status of an object when the request is asynchronous.
+//
+// It sets the LastOperationKey if provided and updates the LastOperationState to "InProgress".
+//
+// Type parameter T must implement the HandleAsyncStatusSetter interface.
+func HandleAsyncStatus[T HandleAsyncStatusSetter](obj T, operationKey *osb.OperationKey) {
+	// If an operation key is provided, update the object with it
+	if operationKey != nil {
+		obj.SetLastOperationKey(operationKey)
+	}
+
+	// Mark the object's last operation as in progress
+	obj.SetLastOperationState(osb.StateInProgress)
+}
+
+// MarshalMapValues marshals all values of a map into JSON bytes.
+// Returns a map of the same keys with marshaled byte slices as values.
+func MarshalMapValues(input map[string]any) (map[string][]byte, error) {
+	output := make(map[string][]byte, len(input))
+	for k, v := range input {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("cannot marshal key %q: %w", k, err)
+		}
+		output[k] = b
+	}
+	return output, nil
+}
+
+// getCredsFromResponse serializes the credentials from an OSB BindResponse
+// into a map[string][]byte suitable for Crossplane connection details.
+// Returns an error if any credential cannot be marshaled to JSON.
+func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
+	creds := make(map[string][]byte, len(resp.Credentials))
+
+	for key, value := range resp.Credentials {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal credential '%s' from response: %w", key, err)
+		}
+		creds[key] = data
+	}
+
+	return creds, nil
+}
+
+// parseISO8601Time parses a string in ISO8601 format into a time.Time.
+// Returns a wrapped error if parsing fails.
+func ParseISO8601Time(value, field string) (time.Time, error) {
+	t, err := time.Parse(Iso8601dateFormat, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("error parsing %s time: %w", field, err)
+	}
+	return t, nil
 }

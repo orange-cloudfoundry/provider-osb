@@ -19,11 +19,12 @@ package common
 import (
 	"encoding/json"
 
+	"github.com/crossplane/crossplane-runtime/v2/apis/common"
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+// clusterName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
 // And it makes `make generate` fail
 type NamespacedName struct {
 	Name      string `json:"name"`
@@ -42,15 +43,11 @@ func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 	}
 }
 
-type ProviderConfigRef struct {
-	Name string `json:"name"`
-}
-
 // ApplicationData represents the schema for an Application MR
 type ApplicationData struct {
-	Name           string            `json:"name"`
-	Guid           string            `json:"guid"`
-	ProviderConfig ProviderConfigRef `json:"providerConfigRef"`
+	Name                    string            `json:"name"`
+	Guid                    string            `json:"guid"`
+	ProviderConfigReference *common.Reference `json:"providerConfigRef,omitempty"`
 }
 
 // Instance Data represents the schema for a ServiceInstance MR
@@ -65,7 +62,6 @@ type InstanceData struct {
 	OrganizationGuid string                 `json:"organizationGuid"`
 	SpaceGuid        string                 `json:"spaceGuid"`
 }
-
 type SerializableParameters string
 
 func (v *SerializableParameters) ToParameters() (map[string]any, error) {

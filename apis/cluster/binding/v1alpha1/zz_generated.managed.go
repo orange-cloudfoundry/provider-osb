@@ -13,34 +13,19 @@ func (mg *ServiceBinding) GetCondition(ct xpv1.ConditionType) xpv1.Condition {
 	return mg.Status.GetCondition(ct)
 }
 
-// GetDeletionPolicy of this ServiceBinding.
-func (mg *ServiceBinding) GetDeletionPolicy() xpv1.DeletionPolicy {
-	return mg.Spec.DeletionPolicy
-}
-
 // GetManagementPolicies of this ServiceBinding.
 func (mg *ServiceBinding) GetManagementPolicies() xpv1.ManagementPolicies {
 	return mg.Spec.ManagementPolicies
 }
 
 // GetProviderConfigReference of this ServiceBinding.
-func (mg *ServiceBinding) GetProviderConfigReference() *xpv1.Reference {
+func (mg *ServiceBinding) GetProviderConfigReference() *xpv1.ProviderConfigReference {
 	return mg.Spec.ProviderConfigReference
 }
 
 // GetWriteConnectionSecretToReference of this ServiceBinding.
-func (mg *ServiceBinding) GetWriteConnectionSecretToReference() *xpv1.SecretReference {
+func (mg *ServiceBinding) GetWriteConnectionSecretToReference() *xpv1.LocalSecretReference {
 	return mg.Spec.WriteConnectionSecretToReference
-}
-
-// SetConditions of this ServiceBinding.
-func (mg *ServiceBinding) SetConditions(c ...xpv1.Condition) {
-	mg.Status.SetConditions(c...)
-}
-
-// SetDeletionPolicy of this ServiceBinding.
-func (mg *ServiceBinding) SetDeletionPolicy(r xpv1.DeletionPolicy) {
-	mg.Spec.DeletionPolicy = r
 }
 
 // SetManagementPolicies of this ServiceBinding.
@@ -49,11 +34,11 @@ func (mg *ServiceBinding) SetManagementPolicies(r xpv1.ManagementPolicies) {
 }
 
 // SetProviderConfigReference of this ServiceBinding.
-func (mg *ServiceBinding) SetProviderConfigReference(r *xpv1.Reference) {
+func (mg *ServiceBinding) SetProviderConfigReference(r *xpv1.ProviderConfigReference) {
 	mg.Spec.ProviderConfigReference = r
 }
 
 // SetWriteConnectionSecretToReference of this ServiceBinding.
-func (mg *ServiceBinding) SetWriteConnectionSecretToReference(r *xpv1.SecretReference) {
+func (mg *ServiceBinding) SetWriteConnectionSecretToReference(r *xpv1.LocalSecretReference) {
 	mg.Spec.WriteConnectionSecretToReference = r
 }

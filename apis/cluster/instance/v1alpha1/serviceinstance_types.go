@@ -23,16 +23,27 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
-	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
-
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/application/v1alpha1"
+	common "github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 )
 
-// ServiceInstanceObservation are the observable fields of a ServiceInstance.
-// TODO manage observations
+type ServiceInstanceSpec struct {
+	xpv1.ResourceSpec `json:",inline"`
+
+	ForProvider common.InstanceData `json:"forProvider"`
+
+	InitProvider common.InstanceData `json:"initProvider,omitempty"`
+}
+
+type ServiceInstanceStatus struct {
+	xpv1.ResourceStatus `json:",inline"`
+	AtProvider          ServiceInstanceObservation `json:"atProvider,omitempty"`
+}
+
 type ServiceInstanceObservation struct {
-	ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
-	ApplicationData          *common.ApplicationData `json:"applicationData,omitempty"`
+	ApplicationRef           *common.NamespacedName    `json:"application,omitempty"`
+	ApplicationData          *v1alpha1.ApplicationSpec `json:"applicationData,omitempty"`
 	common.InstanceData      `json:",inline"`
 	Context                  common.KubernetesOSBContext `json:"context,omitempty"`
 	DashboardURL             *string                     `json:"dashboardURL,omitempty"`
@@ -42,26 +53,14 @@ type ServiceInstanceObservation struct {
 	HasActiveBindings        bool                        `json:"hasActiveBindings,omitempty"`
 }
 
-// A ServiceInstanceSpec defines the desired state of a ServiceInstance.
-type ServiceInstanceSpec struct {
-	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       common.InstanceData `json:"forProvider"`
-}
-
-// A ServiceInstanceStatus represents the observed state of a ServiceInstance.
-type ServiceInstanceStatus struct {
-	xpv1.ResourceStatus `json:",inline"`
-	AtProvider          ServiceInstanceObservation `json:"atProvider,omitempty"`
-}
-
 // +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
-// A ServiceInstance is an example API type.
+// ServiceInstance est la ressource managée OSB
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
 // +kubebuilder:printcolumn:name="EXTERNAL-NAME",type="string",JSONPath=".metadata.annotations.crossplane\\.io/external-name"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,osb}
 type ServiceInstance struct {
 	metav1.TypeMeta   `json:",inline"`
@@ -73,7 +72,7 @@ type ServiceInstance struct {
 
 // +kubebuilder:object:root=true
 
-// ServiceInstanceList contains a list of ServiceInstance
+// ServiceInstanceList contient une liste de ServiceInstance
 type ServiceInstanceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

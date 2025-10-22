@@ -22,16 +22,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
-	"github.com/crossplane/crossplane-runtime/pkg/test"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
-	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
-	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-	"github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
+	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/cluster/binding/v1alpha1"
+	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
+	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/instance/v1alpha1"
 	mock "github.com/orange-cloudfoundry/provider-osb/internal/mymock"
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -212,7 +212,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: errors.New(errNotServiceInstance),
+				err: errors.New("managed resource is not a ServiceInstance custom resource"),
 			},
 		},
 		"InstanceIdMissing": {
@@ -372,8 +372,8 @@ func TestObserve(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := external{
-				client: tc.fields.client,
-				kube:   tc.fields.kube,
+				osb:  tc.fields.client,
+				kube: tc.fields.kube,
 			}
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
@@ -418,7 +418,7 @@ func TestCreate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: errors.New(errNotServiceInstance),
+				err: errors.New("managed resource is not a ServiceInstance custom resource"),
 			},
 		},
 		"ProvisionSuccessSync": {
@@ -490,8 +490,8 @@ func TestCreate(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := &external{
-				client: tc.fields.client,
-				kube:   tc.fields.kube,
+				osb:  tc.fields.client,
+				kube: tc.fields.kube,
 			}
 			got, err := e.Create(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
@@ -536,7 +536,7 @@ func TestUpdate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalUpdate{},
-				err: errors.New(errNotServiceInstance),
+				err: errors.New("managed resource is not a ServiceInstance custom resource"),
 			},
 		},
 
@@ -609,8 +609,8 @@ func TestUpdate(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := &external{
-				client: tc.fields.client,
-				kube:   tc.fields.kube,
+				osb:  tc.fields.client,
+				kube: tc.fields.kube,
 			}
 			got, err := e.Update(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
@@ -653,7 +653,7 @@ func TestDelete(t *testing.T) {
 				mg:  &notServiceInstance{},
 			},
 			want: want{
-				err: errors.New(errNotServiceInstance),
+				err: errors.New("managed resource is not a ServiceInstance custom resource"),
 			},
 		},
 		"InstanceIdMissing": {
@@ -785,8 +785,8 @@ func TestDelete(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := &external{
-				client: tc.fields.client,
-				kube:   tc.fields.kube,
+				osb:  tc.fields.client,
+				kube: tc.fields.kube,
 			}
 			_, err := e.Delete(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {

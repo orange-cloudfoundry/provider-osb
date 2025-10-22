@@ -22,12 +22,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 )
 
 // A StoreConfigSpec defines the desired state of a ProviderConfig.
 type StoreConfigSpec struct {
-	xpv1.SecretStoreConfig `json:",inline"`
 }
 
 // A StoreConfigStatus represents the status of a StoreConfig.
@@ -36,13 +35,13 @@ type StoreConfigStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
 
 // A StoreConfig configures how GCP controller should store connection details.
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="TYPE",type="string",JSONPath=".spec.type"
 // +kubebuilder:printcolumn:name="DEFAULT-SCOPE",type="string",JSONPath=".spec.defaultScope"
 // +kubebuilder:resource:scope=Cluster,categories={crossplane,store,gcp}
-// +kubebuilder:subresource:status
 type StoreConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -61,11 +60,6 @@ type StoreConfigList struct {
 }
 
 // Note(turkenh): To be generated with AngryJet
-
-// GetStoreConfig returns SecretStoreConfig
-func (in *StoreConfig) GetStoreConfig() xpv1.SecretStoreConfig {
-	return in.Spec.SecretStoreConfig
-}
 
 // GetCondition of this StoreConfig.
 func (in *StoreConfig) GetCondition(ct xpv1.ConditionType) xpv1.Condition {

@@ -28,11 +28,6 @@ func (mg *ServiceBinding) GetWriteConnectionSecretToReference() *xpv1.LocalSecre
 	return mg.Spec.WriteConnectionSecretToReference
 }
 
-// SetConditions of this ServiceBinding.
-func (mg *ServiceBinding) SetConditions(c ...xpv1.Condition) {
-	mg.Status.SetConditions(c...)
-}
-
 // SetManagementPolicies of this ServiceBinding.
 func (mg *ServiceBinding) SetManagementPolicies(r xpv1.ManagementPolicies) {
 	mg.Spec.ManagementPolicies = r

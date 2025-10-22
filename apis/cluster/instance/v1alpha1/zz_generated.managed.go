@@ -23,19 +23,9 @@ func (mg *ServiceInstance) GetManagementPolicies() xpv1.ManagementPolicies {
 	return mg.Spec.ManagementPolicies
 }
 
-// GetProviderConfigReference of this ServiceInstance.
-func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.Reference {
-	return mg.Spec.ProviderConfigReference
-}
-
 // GetWriteConnectionSecretToReference of this ServiceInstance.
 func (mg *ServiceInstance) GetWriteConnectionSecretToReference() *xpv1.SecretReference {
 	return mg.Spec.WriteConnectionSecretToReference
-}
-
-// SetConditions of this ServiceInstance.
-func (mg *ServiceInstance) SetConditions(c ...xpv1.Condition) {
-	mg.Status.SetConditions(c...)
 }
 
 // SetDeletionPolicy of this ServiceInstance.
