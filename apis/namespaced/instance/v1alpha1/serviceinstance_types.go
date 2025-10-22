@@ -93,30 +93,15 @@ func init() {
 	SchemeBuilder.Register(&ServiceInstance{}, &ServiceInstanceList{})
 }
 
-// GetProviderConfigReference of this ServiceInstance.
-func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.ProviderConfigReference {
-	return mg.Spec.ForProvider.ApplicationData.ProviderConfigReference
-}
+// ServiceBindingAccessor defines the subset of ServiceBinding methods
+// needed by ServiceInstance to check active bindings.
+type ServiceBindingAccessor interface {
+	// HasNoProviderInstanceRef returns true if the binding has no associated ServiceInstance reference.
+	HasNoProviderInstanceRef() bool
 
-// SetLastOperationState sets the LastOperationState in the ServiceInstance status.
-// This is used to track the state of the last operation performed on the instance.
-func (mg *ServiceInstance) SetLastOperationState(state osb.LastOperationState) {
-	mg.Status.AtProvider.LastOperationState = state
-}
+	// IsBoundToInstance returns true if the binding references the ServiceInstance with the given name.
+	IsBoundToInstance(instanceName string) bool
 
-// SetLastOperationDescription sets the LastOperationDescription in the ServiceInstance status.
-// This is used to store a human-readable description of the last operation performed.
-func (mg *ServiceInstance) SetLastOperationDescription(desc string) {
-	mg.Status.AtProvider.LastOperationDescription = desc
-}
-
-func (mg *ServiceInstance) SetLastOperationKey(operationKey *osb.OperationKey) {
-	mg.Status.AtProvider.LastOperationKey = *operationKey
-}
-
-// IsDeletable returns true if the ServiceInstance is in deleting state
-// and has no active bindings.
-func (mg *ServiceInstance) IsDeletable() bool {
-	return mg.Status.AtProvider.LastOperationState == "deleting" &&
-		!mg.Status.AtProvider.HasActiveBindings
+	// IsNotBeingDeleted returns true if the binding has not been marked for deletion.
+	IsNotBeingDeleted() bool
 }

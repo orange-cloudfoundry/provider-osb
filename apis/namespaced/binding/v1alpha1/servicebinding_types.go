@@ -140,18 +140,17 @@ func init() {
 
 // TODO add GetName() function returning the observed uuid
 
-// SetLastOperationState sets the LastOperationState in the ServiceBinding status.
-// This is used to track the state of the last operation performed on the binding.
-func (mg *ServiceBinding) SetLastOperationState(state osb.LastOperationState) {
-	mg.Status.AtProvider.LastOperationState = state
+// Custom Response Type for OSB
+type responseData struct {
+	Parameters      map[string]any
+	Endpoints       *[]osb.Endpoint
+	VolumeMounts    *[]osb.VolumeMount
+	RouteServiceURL *string
+	SyslogDrainURL  *string
+	Metadata        *osb.BindingMetadata
 }
 
-// SetLastOperationDescription sets the LastOperationDescription in the ServiceBinding status.
-// This is used to store a human-readable description of the last operation performed.
-func (mg *ServiceBinding) SetLastOperationDescription(desc string) {
-	mg.Status.AtProvider.LastOperationDescription = desc
-}
-
-func (mg *ServiceBinding) SetLastOperationKey(operationKey *osb.OperationKey) {
-	mg.Status.AtProvider.LastOperationKey = *operationKey
+type BindingData struct {
+	InstanceData    common.InstanceData
+	ApplicationData common.ApplicationData
 }

@@ -19,7 +19,6 @@ package serviceinstance
 import (
 	"context"
 	"fmt"
-	"reflect"
 
 	"errors"
 
@@ -33,10 +32,10 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
+	apishelpers "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/helpers/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
@@ -112,7 +111,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// Manage pending async operations (poll only for "in progress" state)
-	if instance.Status.AtProvider.LastOperationState == osb.StateInProgress || instance.Status.AtProvider.LastOperationState == "deleting" {
+	if instance.IsStateInProgress() || instance.IsStateDeleting() {
 		return c.handleLastOperationInProgress(ctx, instance)
 	}
 
@@ -144,7 +143,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 
 	// Compare the deinstancered spec from the ServiceInstance with the actual instance returned from OSB.
 	// This determines if the external resource is up to date with the deinstancered state.
-	upToDate, err := compareSpecWithOSB(*instance, osbInstance)
+	upToDate, err := instance.CompareSpecWithOSB(osbInstance)
 	if err != nil {
 		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot compare ServiceInstance spec with OSB instance", err)
 	}
@@ -186,14 +185,14 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, fmt.Errorf("failed to parse ServiceInstance context: %w", err)
 	}
 
-	req := buildProvisionRequest(instance, params, ctxMap)
+	req := instance.BuildOSBProvisionRequest(params, ctxMap)
 
 	resp, err := c.osb.ProvisionInstance(req)
 	if err != nil {
 		return managed.ExternalCreation{}, fmt.Errorf("OSB ProvisionInstance request failed: %w", err)
 	}
 
-	updateInstanceStatusFromProvisionResponse(instance, resp)
+	instance.UpdateStatusFromOSB(resp)
 
 	if err := c.kube.Status().Update(ctx, instance); err != nil {
 		return managed.ExternalCreation{}, fmt.Errorf("cannot update ServiceInstance status: %w", err)
@@ -211,7 +210,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Build the OSB update request.
-	req, err := buildUpdateRequest(instance)
+	req, err := instance.BuildOSBUpdateRequest()
 	if err != nil {
 		return managed.ExternalUpdate{}, err
 	}
@@ -223,7 +222,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Update the instance status based on the response.
-	updateInstanceStatusFromUpdate(instance, resp)
+	instance.UpdateStatusFromOSB(resp)
 
 	// Persist the updated status in Kubernetes.
 	if err := c.kube.Status().Update(ctx, instance); err != nil {
@@ -243,11 +242,14 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	// If the InstanceId is not set, there is nothing to delete.
 	// We consider the resource as already deleted.
-	if instance.Spec.ForProvider.InstanceId == "" {
+	if instance.IsInstanceIDEmpty() {
+		return managed.ExternalDelete{}, nil
+	}
+	if instance.IsAlreadyDeleted() {
 		return managed.ExternalDelete{}, nil
 	}
 	// If there are active bindings, we cannot delete the ServiceInstance.
-	if instance.Status.AtProvider.HasActiveBindings {
+	if instance.HasActiveBindings() {
 		return managed.ExternalDelete{}, errors.New("cannot delete ServiceInstance, it has active bindings---")
 	}
 
@@ -296,7 +298,7 @@ func validateInstanceID(si resource.Managed) error {
 
 // Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
 func (c *external) handleLastOperationInProgress(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
-	req := createRequestPollLastOperation(instance, c.originatingIdentity)
+	req := instance.CreateRequestPollLastOperation(c.originatingIdentity)
 
 	resp, err := c.osb.PollLastOperation(req)
 
@@ -333,20 +335,6 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, instance *
 	}, nil
 }
 
-// hasActiveBindingsForInstance checks if any of the given ServiceBindings
-// reference the provided ServiceInstance and are not marked for deletion.
-func hasActiveBindingsForInstance(instance *v1alpha1.ServiceInstance, bindings []apisbinding.ServiceBinding) bool {
-	for _, b := range bindings {
-		if b.Spec.ForProvider.InstanceRef == nil {
-			continue
-		}
-		if b.Spec.ForProvider.InstanceRef.Name == instance.GetName() && b.DeletionTimestamp.IsZero() {
-			return true
-		}
-	}
-	return false
-}
-
 // UpdateActiveBindingsStatus updates the ServiceInstance status to reflect whether
 // it has any active ServiceBindings in the same namespace.
 func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1alpha1.ServiceInstance) error {
@@ -355,7 +343,8 @@ func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1a
 		return fmt.Errorf("cannot list ServiceBindings: %w", err)
 	}
 
-	instance.Status.AtProvider.HasActiveBindings = hasActiveBindingsForInstance(instance, bindingList.Items)
+	apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
+
 	return nil
 }
 
@@ -381,128 +370,10 @@ func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instanc
 	}, nil
 }
 
-// compareSpecWithOSB compares a ServiceInstance spec with the corresponding OSB instance response.
-// It returns true if both representations are consistent, false otherwise.
-func compareSpecWithOSB(instance v1alpha1.ServiceInstance, osbInstance *osb.GetInstanceResponse) (bool, error) {
-	if osbInstance == nil {
-		return false, nil
-	}
-
-	// Compare PlanID
-	if instance.Spec.ForProvider.PlanId != "" && instance.Spec.ForProvider.PlanId != osbInstance.PlanID {
-		return false, nil
-	}
-
-	// Compare parameters
-	if ok, err := compareInstanceParameters(instance, osbInstance); err != nil || !ok {
-		return ok, err
-	}
-
-	// Compare context
-	if !reflect.DeepEqual(instance.Spec.ForProvider.Context, instance.Status.AtProvider.Context) {
-		return false, nil
-	}
-
-	return true, nil
-}
-
-// compareInstanceParameters compares parameters between a ServiceInstance spec
-// and its OSB instance response.
-func compareInstanceParameters(instance v1alpha1.ServiceInstance, osbInstance *osb.GetInstanceResponse) (bool, error) {
-	if len(instance.Spec.ForProvider.Parameters) == 0 {
-		return true, nil
-	}
-
-	params, err := instance.Spec.ForProvider.Parameters.ToParameters()
-	if err != nil {
-		return false, fmt.Errorf("failed to parse ServiceInstance parameters: %w", err)
-	}
-
-	if !reflect.DeepEqual(params, osbInstance.Parameters) {
-		return false, nil
-	}
-
-	return true, nil
-}
-
-// buildProvisionRequest creates an OSB ProvisionRequest from a ServiceInstance spec.
-func buildProvisionRequest(si *v1alpha1.ServiceInstance, params map[string]interface{}, ctxMap map[string]interface{}) *osb.ProvisionRequest {
-	return &osb.ProvisionRequest{
-		InstanceID:        si.Spec.ForProvider.InstanceId,
-		ServiceID:         si.Spec.ForProvider.ServiceId,
-		PlanID:            si.Spec.ForProvider.PlanId,
-		OrganizationGUID:  si.Spec.ForProvider.OrganizationGuid,
-		SpaceGUID:         si.Spec.ForProvider.SpaceGuid,
-		Parameters:        params,
-		AcceptsIncomplete: true,
-		Context:           ctxMap,
-	}
-}
-
-// updateInstanceStatusFromProvisionResponse updates the ServiceInstance status based on the OSB ProvisionInstance response.
-func updateInstanceStatusFromProvisionResponse(si *v1alpha1.ServiceInstance, resp *osb.ProvisionResponse) {
-	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
-	si.Status.AtProvider.DashboardURL = resp.DashboardURL
-
-	if resp.Async {
-		si.Status.SetConditions(xpv1.Creating())
-		si.Status.AtProvider.LastOperationState = osb.StateInProgress
-		if resp.OperationKey != nil {
-			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-		return
-	}
-
-	si.Status.SetConditions(xpv1.Available())
-	si.Status.AtProvider.LastOperationState = osb.StateSucceeded
-}
-
-// buildUpdateRequest constructs an OSB UpdateInstanceRequest from the given ServiceInstance.
-// It converts the ServiceInstance spec parameters and context into the format expected by the OSB client.
-// Returns the prepared request or an error if the conversion fails.
-func buildUpdateRequest(si *v1alpha1.ServiceInstance) (*osb.UpdateInstanceRequest, error) {
-	params, err := si.Spec.ForProvider.Parameters.ToParameters()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal ServiceInstance parameters: %w", err)
-	}
-
-	ctxMap, err := si.Spec.ForProvider.Context.ToMap()
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal ServiceInstance context: %w", err)
-	}
-
-	return &osb.UpdateInstanceRequest{
-		InstanceID:        si.Spec.ForProvider.InstanceId,
-		ServiceID:         si.Spec.ForProvider.ServiceId,
-		PlanID:            &si.Spec.ForProvider.PlanId,
-		Parameters:        params,
-		AcceptsIncomplete: true,
-		Context:           ctxMap,
-	}, nil
-}
-
-// updateInstanceStatusFromUpdate updates the status of the ServiceInstance
-// based on the OSB UpdateInstanceResponse. It sets the dashboard URL, context,
-// and last operation state. If the update is asynchronous, it also sets the
-// last operation key and marks the operation as in progress.
-func updateInstanceStatusFromUpdate(si *v1alpha1.ServiceInstance, resp *osb.UpdateInstanceResponse) {
-	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
-	si.Status.AtProvider.DashboardURL = resp.DashboardURL
-
-	if resp.Async {
-		si.Status.AtProvider.LastOperationState = osb.StateInProgress
-		if resp.OperationKey != nil {
-			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-	} else {
-		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
-	}
-}
-
 // deprovision handles the deprovisioning of a ServiceInstance in the external system.
 // It returns an ExternalDelete indicating whether the resource still exists or not.
 func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalDelete, error) {
-	req := c.buildDeprovisionRequest(instance)
+	req := instance.BuildDeprovisionRequest(c.originatingIdentity)
 
 	resp, err := c.osb.DeprovisionInstance(req)
 	if err != nil {
@@ -515,7 +386,7 @@ func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceIn
 
 	if resp.Async {
 		// Asynchronous deletion: update last operation status
-		updateInstanceStatusForAsyncDeletion(instance, resp)
+		instance.UpdateStatusForAsyncDeletion(resp)
 		// Persist status to Kubernetes
 		if err := c.kube.Status().Update(ctx, instance); err != nil {
 			return managed.ExternalDelete{}, fmt.Errorf("cannot update ServiceInstance status: %w", err)
@@ -523,58 +394,4 @@ func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceIn
 	}
 
 	return managed.ExternalDelete{}, nil
-}
-
-// buildDeprovisionRequest constructs an OSB DeprovisionRequest from a ServiceInstance.
-func (c *external) buildDeprovisionRequest(si *v1alpha1.ServiceInstance) *osb.DeprovisionRequest {
-	return &osb.DeprovisionRequest{
-		InstanceID:          si.Spec.ForProvider.InstanceId,
-		ServiceID:           si.Spec.ForProvider.ServiceId,
-		PlanID:              si.Spec.ForProvider.PlanId,
-		AcceptsIncomplete:   true,
-		OriginatingIdentity: &c.originatingIdentity,
-	}
-}
-
-// updateInstanceStatusForAsyncDeletion updates the ServiceInstance status when
-// a deletion is performed asynchronously.
-func updateInstanceStatusForAsyncDeletion(si *v1alpha1.ServiceInstance, resp *osb.DeprovisionResponse) {
-	si.Status.AtProvider.LastOperationState = "deleting"
-	if resp.OperationKey != nil {
-		si.Status.AtProvider.LastOperationKey = *resp.OperationKey
-	}
-}
-
-// createRequestPollLastOperation builds and returns an OSB LastOperationRequest
-// for polling the current status of an asynchronous operation on a service instance.
-//
-// Parameters:
-// - instance: the service instance for which to create the request
-// - originatingIdentity: the OSB originating identity associated with the request
-//
-// Returns:
-// - *osb.LastOperationRequest: the constructed request ready to be sent to the broker
-func createRequestPollLastOperation(
-	instance *v1alpha1.ServiceInstance,
-	originatingIdentity osb.OriginatingIdentity,
-) *osb.LastOperationRequest {
-
-	return &osb.LastOperationRequest{
-		// InstanceID identifies the service instance whose operation is being polled.
-		InstanceID: instance.Spec.ForProvider.InstanceId,
-
-		// ServiceID identifies the service offering (from the broker catalog).
-		ServiceID: &instance.Spec.ForProvider.ServiceId,
-
-		// PlanID identifies the plan of the service offering used by this instance.
-		PlanID: &instance.Spec.ForProvider.PlanId,
-
-		// OriginatingIdentity contains information about the user or system
-		// making the OSB request (useful for auditing and multi-tenancy).
-		OriginatingIdentity: &originatingIdentity,
-
-		// OperationKey uniquely identifies the asynchronous operation being checked.
-		// It is provided by the broker when the operation was initiated asynchronously.
-		OperationKey: &instance.Status.AtProvider.LastOperationKey,
-	}
 }

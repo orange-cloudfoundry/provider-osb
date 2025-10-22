@@ -1,0 +1,379 @@
+package v1alpha1
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"reflect"
+	"time"
+
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
+	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/uuid"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+// SetLastOperationState sets the LastOperationState in the ServiceBinding status.
+// This is used to track the state of the last operation performed on the binding.
+func (mg *ServiceBinding) SetLastOperationState(state osb.LastOperationState) {
+	mg.Status.AtProvider.LastOperationState = state
+}
+
+// SetLastOperationDescription sets the LastOperationDescription in the ServiceBinding status.
+// This is used to store a human-readable description of the last operation performed.
+func (mg *ServiceBinding) SetLastOperationDescription(desc string) {
+	mg.Status.AtProvider.LastOperationDescription = desc
+}
+
+// SetLastOperationKey sets the LastOperationKey of the ServiceBinding's status.
+//
+// Parameters:
+// - operationKey: a pointer to the OSB OperationKey returned by the broker
+func (mg *ServiceBinding) SetLastOperationKey(operationKey *osb.OperationKey) {
+	mg.Status.AtProvider.LastOperationKey = *operationKey
+}
+
+// IsStateInProgress checks if the ServiceBinding's last operation state
+// is "InProgress", indicating that an asynchronous operation is currently ongoing.
+//
+// Returns:
+// - bool: true if the last operation is in progress, false otherwise
+func (mg *ServiceBinding) IsStateInProgress() bool {
+	return mg.Status.AtProvider.LastOperationState == osb.StateInProgress
+}
+
+// IsExternalNameEmpty returns true if the ServiceBinding has no external name set.
+// This can be used to check whether the binding has been fully created or not.
+func (mg *ServiceBinding) IsExternalNameEmpty() bool {
+	return meta.GetExternalName(mg) == ""
+}
+
+// GetExternalName returns the external name of the ServiceBinding.
+// The external name is typically set by the user or the system to uniquely
+// identify the binding in the external service broker.
+func (mg *ServiceBinding) GetExternalName() string {
+	return meta.GetExternalName(mg)
+}
+
+func (mg *ServiceBinding) SetExternalName(uuid string) {
+	meta.SetExternalName(mg, uuid)
+}
+
+func (mg *ServiceBinding) CreateResponseData(resp osb.GetBindingResponse) responseData {
+	return responseData{
+		Parameters:      resp.Parameters,
+		Endpoints:       resp.Endpoints,
+		VolumeMounts:    resp.VolumeMounts,
+		RouteServiceURL: resp.RouteServiceURL,
+		SyslogDrainURL:  resp.SyslogDrainURL,
+		Metadata:        resp.Metadata,
+	}
+}
+
+func (mg *ServiceBinding) CreateResponseDataWithBindingParameters(resp osb.BindResponse) (responseData, error) {
+	params, err := mg.Status.AtProvider.Parameters.ToParameters()
+	if err != nil {
+		return responseData{}, fmt.Errorf("failed to parse parameters from binding status: %w", err)
+	}
+
+	return responseData{
+		Parameters:      params,
+		Endpoints:       resp.Endpoints,
+		VolumeMounts:    resp.VolumeMounts,
+		RouteServiceURL: resp.RouteServiceURL,
+		SyslogDrainURL:  resp.SyslogDrainURL,
+		Metadata:        resp.Metadata,
+	}, nil
+}
+
+func (mg *ServiceBinding) setAtProvider(observation ServiceBindingObservation) error {
+	mg.Status.AtProvider = observation
+	// checks can be added here
+	return nil
+}
+
+func (mg *ServiceBinding) SetResponseDataInStatus(data responseData) error {
+	params, err := json.Marshal(data.Parameters)
+	if err != nil {
+		return errors.New("error while marshalling or parsing parameters from response")
+	}
+
+	endpoints, err := json.Marshal(data.Endpoints)
+	if err != nil {
+		return errors.New("error while marshalling or parsing endpoints from response")
+	}
+
+	volumeMounts, err := json.Marshal(data.VolumeMounts)
+	if err != nil {
+		return errors.New("error while marshalling or parsing volume mounts from response")
+	}
+
+	return mg.setAtProvider(ServiceBindingObservation{
+		// Update attributes from response data
+		Parameters:      common.SerializableParameters(params),
+		RouteServiceURL: data.RouteServiceURL,
+		Endpoints:       SerializableEndpoints(endpoints),
+		VolumeMounts:    SerializableVolumeMounts(volumeMounts),
+		SyslogDrainURL:  data.SyslogDrainURL,
+		Metadata:        data.Metadata,
+		// Do not change these attributes
+		LastOperationState:       mg.Status.AtProvider.LastOperationState,
+		LastOperationKey:         mg.Status.AtProvider.LastOperationKey,
+		LastOperationDescription: mg.Status.AtProvider.LastOperationDescription,
+		LastOperationPolledTime:  mg.Status.AtProvider.LastOperationPolledTime,
+	})
+}
+
+// We do not compare credentials, as this logic is managed by creds rotation.
+// We do not compare bindingmetadata either, since the only metadata in binding objects
+// is related to binding rotation (renew_before and expires_at)
+
+// TODO add context and route to test if these were updated and return false
+func (mg *ServiceBinding) IsStatusParametersNotLikeProviderParameters() bool {
+	return !reflect.DeepEqual(mg.Status.AtProvider.Parameters, mg.Spec.ForProvider.Parameters)
+}
+
+// CreateGetBindingRequest constructs an OSB GetBindingRequest for the ServiceBinding.
+// It uses the external name of the binding as the BindingID and the associated
+// ServiceInstance's InstanceID.
+func (mg *ServiceBinding) CreateGetBindingRequest(binding BindingData) *osb.GetBindingRequest {
+	return &osb.GetBindingRequest{
+		InstanceID: binding.InstanceData.InstanceId,
+		BindingID:  mg.GetExternalName(),
+	}
+}
+
+// buildRotateBindingRequest constructs an OSB RotateBindingRequest for a binding.
+func (mg *ServiceBinding) buildRotateBindingRequest(data BindingData, oid osb.OriginatingIdentity, newUUID string) *osb.RotateBindingRequest {
+	return &osb.RotateBindingRequest{
+		InstanceID:           data.InstanceData.InstanceId,
+		BindingID:            newUUID,
+		AcceptsIncomplete:    true, // TODO: make configurable
+		PredecessorBindingID: mg.GetExternalName(),
+		OriginatingIdentity:  &oid,
+	}
+}
+
+// extractCredentials marshals OSB BindResponse credentials into map[string][]byte.
+func extractCredentials(resp *osb.BindResponse) (map[string][]byte, error) {
+	creds := make(map[string][]byte, len(resp.Credentials))
+	for key, value := range resp.Credentials {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal credential '%s' from response: %w", key, err)
+		}
+		creds[key] = data
+	}
+	return creds, nil
+}
+
+// triggerRotation triggers a credentials rotation for the given ServiceBinding.
+// It creates a new binding ID (UUID) and calls the OSB RotateBinding API.
+// Returns the new connection credentials if the operation is synchronous, or nil otherwise.
+// Updates the ServiceBinding status with LastOperation info in case of async rotation.
+// triggerRotation triggers a credentials rotation for the given ServiceBinding.
+// It returns the new credentials if the rotation is synchronous, or nil otherwise.
+func (mg *ServiceBinding) TriggerRotation(osb osb.Client, data BindingData, oid osb.OriginatingIdentity) (map[string][]byte, error) {
+	newUUID := string(uuid.NewUUID())
+
+	req := mg.buildRotateBindingRequest(data, oid, newUUID)
+	resp, err := osb.RotateBinding(req)
+	if err != nil {
+		return nil, fmt.Errorf("OSB RotateBinding request failed: %w", err)
+	}
+
+	// Update the binding's external name only if the request succeeded
+	mg.SetExternalName(newUUID)
+
+	if !resp.Async {
+		creds, err := extractCredentials(resp)
+		if err != nil {
+			return nil, err
+		}
+		return creds, nil
+	}
+
+	util.HandleAsyncStatus(mg, resp.OperationKey)
+
+	mg.Status.AtProvider.LastOperationPolledTime = *util.TimeNow()
+	mg.Status.AtProvider.LastOperationDescription = ""
+	return nil, nil
+}
+
+// HasInstanceRef returns true if the ServiceBindingParameters has an associated InstanceRef.
+// This indicates whether the binding is linked to a ServiceInstance.
+func (spec *ServiceBindingParameters) HasInstanceRef() bool {
+	return spec.InstanceRef != nil
+}
+
+// HasNoInstanceRef returns true if the ServiceBindingParameters does NOT have an associated InstanceRef.
+// This indicates that the binding is not linked to any ServiceInstance.
+func (mg *ServiceBinding) HasNoProviderInstanceRef() bool {
+	return mg.Spec.ForProvider.InstanceRef == nil
+}
+
+// GetInstanceRef returns the reference to the ServiceInstance that this
+// ServiceBinding is associated with. The returned value is a pointer to a
+// NamespacedName, containing the name and namespace of the referenced instance.
+func (spec *ServiceBindingParameters) GetInstanceRef() *common.NamespacedName {
+	return spec.InstanceRef
+}
+
+// IsBoundToInstance returns true if the ServiceBinding is linked to the ServiceInstance
+// with the given name.
+func (b *ServiceBinding) IsBoundToInstance(instanceName string) bool {
+	if b.Spec.ForProvider.InstanceRef == nil {
+		return false
+	}
+	return b.Spec.ForProvider.InstanceRef.Name == instanceName
+}
+
+// IsNotBeingDeleted returns true if the ServiceBinding has not been marked for deletion.
+func (b *ServiceBinding) IsNotBeingDeleted() bool {
+	return b.DeletionTimestamp.IsZero()
+}
+
+// HasInstanceData returns true if the ServiceBindingParameters contains InstanceData.
+// This indicates whether the binding has been associated with a ServiceInstance
+// and has stored instance-specific information.
+func (spec *ServiceBindingParameters) HasInstanceData() bool {
+	return spec.InstanceData != nil
+}
+
+// HasApplicationRef returns true if the ServiceBindingParameters has an associated ApplicationRef.
+// This indicates whether the binding is linked to a ServiceInstance.
+func (spec *ServiceBindingParameters) HasApplicationRef() bool {
+	return spec.ApplicationRef != nil
+}
+
+// HasApplicationData returns true if the ServiceBindingParameters contains ApplicationData.
+// This indicates whether the binding has been associated with a ServiceInstance
+// and has stored instance-specific information.
+func (spec *ServiceBindingParameters) HasApplicationData() bool {
+	return spec.ApplicationData != nil
+}
+
+// GetObjectKeyFromApplicationRef returns the Kubernetes ObjectKey corresponding
+// to the ApplicationRef in the ServiceBindingParameters. This can be used to
+// fetch the referenced Application from the cluster.
+func (spec *ServiceBindingParameters) GetObjectKeyFromApplicationRef() client.ObjectKey {
+	return spec.ApplicationRef.ToObjectKey()
+}
+
+// GetApplicationData returns the inline ApplicationData stored in the
+// ServiceBindingParameters, if available. Returns nil if no inline data exists.
+func (spec *ServiceBindingParameters) GetApplicationData() *common.ApplicationData {
+	return spec.ApplicationData
+}
+
+// ensureBindingUUID returns the existing external name or generates a new UUID if missing.
+func (mg *ServiceBinding) EnsureBindingUUID() string {
+	if id := meta.GetExternalName(mg); id != "" {
+		return id
+	}
+	newID := string(uuid.NewUUID())
+	meta.SetExternalName(mg, newID)
+	return newID
+}
+
+// buildBindRequest creates an OSB BindRequest from the ServiceBinding spec and related data.
+func (mg *ServiceBinding) BuildBindRequest(
+	data BindingData,
+	bindingID string,
+	oid osb.OriginatingIdentity,
+	ctxMap, params map[string]any,
+) osb.BindRequest {
+	return osb.BindRequest{
+		BindingID:           bindingID,
+		InstanceID:          data.InstanceData.InstanceId,
+		BindResource:        &osb.BindResource{AppGUID: &data.ApplicationData.Guid, Route: &mg.Spec.ForProvider.Route},
+		AcceptsIncomplete:   true, // TODO: make configurable
+		OriginatingIdentity: &oid,
+		PlanID:              data.InstanceData.PlanId,
+		Context:             ctxMap,
+		Parameters:          params,
+		ServiceID:           data.InstanceData.ServiceId,
+		AppGUID:             &data.ApplicationData.Guid,
+	}
+}
+
+// buildUnbindRequest constructs an OSB UnbindRequest for the given ServiceBinding.
+func (mg *ServiceBinding) BuildUnbindRequest(data BindingData, oid osb.OriginatingIdentity) *osb.UnbindRequest {
+	return &osb.UnbindRequest{
+		InstanceID:          data.InstanceData.InstanceId,
+		BindingID:           meta.GetExternalName(mg),
+		AcceptsIncomplete:   true, // TODO: make configurable
+		ServiceID:           data.InstanceData.ServiceId,
+		PlanID:              data.InstanceData.PlanId,
+		OriginatingIdentity: &oid,
+	}
+}
+
+// buildBindingLastOperationRequest constructs an OSB BindingLastOperationRequest for polling.
+func (mg *ServiceBinding) BuildBindingLastOperationRequest(data BindingData, oid osb.OriginatingIdentity) *osb.BindingLastOperationRequest {
+	return &osb.BindingLastOperationRequest{
+		InstanceID:          data.InstanceData.InstanceId,
+		BindingID:           meta.GetExternalName(mg),
+		ServiceID:           &data.InstanceData.ServiceId,
+		PlanID:              &data.InstanceData.PlanId,
+		OriginatingIdentity: &oid,
+		OperationKey:        &mg.Status.AtProvider.LastOperationKey,
+	}
+}
+
+// markBindingIfExpired sets a false healthy condition if the binding has expired.
+// Returns true if expired, false otherwise.
+func (mg *ServiceBinding) MarkBindingIfExpired(expireAt time.Time) bool {
+	if expireAt.Before(time.Now()) {
+		cond := xpv1.Condition{
+			Type:    xpv1.TypeHealthy,
+			Status:  v1.ConditionFalse,
+			Message: fmt.Sprintf("warning: the binding has expired %s", expireAt.Format(util.Iso8601dateFormat)),
+		}
+		mg.SetConditions(cond)
+		return true
+	}
+	return false
+}
+
+// markBindingAsExpiringSoon sets a false healthy condition if the binding is about to expire.
+func (mg *ServiceBinding) MarkBindingAsExpiringSoon(expireAt time.Time) {
+	cond := xpv1.Condition{
+		Type:    xpv1.TypeHealthy,
+		Status:  v1.ConditionFalse,
+		Message: fmt.Sprintf("warning: the binding will expire soon %s", expireAt.Format(util.Iso8601dateFormat)),
+	}
+	mg.SetConditions(cond)
+}
+
+// convertSpecsData converts the ServiceBinding spec's Context and Parameters
+// from their Kubernetes types into plain map[string]any structures suitable for OSB requests.
+// - Context is marshaled to JSON and then unmarshaled into a map.
+// - Parameters, stored as raw JSON bytes, are unmarshaled into a map.
+// Returns the converted context and parameters maps, or an error if conversion fails.
+func (mg *ServiceBinding) ConvertSpecsData() (map[string]any, map[string]any, error) {
+	requestContextBytes, err := json.Marshal(mg.Spec.ForProvider.Context)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context from ServiceBinding", err)
+	}
+	var requestContext map[string]any
+	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context to bytes from ServiceBinding", err)
+	}
+
+	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
+	var requestParams map[string]any
+	if err = json.Unmarshal([]byte(mg.Spec.ForProvider.Parameters), &requestParams); err != nil {
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing paramaters to bytes from ServiceBinding", err)
+	}
+	return requestContext, requestParams, nil
+}
+
+func (spec *ServiceBindingParameters) GetApplicationRef() *common.NamespacedName {
+	return spec.ApplicationRef
+}

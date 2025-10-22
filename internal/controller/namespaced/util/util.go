@@ -426,3 +426,44 @@ func HandleAsyncStatus[T HandleAsyncStatusSetter](obj T, operationKey *osb.Opera
 	// Mark the object's last operation as in progress
 	obj.SetLastOperationState(osb.StateInProgress)
 }
+
+// MarshalMapValues marshals all values of a map into JSON bytes.
+// Returns a map of the same keys with marshaled byte slices as values.
+func MarshalMapValues(input map[string]any) (map[string][]byte, error) {
+	output := make(map[string][]byte, len(input))
+	for k, v := range input {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("cannot marshal key %q: %w", k, err)
+		}
+		output[k] = b
+	}
+	return output, nil
+}
+
+// getCredsFromResponse serializes the credentials from an OSB BindResponse
+// into a map[string][]byte suitable for Crossplane connection details.
+// Returns an error if any credential cannot be marshaled to JSON.
+func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
+	creds := make(map[string][]byte, len(resp.Credentials))
+
+	for key, value := range resp.Credentials {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal credential '%s' from response: %w", key, err)
+		}
+		creds[key] = data
+	}
+
+	return creds, nil
+}
+
+// parseISO8601Time parses a string in ISO8601 format into a time.Time.
+// Returns a wrapped error if parsing fails.
+func ParseISO8601Time(value, field string) (time.Time, error) {
+	t, err := time.Parse(Iso8601dateFormat, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("error parsing %s time: %w", field, err)
+	}
+	return t, nil
+}

@@ -29,7 +29,7 @@ import (
 	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
-	"github.com/orange-cloudfoundry/provider-osb/internal/cluster/controller/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
 	mock "github.com/orange-cloudfoundry/provider-osb/internal/mymock"
 	"github.com/pkg/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
