@@ -36,6 +36,8 @@ func (n *NamespacedName) String() string {
 	return n.Namespace + "/" + n.Name
 }
 
+// ToObjectKey converts a NamespacedName into a Kubernetes client.ObjectKey,
+// which can be used to retrieve or manipulate Kubernetes objects.
 func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 	return client.ObjectKey{
 		Name:      n.Name,
@@ -62,8 +64,13 @@ type InstanceData struct {
 	OrganizationGuid string                 `json:"organizationGuid"`
 	SpaceGuid        string                 `json:"spaceGuid"`
 }
+
+// SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+// It is stored as a string but can be converted back to a Go map.
 type SerializableParameters string
 
+// ToParameters deserializes the JSON string into a map[string]any.
+// Returns an empty map if the string is nil or empty.
 func (v *SerializableParameters) ToParameters() (map[string]any, error) {
 	if v == nil || len([]byte(*v)) == 0 {
 		return map[string]any{}, nil

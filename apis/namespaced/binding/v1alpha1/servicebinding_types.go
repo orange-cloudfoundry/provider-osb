@@ -58,8 +58,12 @@ type ServiceBindingObservation struct {
 	LastOperationPolledTime  string                        `json:"last_operation_polled_time,omitempty"`
 }
 
+// SerializableVolumeMounts represents a JSON-encoded slice of osb.VolumeMount.
+// It is stored as a string but can be converted back to a slice of VolumeMounts.
 type SerializableVolumeMounts string
 
+// ToVolumeMounts deserializes the JSON string into a slice of osb.VolumeMount.
+// Returns an empty slice if the string is nil or empty.
 func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) {
 	if v == nil || len([]byte(*v)) == 0 {
 		return &[]osb.VolumeMount{}, nil
@@ -69,8 +73,12 @@ func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) 
 	return res, err
 }
 
+// SerializableEndpoints represents a JSON-encoded slice of osb.Endpoint.
+// It is stored as a string but can be converted back to a slice of Endpoints.
 type SerializableEndpoints string
 
+// ToEndpoints deserializes the JSON string into a slice of osb.Endpoint.
+// Returns an empty slice if the string is nil or empty.
 func (v *SerializableEndpoints) ToEndpoints() (*[]osb.Endpoint, error) {
 	if v == nil || len([]byte(*v)) == 0 {
 		return &[]osb.Endpoint{}, nil
@@ -80,6 +88,8 @@ func (v *SerializableEndpoints) ToEndpoints() (*[]osb.Endpoint, error) {
 	return res, err
 }
 
+// String returns the underlying string representation of SerializableEndpoints.
+// Returns an empty string if the receiver is nil.
 func (v *SerializableEndpoints) String() string {
 	if v == nil {
 		return ""

@@ -67,10 +67,16 @@ func (mg *ServiceBinding) GetExternalName() string {
 	return meta.GetExternalName(mg)
 }
 
+// SetExternalName sets the external name of the ServiceBinding resource.
+// This typically assigns the external identifier (UUID) from the provider
+// to the managed resource metadata in Kubernetes.
 func (mg *ServiceBinding) SetExternalName(uuid string) {
 	meta.SetExternalName(mg, uuid)
 }
 
+// CreateResponseData constructs a responseData object from an OSB GetBindingResponse.
+// It extracts parameters, endpoints, volume mounts, and other metadata
+// from the broker response and converts them into the internal responseData format.
 func (mg *ServiceBinding) CreateResponseData(resp osb.GetBindingResponse) responseData {
 	return responseData{
 		Parameters:      resp.Parameters,
@@ -82,6 +88,10 @@ func (mg *ServiceBinding) CreateResponseData(resp osb.GetBindingResponse) respon
 	}
 }
 
+// CreateResponseDataWithBindingParameters builds a responseData object from an OSB BindResponse,
+// combining it with the existing parameters stored in the ServiceBinding status.
+// It converts the serialized parameters back into a structured format.
+// Returns an error if the parameters in the current status cannot be parsed.
 func (mg *ServiceBinding) CreateResponseDataWithBindingParameters(resp osb.BindResponse) (responseData, error) {
 	params, err := mg.Status.AtProvider.Parameters.ToParameters()
 	if err != nil {
@@ -98,12 +108,23 @@ func (mg *ServiceBinding) CreateResponseDataWithBindingParameters(resp osb.BindR
 	}, nil
 }
 
+// setAtProvider updates the AtProvider field in the ServiceBinding status
+// with the given observation.
+// This method is typically used to synchronize the observed state from the
+// external provider with the managed resource in Kubernetes.
 func (mg *ServiceBinding) setAtProvider(observation ServiceBindingObservation) error {
 	mg.Status.AtProvider = observation
-	// checks can be added here
+	// Additional validation or checks can be added here.
 	return nil
 }
 
+// SetResponseDataInStatus updates the ServiceBinding status with data received from a response.
+// It serializes the Parameters, Endpoints, and VolumeMounts fields into JSON before storing them
+// in the AtProvider status. This method ensures the observed state in Kubernetes reflects
+// the current state from the external service.
+//
+// Note: Certain operational fields (e.g., LastOperationState, LastOperationKey, etc.)
+// are intentionally preserved to avoid overwriting ongoing operation data.
 func (mg *ServiceBinding) SetResponseDataInStatus(data responseData) error {
 	params, err := json.Marshal(data.Parameters)
 	if err != nil {
@@ -390,6 +411,8 @@ func (mg *ServiceBinding) ConvertSpecsData() (map[string]any, map[string]any, er
 	return requestContext, requestParams, nil
 }
 
+// GetApplicationRef returns the reference to the associated application
+// from the ServiceBindingParameters. It may return nil if no reference is set.
 func (spec *ServiceBindingParameters) GetApplicationRef() *common.NamespacedName {
 	return spec.ApplicationRef
 }

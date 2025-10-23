@@ -206,6 +206,12 @@ func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resou
 	}
 }
 
+// legacyToModernProviderConfigSpec converts a legacy ProviderConfig object
+// into a modern ProviderConfig spec. It serializes the legacy object to JSON
+// and deserializes it back, updating the Kind, APIVersion, and ObjectMeta fields.
+//
+// Note: This method is potentially lossy and hacky; a proper manual conversion
+// should be implemented to avoid losing important fields.
 func legacyToModernProviderConfigSpec(pc *v1alpha1.ProviderConfig) (*v1alpha1.ProviderConfig, error) {
 	// TODO(erhan): this is hacky and potentially lossy, generate or manually implement
 	if pc == nil {
@@ -230,6 +236,13 @@ func legacyToModernProviderConfigSpec(pc *v1alpha1.ProviderConfig) (*v1alpha1.Pr
 	return &mSpec, err
 }
 
+// resolveProviderConfigLegacy retrieves and converts a legacy ProviderConfig
+// referenced by a LegacyManaged resource. It performs the following steps:
+// 1. Validates that the resource has a ProviderConfigReference.
+// 2. Fetches the referenced ProviderConfig from Kubernetes.
+// 3. Tracks usage of the ProviderConfig by the managed resource.
+// 4. Converts the legacy ProviderConfig to the modern internal spec format.
+// Returns an error if any step fails.
 func resolveProviderConfigLegacy(ctx context.Context, client client.Client, mg resource.LegacyManaged) (*v1alpha1.ProviderConfig, error) {
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {

@@ -47,6 +47,9 @@ func (spec *ApplicationData) IsNil() bool {
 	return spec == nil
 }
 
+// GetApplicationRef returns the reference to the associated application
+// from the InstanceData specification. It may return nil if no reference
+// is defined.
 func (spec *InstanceData) GetApplicationRef() *NamespacedName {
 	return spec.ApplicationRef
 }

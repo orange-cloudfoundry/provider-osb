@@ -38,6 +38,10 @@ func SetActiveBindingsForInstance(
 	instance.Status.AtProvider.HasActiveBindings = hasActiveBindingsForInstance(instance, bindings)
 }
 
+// NewServiceInstanceFromRef retrieves a ServiceInstance object from Kubernetes
+// based on the InstanceRef provided in the ServiceBindingParameters spec.
+// It returns an error if the referenced ServiceInstance does not exist
+// or if any other Kubernetes client error occurs.
 func NewServiceInstanceFromRef(ctx context.Context, kube client.Client, spec bindingv1alpha1.ServiceBindingParameters) (instancev1alpha1.ServiceInstance, error) {
 	instance := instancev1alpha1.ServiceInstance{}
 	if err := kube.Get(ctx, spec.InstanceRef.ToObjectKey(), &instance); err != nil {
