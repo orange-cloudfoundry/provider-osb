@@ -8,6 +8,7 @@ import (
 	"time"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
@@ -140,8 +141,17 @@ func (mg *ServiceBinding) SetResponseDataInStatus(data responseData) error {
 // is related to binding rotation (renew_before and expires_at)
 
 // TODO add context and route to test if these were updated and return false
-func (mg *ServiceBinding) IsStatusParametersNotLikeProviderParameters() bool {
-	return !reflect.DeepEqual(mg.Status.AtProvider.Parameters, mg.Spec.ForProvider.Parameters)
+func (mg *ServiceBinding) IsStatusParametersNotLikeSpecParameters() (bool, error) {
+	var statusMap, specMap map[string]interface{}
+	if err := json.Unmarshal([]byte(mg.Status.AtProvider.Parameters), &statusMap); err != nil {
+		return true, fmt.Errorf("failed to parse Status.AtProvider.Parameters JSON: %w", err)
+	}
+
+	if err := json.Unmarshal([]byte(mg.Spec.ForProvider.Parameters), &specMap); err != nil {
+		return true, fmt.Errorf("failed to parse Spec.ForProvider.Parameters JSON: %w", err)
+	}
+
+	return !reflect.DeepEqual(statusMap, specMap), nil
 }
 
 // CreateGetBindingRequest constructs an OSB GetBindingRequest for the ServiceBinding.

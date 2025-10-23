@@ -106,8 +106,8 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return managed.ExternalObservation{}, errors.New("managed resource is not a ServiceInstance custom resource")
 	}
 
-	if err := validateInstanceID(instance); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "validation failed", err)
+	if instance.HasNotInstanceID() {
+		return managed.ExternalObservation{}, errors.New("InstanceId must be set in the ServiceInstance spec")
 	}
 
 	// Manage pending async operations (poll only for "in progress" state)
@@ -281,19 +281,6 @@ func (c *external) removeFinalizer(ctx context.Context, instance *v1alpha1.Servi
 	return managed.ExternalObservation{
 		ResourceExists: false,
 	}, nil
-}
-
-// Ensure the InstanceId is set in the ServiceInstance spec before proceeding.
-func validateInstanceID(si resource.Managed) error {
-	if siSpec, ok := si.(interface {
-		GetForProvider() interface{ InstanceId() string }
-	}); ok {
-		if siSpec.GetForProvider().InstanceId() == "" {
-			return errors.New("InstanceId must be set in the ServiceInstance spec")
-		}
-		return nil
-	}
-	return errors.New("unable to access InstanceId in the ServiceInstance spec")
 }
 
 // Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.

@@ -26,7 +26,6 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
-	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
@@ -89,8 +88,8 @@ func (v *SerializableEndpoints) String() string {
 
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
 type ServiceBindingSpec struct {
-	xpv2.ManagedResourceSpec `json:",inline"`
-	ForProvider              ServiceBindingParameters `json:"forProvider"`
+	xpv1.ResourceSpec `json:",inline"`
+	ForProvider       ServiceBindingParameters `json:"forProvider"`
 }
 
 // A ServiceBindingStatus represents the observed state of a ServiceBinding.

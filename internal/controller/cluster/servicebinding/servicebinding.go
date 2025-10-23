@@ -197,8 +197,13 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 	// Compare observed to response
 	// If there is a diff, return an error, since bindings are not updatable
-	if binding.IsStatusParametersNotLikeProviderParameters() {
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "bindings cannot be updated", err)
+	isStatusParametersNotLikeSpecParameters, err := binding.IsStatusParametersNotLikeSpecParameters()
+	if err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "failed to compare status and spec provider", err)
+	}
+
+	if isStatusParametersNotLikeSpecParameters {
+		return managed.ExternalObservation{}, errors.New("status and spec provider parameters differ")
 	}
 
 	// Handle the ServiceInstance referenced by this binding, if there is one.
@@ -400,6 +405,22 @@ func (c *external) handlePollError(ctx context.Context, binding *v1alpha1.Servic
 // It sets conditions on the binding and returns a managed.ExternalObservation indicating
 // whether the resource is up-to-date. Returns a bool to signal whether the operation was handled.
 func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.ServiceBinding, c *external) (managed.ExternalObservation, error, bool) {
+	if resp == nil {
+		// Defensive: should never happen, but prevents future panics
+		return managed.ExternalObservation{}, fmt.Errorf(
+			"handleRenewalBindings: GetBindingResponse is nil for binding %s/%s",
+			binding.GetNamespace(), binding.GetName(),
+		), false
+	}
+
+	if resp.Metadata == nil {
+		// Broker response is valid but missing metadata; cannot process renewal
+		return managed.ExternalObservation{}, fmt.Errorf(
+			"handleRenewalBindings: GetBindingResponse.Metadata is nil for binding %s/%s",
+			binding.GetNamespace(), binding.GetName(),
+		), false
+	}
+
 	if resp.Metadata.RenewBefore == "" {
 		return managed.ExternalObservation{}, nil, false
 	}

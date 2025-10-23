@@ -19,7 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -177,29 +176,6 @@ func IsResourceGone(err error) bool {
 // returns an error in every function (except if redefined)
 type NoOpOsbClient fake.FakeClient
 
-// func (c *NoOpOsbClient) GetCatalog() (*osb.CatalogResponse, error) {
-// 	return nil, nil
-// }
-
-// enrichLocalSecretRefs updates the namespace of any local secret references
-// in the ProviderConfig to match the namespace of the managed resource.
-//
-// Parameters:
-// - pc: the ProviderConfig whose secret references need to be enriched
-// - mg: the managed resource used to determine the namespace
-func enrichLocalSecretRefs(pc *v1alpha1.ProviderConfig, mg resource.Managed) {
-	// If the ProviderConfig is nil, do nothing
-	if pc == nil {
-		return
-	}
-
-	// If there is a secret reference in the credentials, set its namespace
-	// to the namespace of the managed resource
-	if pc.Spec.Credentials.SecretRef != nil {
-		pc.Spec.Credentials.SecretRef.Namespace = mg.GetNamespace()
-	}
-}
-
 // ResolveProviderConfig resolves the ProviderConfig for a given managed resource.
 //
 // This function handles different types of managed resources and delegates
@@ -217,94 +193,59 @@ func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resou
 	switch managed := mg.(type) {
 	case resource.ModernManaged:
 		// If the resource is a ModernManaged, delegate to resolveProviderConfigModern
-		return resolveProviderConfigModern(ctx, crClient, managed)
+		return nil, errors.New("resource is not LegacyManaged but ModernManaged")
 	case resource.LegacyManaged:
 		// LegacyManaged resources are not supported for this resolution
-		return nil, errors.New("resource is not ModernManaged: LegacyManaged")
+		return resolveProviderConfigLegacy(ctx, crClient, managed)
 	case resource.Managed:
 		// Base Managed resources without ModernManaged interface are also unsupported
-		return nil, errors.New("resource is not ModernManaged: Managed")
+		return nil, errors.New("resource is not LegacyManaged but Managed")
 	default:
 		// Any other type is invalid
 		return nil, errors.New("resource is not a managed type")
 	}
 }
 
-// resolveProviderConfigModern resolves and returns the ProviderConfig for a given managed resource.
-//
-// Parameters:
-// - ctx: the context for request lifetime and cancellation
-// - kube: a Kubernetes client for interacting with K8s resources
-// - mg: the managed resource whose ProviderConfig is being resolved
-//
-// Returns:
-// - *v1alpha1.ProviderConfig: the resolved and enriched ProviderConfig
-// - error: any error that occurred during resolution
-func resolveProviderConfigModern(ctx context.Context, kube client.Client, mg resource.ModernManaged) (*v1alpha1.ProviderConfig, error) {
-	logger := log.FromContext(ctx)
+func legacyToModernProviderConfigSpec(pc *v1alpha1.ProviderConfig) (*v1alpha1.ProviderConfig, error) {
+	// TODO(erhan): this is hacky and potentially lossy, generate or manually implement
+	if pc == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(pc)
+	if err != nil {
+		return nil, err
+	}
 
-	// Retrieve the ProviderConfig reference from the managed resource
+	var mSpec v1alpha1.ProviderConfig
+	err = json.Unmarshal(data, &mSpec)
+	mSpec.Kind = v1alpha1.ProviderConfigKind
+	mSpec.APIVersion = v1alpha1.SchemeGroupVersion.String()
+	mSpec.ObjectMeta = metav1.ObjectMeta{
+		Name:        pc.GetName(),
+		Labels:      pc.GetLabels(),
+		Annotations: pc.GetAnnotations(),
+		Generation:  pc.GetGeneration(),
+		UID:         pc.GetUID(),
+	}
+	return &mSpec, err
+}
+
+func resolveProviderConfigLegacy(ctx context.Context, client client.Client, mg resource.LegacyManaged) (*v1alpha1.ProviderConfig, error) {
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
 		return nil, errors.New("no providerConfigRef provided")
 	}
-
-	// Construct the GroupVersionKind for the referenced ProviderConfig
-	pcGVK := v1alpha1.SchemeGroupVersion.WithKind(configRef.Kind)
-
-	// Create a new runtime object for the ProviderConfig kind
-	pcRuntimeObj, err := kube.Scheme().New(pcGVK)
-	if err != nil {
-		return nil, fmt.Errorf("referenced provider config kind %q is invalid for %s/%s: %w", configRef.Kind, mg.GetNamespace(), mg.GetName(), err)
+	pc := &v1alpha1.ProviderConfig{}
+	if err := client.Get(ctx, types.NamespacedName{Name: configRef.Name}, pc); err != nil {
+		return nil, fmt.Errorf("%s :%w", "cannot get ProviderConfig", err)
 	}
 
-	// Assert that the runtime object implements the ProviderConfig interface
-	pcObj, ok := pcRuntimeObj.(resource.ProviderConfig)
-	if !ok {
-		return nil, fmt.Errorf("referenced provider config kind %q is not a provider config type %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
-	}
-
-	// Fetch the actual ProviderConfig from the cluster.
-	// Namespace is ignored if the ProviderConfig is cluster-scoped
-	if err := kube.Get(ctx, types.NamespacedName{Name: configRef.Name, Namespace: mg.GetNamespace()}, pcObj); err != nil {
-		return nil, fmt.Errorf("%s: %w", "cannot get referenced ProviderConfig", err)
-	}
-
-	var effectivePC *v1alpha1.ProviderConfig
-	switch pc := pcObj.(type) {
-	case *v1alpha1.ProviderConfig:
-		// Log and enrich any local secret references in the ProviderConfig
-		logger.Info("Enriching local secret refs", "providerConfig", pc.GetName())
-		enrichLocalSecretRefs(pc, mg)
-
-		// Construct a copy of the ProviderConfig with TypeMeta and ObjectMeta
-		effectivePC = &v1alpha1.ProviderConfig{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: v1alpha1.SchemeGroupVersion.String(),
-				Kind:       v1alpha1.ProviderConfigKind,
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        pc.GetName(),
-				Labels:      pc.GetLabels(),
-				Annotations: pc.GetAnnotations(),
-				Generation:  pc.GetGeneration(),
-				UID:         pc.GetUID(),
-			},
-			Spec: pc.Spec,
-		}
-	default:
-		return nil, errors.New("unknown provider config type")
-	}
-
-	// Track usage of this ProviderConfig for the managed resource
-	t := resource.NewProviderConfigUsageTracker(kube, &v1alpha1.ProviderConfigUsage{})
+	t := resource.NewLegacyProviderConfigUsageTracker(client, &v1alpha1.ProviderConfigUsage{})
 	if err := t.Track(ctx, mg); err != nil {
-		logger.Error(err, "Failed to track ProviderConfig usage")
-		return nil, fmt.Errorf("%s: %w", "cannot track ProviderConfig usage", err)
+		return nil, fmt.Errorf("%s :%w", "cannot track ProviderConfig usage", err)
 	}
 
-	// Return the enriched ProviderConfig
-	return effectivePC, nil
+	return legacyToModernProviderConfigSpec(pc)
 }
 
 // Connect creates and returns an OSB (Open Service Broker) client, the Kubernetes client,

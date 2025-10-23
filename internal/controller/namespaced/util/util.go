@@ -19,7 +19,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 const (
@@ -241,8 +240,6 @@ func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resou
 // - *v1alpha1.ProviderConfig: the resolved and enriched ProviderConfig
 // - error: any error that occurred during resolution
 func resolveProviderConfigModern(ctx context.Context, kube client.Client, mg resource.ModernManaged) (*v1alpha1.ProviderConfig, error) {
-	logger := log.FromContext(ctx)
-
 	// Retrieve the ProviderConfig reference from the managed resource
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
@@ -273,8 +270,6 @@ func resolveProviderConfigModern(ctx context.Context, kube client.Client, mg res
 	var effectivePC *v1alpha1.ProviderConfig
 	switch pc := pcObj.(type) {
 	case *v1alpha1.ProviderConfig:
-		// Log and enrich any local secret references in the ProviderConfig
-		logger.Info("Enriching local secret refs", "providerConfig", pc.GetName())
 		enrichLocalSecretRefs(pc, mg)
 
 		// Construct a copy of the ProviderConfig with TypeMeta and ObjectMeta
@@ -299,7 +294,6 @@ func resolveProviderConfigModern(ctx context.Context, kube client.Client, mg res
 	// Track usage of this ProviderConfig for the managed resource
 	t := resource.NewProviderConfigUsageTracker(kube, &v1alpha1.ProviderConfigUsage{})
 	if err := t.Track(ctx, mg); err != nil {
-		logger.Error(err, "Failed to track ProviderConfig usage")
 		return nil, fmt.Errorf("%s: %w", "cannot track ProviderConfig usage", err)
 	}
 

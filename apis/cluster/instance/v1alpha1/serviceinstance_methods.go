@@ -306,3 +306,9 @@ func (mg *ServiceInstance) GetSpecForProvider() common.InstanceData {
 func (mg *ServiceInstance) GetSpecForProviderPtr() *common.InstanceData {
 	return &mg.Spec.ForProvider
 }
+
+// HasNotInstanceID returns true if the ServiceInstance does not have an InstanceID set.
+// This is typically used to determine whether the instance has been provisioned yet.
+func (mg *ServiceInstance) HasNotInstanceID() bool {
+	return mg.Spec.ForProvider.InstanceId == ""
+}
