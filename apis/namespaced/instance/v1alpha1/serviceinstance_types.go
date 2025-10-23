@@ -58,7 +58,7 @@ type ServiceInstanceObservation struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:storageversion
 
-// ServiceInstance est la ressource managée OSB
+// ServiceInstance is the managed OSB resource
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
 // +kubebuilder:printcolumn:name="EXTERNAL-NAME",type="string",JSONPath=".metadata.annotations.crossplane\\.io/external-name"
@@ -74,7 +74,7 @@ type ServiceInstance struct {
 
 // +kubebuilder:object:root=true
 
-// ServiceInstanceList contient une liste de ServiceInstance
+// ServiceInstanceList contains a list of ServiceInstances
 type ServiceInstanceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

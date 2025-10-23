@@ -24,7 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// clusterName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+// NamespaceName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
 // And it makes `make generate` fail
 type NamespacedName struct {
 	Name      string `json:"name"`
