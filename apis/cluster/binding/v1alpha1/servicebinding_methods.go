@@ -243,7 +243,6 @@ func (mg *ServiceBinding) TriggerRotation(osb osb.Client, data BindingData, oid 
 }
 
 // HasInstanceRef returns true if the ServiceBindingParameters has an associated InstanceRef.
-// This indicates whether the binding is linked to a ServiceInstance.
 func (spec *ServiceBindingParameters) HasInstanceRef() bool {
 	return spec.InstanceRef != nil
 }
@@ -283,7 +282,6 @@ func (spec *ServiceBindingParameters) HasInstanceData() bool {
 }
 
 // HasApplicationRef returns true if the ServiceBindingParameters has an associated ApplicationRef.
-// This indicates whether the binding is linked to a ServiceInstance.
 func (spec *ServiceBindingParameters) HasApplicationRef() bool {
 	return spec.ApplicationRef != nil
 }
