@@ -6,6 +6,10 @@ PROJECT_REPO := github.com/orange-cloudfoundry/$(PROJECT_NAME)
 PLATFORMS ?= linux_amd64 linux_arm64
 -include build/makelib/common.mk
 
+# kind-related versions
+KIND_VERSION ?= v0.11.1
+KIND_NODE_IMAGE_TAG ?= v1.19.11
+
 # ====================================================================================
 # Setup Output
 
@@ -56,7 +60,7 @@ fallthrough: submodules
 e2e.run: test-integration
 
 # Run integration tests.
-test-integration: $(KIND) $(KUBECTL) $(UP) $(HELM3)
+test-integration: $(KIND) $(KUBECTL) $(UP) $(HELM)
 	@$(INFO) running integration tests using kind $(KIND_VERSION)
 	@KIND_NODE_IMAGE_TAG=${KIND_NODE_IMAGE_TAG} $(ROOT_DIR)/cluster/local/integration_tests.sh || $(FAIL)
 	@$(OK) integration tests passed
