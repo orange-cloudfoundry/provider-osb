@@ -11,7 +11,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// NewApplicationDataFromRef returns the ApplicationData associated with a ServiceBindingParameters.
+// NewApplicationDataFromRef returns the ApplicationData associated with a ServiceBinding or ServiceInstance.
 // It first checks if an ApplicationRef is set and retrieves the referenced Application from the Kubernetes API.
 // If the reference does not exist, it returns an error. If no reference is set but ApplicationData exists
 // directly in the binding parameters, it returns that data instead.
