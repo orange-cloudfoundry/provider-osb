@@ -76,7 +76,7 @@ spec:
                 properties:
                   application:
                     description: |-
-                      clusterName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                      NamespaceName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
                       And it makes `make generate` fail
                     properties:
                       name:
@@ -161,7 +161,7 @@ spec:
                     type: object
                   instance:
                     description: |-
-                      clusterName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                      NamespaceName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
                       And it makes `make generate` fail
                     properties:
                       name:
@@ -177,7 +177,7 @@ spec:
                     properties:
                       application:
                         description: |-
-                          clusterName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
+                          NamespaceName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
                           And it makes `make generate` fail
                         properties:
                           name:
@@ -265,6 +265,9 @@ spec:
                       organizationGuid:
                         type: string
                       parameters:
+                        description: |-
+                          SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+                          It is stored as a string but can be converted back to a Go map.
                         type: string
                       planId:
                         type: string
@@ -280,6 +283,9 @@ spec:
                     - spaceGuid
                     type: object
                   parameters:
+                    description: |-
+                      SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+                      It is stored as a string but can be converted back to a Go map.
                     type: string
                   route:
                     type: string
@@ -379,6 +385,9 @@ spec:
                   a ServiceBinding.
                 properties:
                   endpoints:
+                    description: |-
+                      SerializableEndpoints represents a JSON-encoded slice of osb.Endpoint.
+                      It is stored as a string but can be converted back to a slice of Endpoints.
                     type: string
                   last_operation_description:
                     type: string
@@ -402,12 +411,18 @@ spec:
                         type: string
                     type: object
                   parameters:
+                    description: |-
+                      SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+                      It is stored as a string but can be converted back to a Go map.
                     type: string
                   route_service_url:
                     type: string
                   syslog_drain_url:
                     type: string
                   volume_mounts:
+                    description: |-
+                      SerializableVolumeMounts represents a JSON-encoded slice of osb.VolumeMount.
+                      It is stored as a string but can be converted back to a slice of VolumeMounts.
                     type: string
                 type: object
               conditions:

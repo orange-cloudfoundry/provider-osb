@@ -47,12 +47,14 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 	opts := []managed.ReconcilerOption{
 		managed.WithExternalConnecter(&connector{
 			kube:         mgr.GetClient(),
+			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
 			newOsbClient: util.NewOsbClient,
 		}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 		managed.WithManagementPolicies(),
+		managed.WithMetricRecorder(o.MetricOptions.MRMetrics),
 	}
 
 	if o.Features.Enabled(feature.EnableAlphaChangeLogs) {
@@ -86,7 +88,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // is called.
 type connector struct {
 	kube                     client.Client
-	newOsbClient             func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
+	usage                    util.ModernTracker
+	newOsbClient             func(config resource.ProviderConfig, creds []byte) (osb.Client, error)
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
 
@@ -96,16 +99,46 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	osb, kube, originatingIdentity, err := util.Connect(ctx, c.kube, c.newOsbClient, mg, c.originatingIdentityValue)
+	obj, ok := mg.(*v1alpha1.Application)
+	if !ok {
+		return nil, errors.New("managed resource is not an Application custom resource")
+	}
+
+	if err := c.usage.Track(ctx, mg.(resource.ModernManaged)); err != nil {
+		return nil, fmt.Errorf("%s: %w", "cannot track ProviderConfig usage", err)
+	}
+
+	pc, pcSpec, err := util.ResolveProviderConfig(ctx, c.kube, obj)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", "cannot connect", err)
+		return nil, err
+	}
+
+	// Extract credentials from the ProviderConfig
+	creds, err := resource.CommonCredentialExtractor(ctx, pcSpec.Credentials.Source, c.kube, pcSpec.Credentials.CommonCredentialSelectors)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", "cannot get credentials", err)
+	}
+
+	// Create a new OSB client using the resolved ProviderConfig and extracted credentials
+	osbClient, err := util.NewOsbClient(pc, creds)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", "cannot create new osb client", err)
+	}
+
+	// Add extra data to the originating identity from the ProviderConfig
+	c.originatingIdentityValue.Extra = &pcSpec.OriginatingIdentityExtraData
+
+	// Create the originating identity object
+	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", "cannot make originating identity from value", err)
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
 	return &external{
-		osb:                 osb,
-		kube:                kube,
-		originatingIdentity: *originatingIdentity,
+		kube:                c.kube,
+		osb:                 osbClient,
+		originatingIdentity: *oid,
 	}, nil
 }
 

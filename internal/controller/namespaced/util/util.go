@@ -17,7 +17,6 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -81,25 +80,39 @@ func decodeB64StringToBasicAuthConfig(s string) (osb.BasicAuthConfig, error) {
 	}, nil
 }
 
+type OsbConfig interface {
+	GetBrokerURL() string
+	GetOSBVersion() string
+	GetTimeout() int
+}
+
 // TODO: take into account controller.options:
 // - to enable OSB client alpha features
-func NewOsbClient(conf v1alpha1.ProviderConfig, creds []byte) (osb.Client, error) {
-	config := osb.DefaultClientConfiguration()
-	config.URL = conf.Spec.BrokerURL
-	apiVersions := osb.APIVersions()
-	config.APIVersion = apiVersions[conf.Spec.OSBVersion]
-	config.TimeoutSeconds = conf.Spec.Timeout
+func NewOsbClient(pc resource.ProviderConfig, creds []byte) (osb.Client, error) {
+	var conf OsbConfig
 
+	switch c := pc.(type) {
+	case *v1alpha1.ProviderConfig:
+		conf = c
+	case *v1alpha1.ClusterProviderConfig:
+		conf = c
+	default:
+		return nil, fmt.Errorf("unsupported provider config type: %T", pc)
+	}
+
+	config := osb.DefaultClientConfiguration()
+	config.URL = conf.GetBrokerURL()
+	apiVersions := osb.APIVersions()
+	config.APIVersion = apiVersions[conf.GetOSBVersion()]
+	config.TimeoutSeconds = conf.GetTimeout()
+
+	// auth
 	if len(creds) > 0 {
-		credsString := string(creds)
-		basicAuth, err := decodeB64StringToBasicAuthConfig(credsString)
+		basicAuth, err := decodeB64StringToBasicAuthConfig(string(creds))
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", "can't decode string into basic auth struct", err)
+			return nil, fmt.Errorf("can't decode string into basic auth struct: %w", err)
 		}
-		authConfig := osb.AuthConfig{
-			BasicAuthConfig: &basicAuth,
-		}
-		config.AuthConfig = &authConfig
+		config.AuthConfig = &osb.AuthConfig{BasicAuthConfig: &basicAuth}
 	}
 
 	return osb.NewClient(config)
@@ -179,181 +192,6 @@ type NoOpOsbClient fake.FakeClient
 // func (c *NoOpOsbClient) GetCatalog() (*osb.CatalogResponse, error) {
 // 	return nil, nil
 // }
-
-// enrichLocalSecretRefs updates the namespace of any local secret references
-// in the ProviderConfig to match the namespace of the managed resource.
-//
-// Parameters:
-// - pc: the ProviderConfig whose secret references need to be enriched
-// - mg: the managed resource used to determine the namespace
-func enrichLocalSecretRefs(pc *v1alpha1.ProviderConfig, mg resource.Managed) {
-	// If the ProviderConfig is nil, do nothing
-	if pc == nil {
-		return
-	}
-
-	// If there is a secret reference in the credentials, set its namespace
-	// to the namespace of the managed resource
-	if pc.Spec.Credentials.SecretRef != nil {
-		pc.Spec.Credentials.SecretRef.Namespace = mg.GetNamespace()
-	}
-}
-
-// ResolveProviderConfig resolves the ProviderConfig for a given managed resource.
-//
-// This function handles different types of managed resources and delegates
-// resolution to the appropriate implementation.
-//
-// Parameters:
-// - ctx: the context for request lifetime and cancellation
-// - crClient: a Kubernetes client used to fetch resources
-// - mg: the managed resource whose ProviderConfig is being resolved
-//
-// Returns:
-// - *v1alpha1.ProviderConfig: the resolved ProviderConfig if successful
-// - error: any error that occurs during resolution
-func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resource.Managed) (*v1alpha1.ProviderConfig, error) {
-	switch managed := mg.(type) {
-	case resource.ModernManaged:
-		// If the resource is a ModernManaged, delegate to resolveProviderConfigModern
-		return resolveProviderConfigModern(ctx, crClient, managed)
-	case resource.LegacyManaged:
-		// LegacyManaged resources are not supported for this resolution
-		return nil, errors.New("resource is not ModernManaged: LegacyManaged")
-	case resource.Managed:
-		// Base Managed resources without ModernManaged interface are also unsupported
-		return nil, errors.New("resource is not ModernManaged: Managed")
-	default:
-		// Any other type is invalid
-		return nil, errors.New("resource is not a managed type")
-	}
-}
-
-// resolveProviderConfigModern resolves and returns the ProviderConfig for a given managed resource.
-//
-// Parameters:
-// - ctx: the context for request lifetime and cancellation
-// - kube: a Kubernetes client for interacting with K8s resources
-// - mg: the managed resource whose ProviderConfig is being resolved
-//
-// Returns:
-// - *v1alpha1.ProviderConfig: the resolved and enriched ProviderConfig
-// - error: any error that occurred during resolution
-func resolveProviderConfigModern(ctx context.Context, kube client.Client, mg resource.ModernManaged) (*v1alpha1.ProviderConfig, error) {
-	// Retrieve the ProviderConfig reference from the managed resource
-	configRef := mg.GetProviderConfigReference()
-	if configRef == nil {
-		return nil, errors.New("no providerConfigRef provided")
-	}
-
-	// Construct the GroupVersionKind for the referenced ProviderConfig
-	pcGVK := v1alpha1.SchemeGroupVersion.WithKind(configRef.Kind)
-
-	// Create a new runtime object for the ProviderConfig kind
-	pcRuntimeObj, err := kube.Scheme().New(pcGVK)
-	if err != nil {
-		return nil, fmt.Errorf("referenced provider config kind %q is invalid for %s/%s: %w", configRef.Kind, mg.GetNamespace(), mg.GetName(), err)
-	}
-
-	// Assert that the runtime object implements the ProviderConfig interface
-	pcObj, ok := pcRuntimeObj.(resource.ProviderConfig)
-	if !ok {
-		return nil, fmt.Errorf("referenced provider config kind %q is not a provider config type %s/%s", configRef.Kind, mg.GetNamespace(), mg.GetName())
-	}
-
-	// Fetch the actual ProviderConfig from the cluster.
-	// Namespace is ignored if the ProviderConfig is cluster-scoped
-	if err := kube.Get(ctx, types.NamespacedName{Name: configRef.Name, Namespace: mg.GetNamespace()}, pcObj); err != nil {
-		return nil, fmt.Errorf("%s: %w", "cannot get referenced ProviderConfig", err)
-	}
-
-	var effectivePC *v1alpha1.ProviderConfig
-	switch pc := pcObj.(type) {
-	case *v1alpha1.ProviderConfig:
-		enrichLocalSecretRefs(pc, mg)
-
-		// Construct a copy of the ProviderConfig with TypeMeta and ObjectMeta
-		effectivePC = &v1alpha1.ProviderConfig{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: v1alpha1.SchemeGroupVersion.String(),
-				Kind:       v1alpha1.ProviderConfigKind,
-			},
-			ObjectMeta: metav1.ObjectMeta{
-				Name:        pc.GetName(),
-				Labels:      pc.GetLabels(),
-				Annotations: pc.GetAnnotations(),
-				Generation:  pc.GetGeneration(),
-				UID:         pc.GetUID(),
-			},
-			Spec: pc.Spec,
-		}
-	default:
-		return nil, errors.New("unknown provider config type")
-	}
-
-	// Track usage of this ProviderConfig for the managed resource
-	t := resource.NewProviderConfigUsageTracker(kube, &v1alpha1.ProviderConfigUsage{})
-	if err := t.Track(ctx, mg); err != nil {
-		return nil, fmt.Errorf("%s: %w", "cannot track ProviderConfig usage", err)
-	}
-
-	// Return the enriched ProviderConfig
-	return effectivePC, nil
-}
-
-// Connect creates and returns an OSB (Open Service Broker) client, the Kubernetes client,
-// and the originating identity for a given managed resource.
-//
-// Parameters:
-// - ctx: the context for managing request lifetime and cancellation
-// - kubeClient: a Kubernetes client for interacting with K8s resources
-// - newOsbClient: a function that takes a ProviderConfig and credentials and returns an OSB client
-// - mg: the managed resource to operate on
-// - oidValue: the initial originating identity value used to create the full identity
-//
-// Returns:
-// - osb.Client: the instantiated OSB client
-// - client.Client: the same Kubernetes client passed in
-// - *osb.OriginatingIdentity: the originating identity object
-// - error: any error that occurred during the process
-func Connect(
-	ctx context.Context,
-	kubeClient client.Client,
-	newOsbClient func(v1alpha1.ProviderConfig, []byte) (osb.Client, error),
-	mg resource.Managed,
-	oidValue common.KubernetesOSBOriginatingIdentityValue,
-) (osb.Client, client.Client, *osb.OriginatingIdentity, error) {
-
-	// Resolve the ProviderConfig associated with the managed resource
-	pc, err := ResolveProviderConfig(ctx, kubeClient, mg)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot get ProviderConfig", err)
-	}
-
-	// Extract credentials from the ProviderConfig
-	creds, err := resource.CommonCredentialExtractor(ctx, pc.Spec.Credentials.Source, kubeClient, pc.Spec.Credentials.CommonCredentialSelectors)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot get credentials", err)
-	}
-
-	// Create a new OSB client using the resolved ProviderConfig and extracted credentials
-	osbclient, err := newOsbClient(*pc, creds)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot create new osb client", err)
-	}
-
-	// Add extra data to the originating identity from the ProviderConfig
-	oidValue.Extra = &pc.Spec.OriginatingIdentityExtraData
-
-	// Create the originating identity object
-	oid, err := MakeOriginatingIdentityFromValue(oidValue)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot make originating identity from value", err)
-	}
-
-	// Return the OSB client, the Kubernetes client, and the originating identity
-	return osbclient, kubeClient, oid, nil
-}
 
 // Predefined error for failed GET operations
 var ErrCannotGetResource = errors.New("cannot get latest version of resource")
@@ -460,4 +298,84 @@ func ParseISO8601Time(value, field string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("error parsing %s time: %w", field, err)
 	}
 	return t, nil
+}
+
+// ProviderReferencer is an interface that represents a Kubernetes object
+// which has a reference to a ProviderConfig. Any object implementing
+// this interface must also implement client.Object and provide
+// GetProviderConfigReference method.
+type ProviderReferencer interface {
+	client.Object
+	GetProviderConfigReference() *xpv1.ProviderConfigReference
+}
+
+// ResolveProviderConfig resolves the provider configuration for a given
+// Kubernetes object that implements ProviderReferencer. It fetches the
+// actual ProviderConfig or ClusterProviderConfig from the Kubernetes API
+// based on the reference kind.
+//
+// Parameters:
+// - ctx: The context for API calls.
+// - kube: The Kubernetes client used to fetch resources.
+// - obj: The object that contains a reference to a provider config.
+//
+// Returns:
+// - resource.ProviderConfig: The resolved provider config object.
+// - *v1alpha1.ProviderConfigSpec: The specification part of the provider config.
+// - error: Any error encountered during resolution.
+func ResolveProviderConfig(
+	ctx context.Context,
+	kube client.Client,
+	obj ProviderReferencer,
+) (resource.ProviderConfig, *v1alpha1.ProviderConfigSpec, error) {
+
+	ref := obj.GetProviderConfigReference()
+	if ref == nil {
+		return nil, nil, fmt.Errorf("object %s/%s has no provider config reference",
+			obj.GetNamespace(), obj.GetName())
+	}
+
+	var pc resource.ProviderConfig
+	var pcSpec *v1alpha1.ProviderConfigSpec
+
+	switch ref.Kind {
+	case v1alpha1.ProviderConfigKind:
+		npc := &v1alpha1.ProviderConfig{}
+		if err := kube.Get(ctx, client.ObjectKey{
+			Name:      ref.Name,
+			Namespace: obj.GetNamespace(),
+		}, npc); err != nil {
+			return nil, nil, fmt.Errorf("cannot get provider config: %w", err)
+		}
+		pcSpec = &npc.Spec
+		pc = npc
+
+	case v1alpha1.ClusterProviderConfigKind:
+		cpc := &v1alpha1.ClusterProviderConfig{}
+		if err := kube.Get(ctx, client.ObjectKey{Name: ref.Name}, cpc); err != nil {
+			return nil, nil, fmt.Errorf("cannot get cluster provider config: %w", err)
+		}
+		pcSpec = &cpc.Spec
+		pc = cpc
+
+	default:
+		return nil, nil, fmt.Errorf("unknown provider config kind: %q", ref.Kind)
+	}
+
+	return pc, pcSpec, nil
+}
+
+// TODO: these should better go into crossplane-runtime
+// A modernTracker tracks modern managed resources.
+type ModernTracker interface {
+	// Track the supplied modern managed resource.
+	Track(ctx context.Context, mg resource.ModernManaged) error
+}
+
+// A modernTrackerFn is a function that tracks managed resources.
+type ModernTrackerFn func(ctx context.Context, mg resource.ModernManaged) error
+
+// Track the supplied managed resource.
+func (fn ModernTrackerFn) Track(ctx context.Context, mg resource.ModernManaged) error {
+	return fn(ctx, mg)
 }

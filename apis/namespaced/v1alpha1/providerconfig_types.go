@@ -86,6 +86,31 @@ type ProviderConfigList struct {
 	Items           []ProviderConfig `json:"items"`
 }
 
+// +kubebuilder:object:root=true
+
+// A ClusterProviderConfig configures a Kubernetes provider.
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="SECRET-NAME",type="string",JSONPath=".spec.credentials.secretRef.name",priority=1
+// +kubebuilder:resource:scope=Cluster,categories={crossplane,provider,kubernetes}
+type ClusterProviderConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec         ProviderConfigSpec   `json:"spec"`
+	Status       ProviderConfigStatus `json:"status,omitempty"`
+	DisableAsync bool                 `json:"disable_async"`
+}
+
+// +kubebuilder:object:root=true
+
+// ClusterProviderConfigList contains a list of ClusterProviderConfig.
+type ClusterProviderConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ClusterProviderConfig `json:"items"`
+}
+
 // ProviderConfig type metadata.
 var (
 	ProviderConfigKind             = reflect.TypeOf(ProviderConfig{}).Name()
@@ -94,6 +119,15 @@ var (
 	ProviderConfigGroupVersionKind = SchemeGroupVersion.WithKind(ProviderConfigKind)
 )
 
+// ClusterProviderConfig type metadata.
+var (
+	ClusterProviderConfigKind             = reflect.TypeOf(ClusterProviderConfig{}).Name()
+	ClusterProviderConfigGroupKind        = schema.GroupKind{Group: Group, Kind: ClusterProviderConfigKind}.String()
+	ClusterProviderConfigKindAPIVersion   = ClusterProviderConfigKind + "." + SchemeGroupVersion.String()
+	ClusterProviderConfigGroupVersionKind = SchemeGroupVersion.WithKind(ClusterProviderConfigKind)
+)
+
 func init() {
 	SchemeBuilder.Register(&ProviderConfig{}, &ProviderConfigList{})
+	SchemeBuilder.Register(&ClusterProviderConfig{}, &ClusterProviderConfigList{})
 }
