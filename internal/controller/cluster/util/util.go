@@ -352,6 +352,8 @@ func UpdateStatusFromLastOp[T LastOperationStatusSetter](obj T, resp *osb.LastOp
 	switch resp.State {
 	case osb.StateSucceeded:
 		obj.SetConditions(xpv1.Available())
+	case osb.StateInProgress:
+		return
 	case osb.StateFailed:
 		obj.SetConditions(xpv1.Unavailable())
 	}

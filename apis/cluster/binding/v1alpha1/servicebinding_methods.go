@@ -404,7 +404,7 @@ func (mg *ServiceBinding) ConvertSpecsData() (map[string]any, map[string]any, er
 	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
 	var requestParams map[string]any
 	if err = json.Unmarshal([]byte(mg.Spec.ForProvider.Parameters), &requestParams); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing paramaters to bytes from ServiceBinding", err)
+		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing parameters to bytes from ServiceBinding", err)
 	}
 	return requestContext, requestParams, nil
 }
