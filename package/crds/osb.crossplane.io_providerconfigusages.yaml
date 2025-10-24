@@ -11,7 +11,7 @@ spec:
     categories:
     - crossplane
     - providerconfig
-    - aws
+    - osb
     kind: ProviderConfigUsage
     listKind: ProviderConfigUsageList
     plural: providerconfigusages
