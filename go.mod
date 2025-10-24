@@ -5,7 +5,6 @@ go 1.24.0
 toolchain go1.24.4
 
 require (
-	github.com/crossplane/crossplane-runtime v1.20.0
 	github.com/crossplane/crossplane-runtime/v2 v2.0.0
 	github.com/crossplane/crossplane-tools v0.0.0-20250731192036-00d407d8b7ec
 	github.com/golang/mock v1.6.0
