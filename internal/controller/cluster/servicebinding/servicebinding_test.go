@@ -662,7 +662,7 @@ func TestDelete(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalDelete{},
-				err: errors.New("managed resource is not a ServiceBinding custom resource"),
+				err: errors.New("managed resource is not a ServiceBinding"),
 			},
 		},
 		"SuccessDelete": {
