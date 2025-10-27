@@ -60,7 +60,7 @@ type notServiceBinding struct {
 }
 
 var (
-	panicError       = errors.New("unknown error, panic error")
+	errPanic         = errors.New("unknown error, panic error")
 	basicCredentials = map[string][]byte{
 		"user":     []byte("basic-user"),
 		"password": []byte("basic-password"),
@@ -285,13 +285,13 @@ func TestObserve(t *testing.T) {
 			fields: fields{
 				client: &osbfake.FakeClient{
 					GetBindingReaction: &osbfake.GetBindingReaction{
-						Error: panicError,
+						Error: errPanic,
 					},
 				},
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: fmt.Errorf("%s: %w", "OSB GetBinding request failed", panicError),
+				err: fmt.Errorf("%s: %w", "OSB GetBinding request failed", errPanic),
 			},
 		},
 		"ResourceUpToDateCredentialsChanged": {
@@ -504,13 +504,13 @@ func TestCreate(t *testing.T) {
 			fields: fields{
 				client: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
-						Error: panicError,
+						Error: errPanic,
 					},
 				},
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: fmt.Errorf("%s: %w", "OSB Bind request failed", panicError),
+				err: fmt.Errorf("%s: %w", "OSB Bind request failed", errPanic),
 			},
 		},
 		"SuccessCreate": {
@@ -662,7 +662,7 @@ func TestDelete(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalDelete{},
-				err: errors.New("managed resource is not a ServiceBinding"),
+				err: errors.New("managed resource is not a ServiceBinding custom resource"),
 			},
 		},
 		"SuccessDelete": {
