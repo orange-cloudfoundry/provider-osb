@@ -40,6 +40,12 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
 )
 
+var (
+	errNotApplicationCR              = errors.New("managed resource is not a Application custom resource")
+	errCannotRegisterMRStateRecorder = errors.New("cannot register MR state metrics recorder for kind")
+	errCannotConnect                 = errors.New("cannot connect")
+)
+
 // Setup adds a controller that reconciles Application managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ApplicationGroupKind)
@@ -68,7 +74,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1alpha1.ApplicationList{}, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return fmt.Errorf("%s: %w", "cannot register MR state metrics recorder for kind v1alpha1.ApplicationList", err)
+			return fmt.Errorf("%w: %s: %v", errCannotRegisterMRStateRecorder, v1alpha1.ApplicationGroupVersionKind.Kind, err)
 		}
 	}
 
@@ -96,14 +102,14 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	osb, kube, originatingIdentity, err := util.Connect(ctx, c.kube, c.newOsbClient, mg, c.originatingIdentityValue)
+	osbClient, kube, originatingIdentity, err := util.Connect(ctx, c.kube, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", "cannot connect", err)
+		return nil, fmt.Errorf("%v: %w", errCannotConnect, err)
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
 	return &external{
-		osb:                 osb,
+		osb:                 osbClient,
 		kube:                kube,
 		originatingIdentity: *originatingIdentity,
 	}, nil
@@ -122,7 +128,7 @@ type external struct {
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New("managed resource is not a Application custom resource")
+		return managed.ExternalObservation{}, fmt.Errorf("%w: expected *v1alpha1.Application but got %T", errNotApplicationCR, mg)
 	}
 
 	// These fmt statements should be removed in the real implementation.
@@ -148,7 +154,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalCreation{}, errors.New("managed resource is not a Application custom resource")
+		return managed.ExternalCreation{}, fmt.Errorf("%w: expected *v1alpha1.Application but got %T", errNotApplicationCR, mg)
 	}
 
 	fmt.Printf("Creating: %+v", cr)
@@ -163,7 +169,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalUpdate{}, errors.New("managed resource is not a Application custom resource")
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: expected *v1alpha1.Application but got %T", errNotApplicationCR, mg)
 	}
 
 	fmt.Printf("Updating: %+v", cr)
@@ -178,7 +184,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	cr, ok := mg.(*v1alpha1.Application)
 	if !ok {
-		return managed.ExternalDelete{}, errors.New("managed resource is not a Application custom resource")
+		return managed.ExternalDelete{}, fmt.Errorf("%w: expected *v1alpha1.Application but got %T", errNotApplicationCR, mg)
 	}
 
 	fmt.Printf("Deleting: %+v", cr)

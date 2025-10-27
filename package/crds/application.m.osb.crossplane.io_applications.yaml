@@ -141,16 +141,16 @@ spec:
             description: A ApplicationStatus represents the observed state of a Application.
             properties:
               atProvider:
-                description: ApplicationObservation are the observable fields of a
+                description: ApplicationObservation are the observable fields of an
                   Application.
                 properties:
-                  Name:
-                    type: string
                   brokerURL:
                     type: string
+                  name:
+                    type: string
                 required:
-                - Name
                 - brokerURL
+                - name
                 type: object
               conditions:
                 description: Conditions of the resource.

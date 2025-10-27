@@ -267,6 +267,7 @@ spec:
                       parameters:
                         description: |-
                           SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+                          Stored as a string because slices and maps are not directly serializable in Go
                           It is stored as a string but can be converted back to a Go map.
                         type: string
                       planId:
@@ -285,6 +286,7 @@ spec:
                   parameters:
                     description: |-
                       SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+                      Stored as a string because slices and maps are not directly serializable in Go
                       It is stored as a string but can be converted back to a Go map.
                     type: string
                   route:
@@ -386,19 +388,20 @@ spec:
                 properties:
                   endpoints:
                     description: |-
-                      SerializableEndpoints represents a JSON-encoded slice of osb.Endpoint.
+                      SerializableEndpoints represents a JSON-encoded slice of endpoints.
+                      Stored as a string because slices are not directly serializable in Go.
                       It is stored as a string but can be converted back to a slice of Endpoints.
                     type: string
-                  last_operation_description:
+                  lastOperationDescription:
                     type: string
-                  last_operation_key:
+                  lastOperationKey:
                     description: |-
                       OperationKey is an extra identifier from the broker in order to provide extra
                       identifiers for asynchronous operations.
                     type: string
-                  last_operation_polled_time:
+                  lastOperationPolledTime:
                     type: string
-                  last_operation_state:
+                  lastOperationState:
                     description: |-
                       LastOperationState is a typedef representing the state of an ongoing
                       operation for an instance.
@@ -413,15 +416,17 @@ spec:
                   parameters:
                     description: |-
                       SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+                      Stored as a string because slices and maps are not directly serializable in Go
                       It is stored as a string but can be converted back to a Go map.
                     type: string
-                  route_service_url:
+                  routeServiceUrl:
                     type: string
-                  syslog_drain_url:
+                  syslogDrainUrl:
                     type: string
-                  volume_mounts:
+                  volumeMounts:
                     description: |-
                       SerializableVolumeMounts represents a JSON-encoded slice of osb.VolumeMount.
+                      Stored as a string because slices are not directly serializable in Go.
                       It is stored as a string but can be converted back to a slice of VolumeMounts.
                     type: string
                 type: object

@@ -66,6 +66,7 @@ type InstanceData struct {
 }
 
 // SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+// Stored as a string because slices and maps are not directly serializable in Go
 // It is stored as a string but can be converted back to a Go map.
 type SerializableParameters string
 
@@ -122,15 +123,15 @@ type KubernetesOSBOriginatingIdentityValue struct {
 	Extra    *KubernetesOSBOriginatingIdentityExtra `json:"extra"`
 }
 
-// ToMap converts the KubernetesOSBContext into a map[string]interface{}.
-func (c *KubernetesOSBContext) ToMap() (map[string]interface{}, error) {
+// ToMap converts the KubernetesOSBContext into a map[string]any.
+func (c *KubernetesOSBContext) ToMap() (map[string]any, error) {
 	// Convert struct - > json
 	b, err := json.Marshal(c)
 	if err != nil {
 		return nil, err
 	}
-	// Convert json -> map[string]interface{}
-	var res map[string]interface{}
+	// Convert json -> map[string]any
+	var res map[string]any
 	err = json.Unmarshal(b, &res)
 	return res, err
 }

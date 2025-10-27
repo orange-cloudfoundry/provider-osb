@@ -27,11 +27,11 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 )
 
-// ApplicationObservation are the observable fields of a Application.
+// ApplicationObservation are the observable fields of an Application.
 // TODO manage observations
 type ApplicationObservation struct {
 	BrokerURL string `json:"brokerURL"`
-	Name      string `json:"Name"`
+	Name      string `json:"name"`
 }
 
 // A ApplicationSpec defines the desired state of a Application.

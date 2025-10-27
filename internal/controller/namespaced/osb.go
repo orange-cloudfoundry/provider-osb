@@ -14,9 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package namespaced
 
 import (
+	"fmt"
+
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
@@ -29,15 +31,18 @@ import (
 // Setup creates all OSB controllers with the supplied logger and adds them to
 // the supplied manager.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
-	for _, setup := range []func(ctrl.Manager, controller.Options) error{
-		config.Setup,
-		application.Setup,
-		servicebinding.Setup,
-		serviceinstance.Setup,
-	} {
+	controllers := map[string]func(ctrl.Manager, controller.Options) error{
+		"config":          config.Setup,
+		"application":     application.Setup,
+		"servicebinding":  servicebinding.Setup,
+		"serviceinstance": serviceinstance.Setup,
+	}
+
+	for name, setup := range controllers {
 		if err := setup(mgr, o); err != nil {
-			return err
+			return fmt.Errorf("failed to set up namespaced controller '%s': %w", name, err)
 		}
 	}
+
 	return nil
 }

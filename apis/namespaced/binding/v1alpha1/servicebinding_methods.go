@@ -15,7 +15,12 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+var (
+	errMarshalParameters   = errors.New("failed to marshal or parse binding parameters from osb response")
+	errMarshalEndpoints    = errors.New("failed to marshal or parse binding endpoints from osb response")
+	errMarshalVolumeMounts = errors.New("failed to marshal or parse binding volume mounts binding from osb response")
 )
 
 // SetConditions sets the Conditions field in the ServiceBinding status.
@@ -127,17 +132,17 @@ func (mg *ServiceBinding) setAtProvider(observation ServiceBindingObservation) e
 func (mg *ServiceBinding) SetResponseDataInStatus(data responseData) error {
 	params, err := json.Marshal(data.Parameters)
 	if err != nil {
-		return errors.New("error while marshalling or parsing parameters from response")
+		return fmt.Errorf("%w: %v", errMarshalParameters, err)
 	}
 
 	endpoints, err := json.Marshal(data.Endpoints)
 	if err != nil {
-		return errors.New("error while marshalling or parsing endpoints from response")
+		return fmt.Errorf("%w: %v", errMarshalEndpoints, err)
 	}
 
 	volumeMounts, err := json.Marshal(data.VolumeMounts)
 	if err != nil {
-		return errors.New("error while marshalling or parsing volume mounts from response")
+		return fmt.Errorf("%w: %v", errMarshalVolumeMounts, err)
 	}
 
 	return mg.setAtProvider(ServiceBindingObservation{
@@ -289,13 +294,6 @@ func (spec *ServiceBindingParameters) HasApplicationRef() bool {
 // and has stored instance-specific information.
 func (spec *ServiceBindingParameters) HasApplicationData() bool {
 	return spec.ApplicationData != nil
-}
-
-// GetObjectKeyFromApplicationRef returns the Kubernetes ObjectKey corresponding
-// to the ApplicationRef in the ServiceBindingParameters. This can be used to
-// fetch the referenced Application from the cluster.
-func (spec *ServiceBindingParameters) GetObjectKeyFromApplicationRef() client.ObjectKey {
-	return spec.ApplicationRef.ToObjectKey()
 }
 
 // GetApplicationData returns the inline ApplicationData stored in the

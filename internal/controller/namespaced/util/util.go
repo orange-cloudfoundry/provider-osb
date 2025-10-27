@@ -27,6 +27,19 @@ const (
 	OriginatingIdentityPlatformName = "kubernetes"
 )
 
+var (
+	errCannotDecodeBasicAuth          = errors.New("cannot decode string into basic auth struct")
+	errCannotGetResource              = errors.New("cannot get latest version of resource")
+	errUnsupportedProviderType        = errors.New("unsupported provider config type")
+	errMarshalCredential              = errors.New("failed to marshal credential from response")
+	errMarshalMapValue                = errors.New("cannot marshal map value")
+	errParseISO8601Time               = errors.New("cannot parse ISO8601 time")
+	errNoProviderConfigReference      = errors.New("object has no provider config reference")
+	errCannotGetProviderConfig        = errors.New("cannot get provider config")
+	errCannotGetClusterProviderConfig = errors.New("cannot get cluster provider config")
+	errUnknownProviderConfigKind      = errors.New("unknown provider config kind")
+)
+
 // TimeNow returns the current time formatted as an ISO 8601 string.
 //
 // The function returns a pointer to the formatted string.
@@ -97,7 +110,7 @@ func NewOsbClient(pc resource.ProviderConfig, creds []byte) (osb.Client, error) 
 	case *v1alpha1.ClusterProviderConfig:
 		conf = c
 	default:
-		return nil, fmt.Errorf("unsupported provider config type: %T", pc)
+		return nil, fmt.Errorf("%w: %v", errUnsupportedProviderType, pc)
 	}
 
 	config := osb.DefaultClientConfiguration()
@@ -110,7 +123,7 @@ func NewOsbClient(pc resource.ProviderConfig, creds []byte) (osb.Client, error) 
 	if len(creds) > 0 {
 		basicAuth, err := decodeB64StringToBasicAuthConfig(string(creds))
 		if err != nil {
-			return nil, fmt.Errorf("can't decode string into basic auth struct: %w", err)
+			return nil, fmt.Errorf("%w: %v", errCannotDecodeBasicAuth, err)
 		}
 		config.AuthConfig = &osb.AuthConfig{BasicAuthConfig: &basicAuth}
 	}
@@ -193,15 +206,12 @@ type NoOpOsbClient fake.FakeClient
 // 	return nil, nil
 // }
 
-// Predefined error for failed GET operations
-var ErrCannotGetResource = errors.New("cannot get latest version of resource")
-
 // GetLatestKubeObject retrieves the latest version of a Kubernetes object.
 // obj should be a pointer to a Kubernetes object (implements client.Object).
 func GetLatestKubeObject[T client.Object](ctx context.Context, kube client.Client, obj T) (T, error) {
-	key := client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}
+	key := client.ObjectKeyFromObject(obj)
 	if err := kube.Get(ctx, key, obj); err != nil {
-		return obj, fmt.Errorf("failed to get latest version of %T: %w", obj, ErrCannotGetResource)
+		return obj, fmt.Errorf("%w: %v", errCannotGetResource, err)
 	}
 	return obj, nil
 }
@@ -268,7 +278,7 @@ func MarshalMapValues(input map[string]any) (map[string][]byte, error) {
 	for k, v := range input {
 		b, err := json.Marshal(v)
 		if err != nil {
-			return nil, fmt.Errorf("cannot marshal key %q: %w", k, err)
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalMapValue, k, err)
 		}
 		output[k] = b
 	}
@@ -284,7 +294,7 @@ func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 	for key, value := range resp.Credentials {
 		data, err := json.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal credential '%s' from response: %w", key, err)
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalCredential, key, err)
 		}
 		creds[key] = data
 	}
@@ -297,7 +307,7 @@ func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 func ParseISO8601Time(value, field string) (time.Time, error) {
 	t, err := time.Parse(Iso8601dateFormat, value)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("error parsing %s time: %w", field, err)
+		return time.Time{}, fmt.Errorf("%w: %s, %v", errParseISO8601Time, field, err)
 	}
 	return t, nil
 }
@@ -333,8 +343,7 @@ func ResolveProviderConfig(
 
 	ref := obj.GetProviderConfigReference()
 	if ref == nil {
-		return nil, nil, fmt.Errorf("object %s/%s has no provider config reference",
-			obj.GetNamespace(), obj.GetName())
+		return nil, nil, fmt.Errorf("%w: %s/%s", errNoProviderConfigReference, obj.GetNamespace(), obj.GetName())
 	}
 
 	var pc resource.ProviderConfig
@@ -347,7 +356,7 @@ func ResolveProviderConfig(
 			Name:      ref.Name,
 			Namespace: obj.GetNamespace(),
 		}, npc); err != nil {
-			return nil, nil, fmt.Errorf("cannot get provider config: %w", err)
+			return nil, nil, fmt.Errorf("%w: %v", errCannotGetProviderConfig, err)
 		}
 		pcSpec = &npc.Spec
 		pc = npc
@@ -355,13 +364,13 @@ func ResolveProviderConfig(
 	case v1alpha1.ClusterProviderConfigKind:
 		cpc := &v1alpha1.ClusterProviderConfig{}
 		if err := kube.Get(ctx, client.ObjectKey{Name: ref.Name}, cpc); err != nil {
-			return nil, nil, fmt.Errorf("cannot get cluster provider config: %w", err)
+			return nil, nil, fmt.Errorf("%w: %v", errCannotGetClusterProviderConfig, err)
 		}
 		pcSpec = &cpc.Spec
 		pc = cpc
 
 	default:
-		return nil, nil, fmt.Errorf("unknown provider config kind: %q", ref.Kind)
+		return nil, nil, fmt.Errorf("%w: %v", errUnknownProviderConfigKind, ref.Kind)
 	}
 
 	return pc, pcSpec, nil

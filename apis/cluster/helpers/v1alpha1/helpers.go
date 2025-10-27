@@ -2,6 +2,7 @@ package v1alpha1
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
@@ -13,9 +14,21 @@ import (
 	instancev1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/cluster/instance/v1alpha1"
 )
 
+var (
+	errAppDataFetchFailed       = errors.New("failed to fetch application data from binding")
+	errInstanceNotFound         = errors.New("referenced service instance not found")
+	errInstanceFetchFailed      = errors.New("failed to retrieve referenced service instance")
+	errAppDataFetchFromInstance = errors.New("failed to fetch application data from instance")
+	errMissingInstanceData      = errors.New("missing instance data: no reference or inlined data provided")
+	errMissingApplicationData   = errors.New("missing application data: no reference or inlined data provided")
+)
+
 // hasActiveBindingsForInstance checks if any of the given ServiceBindings
 // reference the provided ServiceInstance and are not marked for deletion.
 func hasActiveBindingsForInstance(instance *instancev1alpha1.ServiceInstance, bindings []bindingv1alpha1.ServiceBinding) bool {
+	if instance == nil {
+		return false
+	}
 	for _, b := range bindings {
 		if b.HasNoProviderInstanceRef() {
 			continue
@@ -38,15 +51,15 @@ func SetActiveBindingsForInstance(
 	instance.Status.AtProvider.HasActiveBindings = hasActiveBindingsForInstance(instance, bindings)
 }
 
-// NewServiceInstanceFromRef retrieves a ServiceInstance object from Kubernetes
+// ResolveServiceInstance retrieves a ServiceInstance object from Kubernetes
 // based on the InstanceRef provided in the ServiceBindingParameters spec.
 // It returns an error if the referenced ServiceInstance does not exist
 // or if any other Kubernetes client error occurs.
-func NewServiceInstanceFromRef(ctx context.Context, kube client.Client, spec bindingv1alpha1.ServiceBindingParameters) (instancev1alpha1.ServiceInstance, error) {
+func ResolveServiceInstance(ctx context.Context, kube client.Client, spec bindingv1alpha1.ServiceBindingParameters) (instancev1alpha1.ServiceInstance, error) {
 	instance := instancev1alpha1.ServiceInstance{}
 	if err := kube.Get(ctx, spec.InstanceRef.ToObjectKey(), &instance); err != nil {
 		if kerrors.IsNotFound(err) {
-			return instancev1alpha1.ServiceInstance{}, fmt.Errorf("binding references a service instance which does not exist")
+			return instancev1alpha1.ServiceInstance{}, err
 		}
 		return instancev1alpha1.ServiceInstance{}, err
 	}
@@ -67,31 +80,33 @@ func GetDataFromServiceBinding(
 	spec := binding.Spec.ForProvider
 
 	// Try to fetch application data directly from the binding spec.
-	appData, err := applicationv1alpha1.NewApplicationDataFromRef(ctx, kube, &spec)
+	appData, err := applicationv1alpha1.ResolveApplicationData(ctx, kube, &spec)
 	if err != nil {
-		return bindingv1alpha1.BindingData{}, fmt.Errorf("failed to fetch application data from binding: %w", err)
+		return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %v", errAppDataFetchFailed, err)
 	}
 
 	// Initialize instance data pointer.
 	var instanceData *common.InstanceData
 
 	if spec.HasInstanceRef() {
+
 		// Fetch instance data from the referenced ServiceInstance resource.
-		instance, err := NewServiceInstanceFromRef(ctx, kube, spec)
+		instance, err := ResolveServiceInstance(ctx, kube, spec)
 		if err != nil {
 			if kerrors.IsNotFound(err) {
-				return bindingv1alpha1.BindingData{}, fmt.Errorf("referenced service instance not found")
+				return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %s/%s", errInstanceNotFound, binding.Namespace, binding.Name)
 			}
-			return bindingv1alpha1.BindingData{}, fmt.Errorf("failed to retrieve referenced service instance: %w", err)
+			return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %v", errInstanceFetchFailed, err)
 		}
 
+		instanceData = &common.InstanceData{}
 		instanceData.Set(instance.GetSpecForProvider())
 
 		// If no application data was found on the binding, fetch it from the instance.
-		if appData.IsNil() {
-			appData, err = applicationv1alpha1.NewApplicationDataFromRef(ctx, kube, instance.GetSpecForProviderPtr())
+		if appData == nil {
+			appData, err = applicationv1alpha1.ResolveApplicationData(ctx, kube, instance.GetSpecForProviderPtr())
 			if err != nil {
-				return bindingv1alpha1.BindingData{}, fmt.Errorf("failed to fetch application data from instance: %w", err)
+				return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %v", errAppDataFetchFromInstance, err)
 			}
 		}
 
@@ -101,11 +116,11 @@ func GetDataFromServiceBinding(
 	}
 
 	// Validate presence of both instance and application data.
-	if instanceData.IsNil() {
-		return bindingv1alpha1.BindingData{}, fmt.Errorf("missing instance data: no reference or inlined data provided")
+	if instanceData == nil {
+		return bindingv1alpha1.BindingData{}, errMissingInstanceData
 	}
-	if appData.IsNil() {
-		return bindingv1alpha1.BindingData{}, fmt.Errorf("missing application data: no reference or inlined data provided")
+	if appData == nil {
+		return bindingv1alpha1.BindingData{}, errMissingApplicationData
 	}
 
 	return bindingv1alpha1.BindingData{

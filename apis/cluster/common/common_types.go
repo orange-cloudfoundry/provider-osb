@@ -31,8 +31,10 @@ type NamespacedName struct {
 	Namespace string `json:"namespace,omitempty"`
 }
 
-// String returns the general purpose string representation
 func (n *NamespacedName) String() string {
+	if n.Namespace == "" {
+		return n.Name
+	}
 	return n.Namespace + "/" + n.Name
 }
 
@@ -66,6 +68,7 @@ type InstanceData struct {
 }
 
 // SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+// Stored as a string because slices and maps are not directly serializable in Go
 // It is stored as a string but can be converted back to a Go map.
 type SerializableParameters string
 
@@ -107,8 +110,8 @@ func (e *KubernetesOSBOriginatingIdentityExtra) FromMap(m map[string][]string) e
 }
 
 // ToMap returns a map[string][]string by unmarshalling the KubernetesOSBOriginatingIdentityExtra object's raw bytes
-func (e *KubernetesOSBOriginatingIdentityExtra) ToMap() (map[string][]string, error) {
-	res := map[string][]string{}
+func (e *KubernetesOSBOriginatingIdentityExtra) ToMap() (map[string][]any, error) {
+	res := map[string][]any{}
 	err := json.Unmarshal(e.Raw, &res)
 	return res, err
 }
@@ -122,15 +125,15 @@ type KubernetesOSBOriginatingIdentityValue struct {
 	Extra    *KubernetesOSBOriginatingIdentityExtra `json:"extra"`
 }
 
-// ToMap converts the KubernetesOSBContext into a map[string]interface{}.
-func (c *KubernetesOSBContext) ToMap() (map[string]interface{}, error) {
+// ToMap converts the KubernetesOSBContext into a map[string]any.
+func (c *KubernetesOSBContext) ToMap() (map[string]any, error) {
 	// Convert struct - > json
 	b, err := json.Marshal(c)
 	if err != nil {
 		return nil, err
 	}
 	// Convert json -> map[string]interface{}
-	var res map[string]interface{}
+	var res map[string]any
 	err = json.Unmarshal(b, &res)
 	return res, err
 }

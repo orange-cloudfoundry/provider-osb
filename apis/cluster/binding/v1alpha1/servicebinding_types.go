@@ -46,18 +46,19 @@ type ServiceBindingParameters struct {
 type ServiceBindingObservation struct {
 	// TODO add context and route to test if these were updated and return error if so
 	Parameters               common.SerializableParameters `json:"parameters,omitempty"`
-	RouteServiceURL          *string                       `json:"route_service_url,omitempty"`
+	RouteServiceURL          *string                       `json:"routeServiceUrl,omitempty"`
 	Endpoints                SerializableEndpoints         `json:"endpoints,omitempty"`
-	VolumeMounts             SerializableVolumeMounts      `json:"volume_mounts,omitempty"`
-	SyslogDrainURL           *string                       `json:"syslog_drain_url,omitempty"`
+	VolumeMounts             SerializableVolumeMounts      `json:"volumeMounts,omitempty"`
+	SyslogDrainURL           *string                       `json:"syslogDrainUrl,omitempty"`
 	Metadata                 *osb.BindingMetadata          `json:"metadata,omitempty"`
-	LastOperationState       osb.LastOperationState        `json:"last_operation_state,omitempty"`
-	LastOperationKey         osb.OperationKey              `json:"last_operation_key,omitempty"`
-	LastOperationDescription string                        `json:"last_operation_description,omitempty"`
-	LastOperationPolledTime  string                        `json:"last_operation_polled_time,omitempty"`
+	LastOperationState       osb.LastOperationState        `json:"lastOperationState,omitempty"`
+	LastOperationKey         osb.OperationKey              `json:"lastOperationKey,omitempty"`
+	LastOperationDescription string                        `json:"lastOperationDescription,omitempty"`
+	LastOperationPolledTime  string                        `json:"lastOperationPolledTime,omitempty"`
 }
 
 // SerializableVolumeMounts represents a JSON-encoded slice of osb.VolumeMount.
+// Stored as a string because slices are not directly serializable in Go.
 // It is stored as a string but can be converted back to a slice of VolumeMounts.
 type SerializableVolumeMounts string
 
@@ -65,14 +66,17 @@ type SerializableVolumeMounts string
 // Returns an empty slice if the string is nil or empty.
 func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) {
 	if v == nil || len([]byte(*v)) == 0 {
-		return &[]osb.VolumeMount{}, nil
+		empty := []osb.VolumeMount{}
+		return &empty, nil
 	}
-	res := &[]osb.VolumeMount{}
+
+	res := []osb.VolumeMount{}
 	err := json.Unmarshal([]byte(*v), &res)
-	return res, err
+	return &res, err
 }
 
-// SerializableEndpoints represents a JSON-encoded slice of osb.Endpoint.
+// SerializableEndpoints represents a JSON-encoded slice of endpoints.
+// Stored as a string because slices are not directly serializable in Go.
 // It is stored as a string but can be converted back to a slice of Endpoints.
 type SerializableEndpoints string
 
@@ -80,11 +84,13 @@ type SerializableEndpoints string
 // Returns an empty slice if the string is nil or empty.
 func (v *SerializableEndpoints) ToEndpoints() (*[]osb.Endpoint, error) {
 	if v == nil || len([]byte(*v)) == 0 {
-		return &[]osb.Endpoint{}, nil
+		empty := []osb.Endpoint{}
+		return &empty, nil
 	}
-	res := &[]osb.Endpoint{}
+
+	res := []osb.Endpoint{}
 	err := json.Unmarshal([]byte(*v), &res)
-	return res, err
+	return &res, err
 }
 
 // String returns the underlying string representation of SerializableEndpoints.
