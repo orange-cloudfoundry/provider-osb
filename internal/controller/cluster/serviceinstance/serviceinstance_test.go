@@ -18,6 +18,8 @@ package serviceinstance
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -33,7 +35,6 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/instance/v1alpha1"
 	mock "github.com/orange-cloudfoundry/provider-osb/internal/mymock"
-	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -230,7 +231,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: errors.New("InstanceId must be set in ServiceInstance spec"),
+				err: errors.New("InstanceId must be set in the ServiceInstance spec"),
 			},
 		},
 		"LastOperationInProgress": {
@@ -264,6 +265,9 @@ func TestObserve(t *testing.T) {
 					PollLastOperationReaction: &osbfake.PollLastOperationReaction{
 						Response: &osb.LastOperationResponse{
 							State: osb.StateInProgress,
+						},
+						Error: &osb.HTTPStatusCodeError{
+							StatusCode: http.StatusGone, // 410
 						},
 					},
 				},
@@ -364,7 +368,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: errors.Wrap(errors.New("unexpected error"), "OSB GetInstance request failed"),
+				err: fmt.Errorf("%s: %w", "OSB GetInstance request failed", errors.New("unexpected error")),
 			},
 		},
 	}
@@ -482,7 +486,7 @@ func TestCreate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: errors.Wrap(errors.New("provision error"), "OSB ProvisionInstance request failed"),
+				err: fmt.Errorf("%s: %w", "OSB ProvisionInstance request failed", errors.New("provision error")),
 			},
 		},
 	}
@@ -601,7 +605,7 @@ func TestUpdate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalUpdate{},
-				err: errors.Wrap(errors.New("update error"), "OSB UpdateInstance request failed"),
+				err: fmt.Errorf("%s: %w", "OSB UpdateInstance request failed", errors.New("update error")),
 			},
 		},
 	}
@@ -777,7 +781,7 @@ func TestDelete(t *testing.T) {
 				mg:  fakeInstance.DeepCopy(),
 			},
 			want: want{
-				err: errors.Wrap(errors.New("deprovision error"), "OSB DeprovisionInstance request failed"),
+				err: fmt.Errorf("%s: %w", "OSB DeprovisionInstance request failed", errors.New("deprovision error")),
 			},
 		},
 	}

@@ -18,17 +18,21 @@ package servicebinding
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
-	"github.com/pkg/errors"
+	"github.com/orange-cloudfoundry/provider-osb/internal/mymock"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
@@ -38,6 +42,7 @@ import (
 	apiscommonv1 "github.com/crossplane/crossplane-runtime/v2/apis/common"
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	b64 "encoding/base64"
 )
@@ -189,8 +194,38 @@ func generateResponse[T osb.GetBindingResponse | osb.BindResponse](resp *T, cred
 	return nil
 }
 
+func newFakeKubeClient(t *testing.T) *mymock.MockClient {
+	ctrl := gomock.NewController(t)
+	mock := mymock.NewMockClient(ctrl)
+
+	mock.EXPECT().Get(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().DoAndReturn(
+		func(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+			sb, ok := obj.(*v1alpha1.ServiceBinding)
+			if !ok {
+				return fmt.Errorf("unexpected type %T", obj)
+			}
+			sb.Status = v1alpha1.ServiceBindingStatus{
+				AtProvider: v1alpha1.ServiceBindingObservation{
+					LastOperationState: osb.StateInProgress,
+				},
+			}
+			sb.Spec = v1alpha1.ServiceBindingSpec{}
+			sb.SetName(key.Name)
+			sb.SetNamespace(key.Namespace)
+			return nil
+		},
+	)
+
+	mock.EXPECT().Update(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	mock.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	mock.EXPECT().Delete(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+
+	return mock
+}
+
 func TestObserve(t *testing.T) {
 	type fields struct {
+		kube          client.Client
 		client        osb.Client
 		rotateBinding bool
 	}
@@ -217,7 +252,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: errors.New("managed resource is not a ServiceBinding custom resource"),
+				err: errors.New("managed resource is not a ServiceBinding"),
 			},
 		},
 		"NotResourceExists": {
@@ -256,7 +291,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: errors.Wrap(panicError, "OSB GetBinding request failed"),
+				err: fmt.Errorf("%s: %w", "OSB GetBinding request failed", panicError),
 			},
 		},
 		"ResourceUpToDateCredentialsChanged": {
@@ -287,6 +322,7 @@ func TestObserve(t *testing.T) {
 				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osb.StateInProgress),
 			},
 			fields: fields{
+				kube: newFakeKubeClient(t),
 				client: &osbfake.FakeClient{
 					PollBindingLastOperationReaction: &osbfake.PollBindingLastOperationReaction{
 						Response: &osb.LastOperationResponse{
@@ -413,7 +449,12 @@ func TestObserve(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{osb: tc.fields.client, rotateBinding: tc.fields.rotateBinding}
+			e := external{
+				kube:          tc.fields.kube,
+				osb:           tc.fields.client,
+				rotateBinding: tc.fields.rotateBinding,
+			}
+
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Observe(...): -want error, +got error:\n%s\n", tc.reason, diff)
@@ -453,7 +494,7 @@ func TestCreate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: errors.New("managed resource is not a ServiceBinding custom resource"),
+				err: errors.New("managed resource is not a ServiceBinding"),
 			},
 		},
 		"ErrorCreate": {
@@ -469,7 +510,7 @@ func TestCreate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: errors.Wrap(panicError, "OSB Bind request failed"),
+				err: fmt.Errorf("%s: %w", "OSB Bind request failed", panicError),
 			},
 		},
 		"SuccessCreate": {
@@ -556,7 +597,7 @@ func TestUpdate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalUpdate{},
-				err: errors.New("managed resource is not a ServiceBinding custom resource"),
+				err: errors.New("managed resource is not a ServiceBinding"),
 			},
 		},
 		"SuccessUpdateBindingRotation": {
@@ -621,7 +662,7 @@ func TestDelete(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalDelete{},
-				err: errors.New("managed resource is not a ServiceBinding custom resource"),
+				err: errors.New("managed resource is not a ServiceBinding"),
 			},
 		},
 		"SuccessDelete": {

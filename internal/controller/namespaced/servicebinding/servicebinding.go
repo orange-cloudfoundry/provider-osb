@@ -175,7 +175,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// NOTE: This method is over our cyclomatic complexity goal.
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New("managed resource is not a ServiceBinding custom resource")
+		return managed.ExternalObservation{}, errors.New("managed resource is not a ServiceBinding")
 	}
 
 	bindingData, err := helpersv1alpha1.GetDataFromServiceBinding(ctx, c.kube, binding)
@@ -208,7 +208,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			}, nil
 		}
 		// Other errors are unexpected
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB GetBinfind request failed", err)
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB GetBinding request failed", err)
 	}
 
 	data := binding.CreateResponseData(*resp)
@@ -260,7 +260,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
-		return managed.ExternalCreation{}, fmt.Errorf("managed resource is not a ServiceBinding custom resource")
+		return managed.ExternalCreation{}, fmt.Errorf("managed resource is not a ServiceBinding")
 	}
 
 	// Retrieve instance and application data for the binding.
@@ -315,7 +315,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
 	binding, ok := mg.(*v1alpha1.ServiceBinding)
 	if !ok {
-		return managed.ExternalUpdate{}, errors.New("managed resource is not a ServiceBinding custom resource")
+		return managed.ExternalUpdate{}, errors.New("managed resource is not a ServiceBinding")
 	}
 
 	// Prepare binding rotation request

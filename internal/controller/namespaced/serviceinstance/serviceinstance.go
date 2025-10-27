@@ -282,7 +282,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 	// If there are active bindings, we cannot delete the ServiceInstance.
 	if instance.HasActiveBindings() {
-		return managed.ExternalDelete{}, errors.New("cannot delete ServiceInstance, it has active bindings---")
+		return managed.ExternalDelete{}, errors.New("cannot delete ServiceInstance, it has active bindings")
 	}
 
 	return c.deprovision(ctx, instance)
