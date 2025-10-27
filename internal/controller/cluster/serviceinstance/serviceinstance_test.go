@@ -92,7 +92,7 @@ var (
 	}
 	stateDeletingNoBindings = v1alpha1.ServiceInstanceStatus{
 		AtProvider: v1alpha1.ServiceInstanceObservation{
-			LastOperationState: "deleting",
+			LastOperationState: osb.StateDeleting,
 			HasActiveBindings:  false,
 			LastOperationKey:   "op-key",
 		},

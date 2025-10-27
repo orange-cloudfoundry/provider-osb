@@ -28,6 +28,23 @@ const (
 	OriginatingIdentityPlatformName = "kubernetes"
 )
 
+var (
+	errCannotDecodeBasicAuth          = errors.New("cannot decode string into basic auth struct")
+	errCannotGetResource              = errors.New("cannot get latest version of resource")
+	errMarshalCredential              = errors.New("failed to marshal credential from response")
+	errMarshalMapValue                = errors.New("cannot marshal map value")
+	errParseISO8601Time               = errors.New("cannot parse ISO8601 time")
+	errCannotGetProviderConfig        = errors.New("cannot get provider config")
+	errCannotGetCredentials           = errors.New("cannot get credentials")
+	errCannotCreateNewOsbClient       = errors.New("cannot create new OSB client")
+	errCannotMakeOriginatingIdentity  = errors.New("cannot make originating identity from value")
+	errNotLegacyManaged               = errors.New("resource is not LegacyManaged")
+	errNotManagedType                 = errors.New("resource is not a managed type")
+	ErrCannotGetProviderConfig        = errors.New("cannot get provider config")
+	ErrNoProviderConfigRef            = errors.New("no providerConfigRef provided")
+	ErrCannotTrackProviderConfigUsage = errors.New("cannot track ProviderConfig usage")
+)
+
 // TimeNow returns the current time formatted as an ISO 8601 string.
 //
 // The function returns a pointer to the formatted string.
@@ -94,7 +111,7 @@ func NewOsbClient(conf v1alpha1.ProviderConfig, creds []byte) (osb.Client, error
 		credsString := string(creds)
 		basicAuth, err := decodeB64StringToBasicAuthConfig(credsString)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", "can't decode string into basic auth struct", err)
+			return nil, fmt.Errorf("%w: %v", errCannotDecodeBasicAuth, err)
 		}
 		authConfig := osb.AuthConfig{
 			BasicAuthConfig: &basicAuth,
@@ -193,16 +210,16 @@ func ResolveProviderConfig(ctx context.Context, crClient client.Client, mg resou
 	switch managed := mg.(type) {
 	case resource.ModernManaged:
 		// If the resource is a ModernManaged, delegate to resolveProviderConfigModern
-		return nil, errors.New("resource is not LegacyManaged but ModernManaged")
+		return nil, fmt.Errorf("%w: %T", errNotLegacyManaged, mg)
 	case resource.LegacyManaged:
 		// LegacyManaged resources are not supported for this resolution
 		return resolveProviderConfigLegacy(ctx, crClient, managed)
 	case resource.Managed:
 		// Base Managed resources without ModernManaged interface are also unsupported
-		return nil, errors.New("resource is not LegacyManaged but Managed")
+		return nil, fmt.Errorf("%w: %T", errNotLegacyManaged, mg)
 	default:
 		// Any other type is invalid
-		return nil, errors.New("resource is not a managed type")
+		return nil, fmt.Errorf("%w: %T", errNotManagedType, mg)
 	}
 }
 
@@ -246,16 +263,16 @@ func legacyToModernProviderConfigSpec(pc *v1alpha1.ProviderConfig) (*v1alpha1.Pr
 func resolveProviderConfigLegacy(ctx context.Context, client client.Client, mg resource.LegacyManaged) (*v1alpha1.ProviderConfig, error) {
 	configRef := mg.GetProviderConfigReference()
 	if configRef == nil {
-		return nil, errors.New("no providerConfigRef provided")
+		return nil, fmt.Errorf("%w: %T/%s", ErrNoProviderConfigRef, mg, mg.GetName())
 	}
 	pc := &v1alpha1.ProviderConfig{}
 	if err := client.Get(ctx, types.NamespacedName{Name: configRef.Name}, pc); err != nil {
-		return nil, fmt.Errorf("%s :%w", "cannot get ProviderConfig", err)
+		return nil, fmt.Errorf("%w: %v", errCannotGetProviderConfig, err)
 	}
 
 	t := resource.NewLegacyProviderConfigUsageTracker(client, &v1alpha1.ProviderConfigUsage{})
 	if err := t.Track(ctx, mg); err != nil {
-		return nil, fmt.Errorf("%s :%w", "cannot track ProviderConfig usage", err)
+		return nil, fmt.Errorf("%s: %w", ErrCannotTrackProviderConfigUsage, err)
 	}
 
 	return legacyToModernProviderConfigSpec(pc)
@@ -287,19 +304,19 @@ func Connect(
 	// Resolve the ProviderConfig associated with the managed resource
 	pc, err := ResolveProviderConfig(ctx, kubeClient, mg)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot get ProviderConfig", err)
+		return nil, nil, nil, fmt.Errorf("%w: %v", errCannotGetProviderConfig, err)
 	}
 
 	// Extract credentials from the ProviderConfig
 	creds, err := resource.CommonCredentialExtractor(ctx, pc.Spec.Credentials.Source, kubeClient, pc.Spec.Credentials.CommonCredentialSelectors)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot get credentials", err)
+		return nil, nil, nil, fmt.Errorf("%s: %w", errCannotGetCredentials, err)
 	}
 
 	// Create a new OSB client using the resolved ProviderConfig and extracted credentials
 	osbclient, err := newOsbClient(*pc, creds)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot create new osb client", err)
+		return nil, nil, nil, fmt.Errorf("%s: %w", errCannotCreateNewOsbClient, err)
 	}
 
 	// Add extra data to the originating identity from the ProviderConfig
@@ -308,22 +325,19 @@ func Connect(
 	// Create the originating identity object
 	oid, err := MakeOriginatingIdentityFromValue(oidValue)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", "cannot make originating identity from value", err)
+		return nil, nil, nil, fmt.Errorf("%s: %w", errCannotMakeOriginatingIdentity, err)
 	}
 
 	// Return the OSB client, the Kubernetes client, and the originating identity
 	return osbclient, kubeClient, oid, nil
 }
 
-// Predefined error for failed GET operations
-var ErrCannotGetResource = errors.New("cannot get latest version of resource")
-
 // GetLatestKubeObject retrieves the latest version of a Kubernetes object.
 // obj should be a pointer to a Kubernetes object (implements client.Object).
 func GetLatestKubeObject[T client.Object](ctx context.Context, kube client.Client, obj T) (T, error) {
-	key := client.ObjectKey{Name: obj.GetName(), Namespace: obj.GetNamespace()}
+	key := client.ObjectKeyFromObject(obj)
 	if err := kube.Get(ctx, key, obj); err != nil {
-		return obj, fmt.Errorf("failed to get latest version of %T: %w", obj, ErrCannotGetResource)
+		return obj, fmt.Errorf("%w: %v", errCannotGetResource, err)
 	}
 	return obj, nil
 }
@@ -390,7 +404,7 @@ func MarshalMapValues(input map[string]any) (map[string][]byte, error) {
 	for k, v := range input {
 		b, err := json.Marshal(v)
 		if err != nil {
-			return nil, fmt.Errorf("cannot marshal key %q: %w", k, err)
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalMapValue, k, err)
 		}
 		output[k] = b
 	}
@@ -406,7 +420,7 @@ func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 	for key, value := range resp.Credentials {
 		data, err := json.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal credential '%s' from response: %w", key, err)
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalCredential, key, err)
 		}
 		creds[key] = data
 	}
@@ -419,7 +433,7 @@ func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 func ParseISO8601Time(value, field string) (time.Time, error) {
 	t, err := time.Parse(Iso8601dateFormat, value)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("error parsing %s time: %w", field, err)
+		return time.Time{}, fmt.Errorf("%w: %s, %v", errParseISO8601Time, field, err)
 	}
 	return t, nil
 }

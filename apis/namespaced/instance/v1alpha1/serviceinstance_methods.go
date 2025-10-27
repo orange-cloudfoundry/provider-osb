@@ -11,6 +11,10 @@ import (
 
 // GetProviderConfigReference of this ServiceInstance.
 func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.ProviderConfigReference {
+	if mg.Spec.ForProvider.ApplicationData == nil {
+		return nil
+	}
+
 	return mg.Spec.ForProvider.ApplicationData.ProviderConfigReference
 }
 
@@ -37,7 +41,7 @@ func (mg *ServiceInstance) SetLastOperationKey(operationKey *osb.OperationKey) {
 // IsDeletable returns true if the ServiceInstance is in deleting state
 // and has no active bindings.
 func (mg *ServiceInstance) IsDeletable() bool {
-	return mg.Status.AtProvider.LastOperationState == "deleting" &&
+	return mg.Status.AtProvider.LastOperationState == osb.StateDeleting &&
 		!mg.Status.AtProvider.HasActiveBindings
 }
 
@@ -56,7 +60,7 @@ func (mg *ServiceInstance) IsStateInProgress() bool {
 // Returns:
 // - bool: true if the last operation state is "deleting", false otherwise
 func (mg *ServiceInstance) IsStateDeleting() bool {
-	return mg.Status.AtProvider.LastOperationState == "deleting"
+	return mg.Status.AtProvider.LastOperationState == osb.StateDeleting
 }
 
 // IsAlreadyDeleted checks if the given ServiceInstance has no InstanceId set,
@@ -103,7 +107,7 @@ func (mg *ServiceInstance) IsPlanIDDifferent(osbPlanID string) bool {
 	return mg.Spec.ForProvider.PlanId != osbPlanID
 }
 
-// compareInstanceParameters compares parameters between a ServiceInstance spec
+// compareParametersWithOSB compares parameters between a ServiceInstance spec
 // and its OSB instance response.
 func (mg *ServiceInstance) compareParametersWithOSB(osbInstance *osb.GetInstanceResponse) (bool, error) {
 	if len(mg.Spec.ForProvider.Parameters) == 0 {
@@ -122,7 +126,7 @@ func (mg *ServiceInstance) compareParametersWithOSB(osbInstance *osb.GetInstance
 	return true, nil
 }
 
-// compareSpecWithOSB compares a ServiceInstance spec with the corresponding OSB instance response.
+// CompareSpecWithOSB compares a ServiceInstance spec with the corresponding OSB instance response.
 // It returns true if both representations are consistent, false otherwise.
 func (mg *ServiceInstance) CompareSpecWithOSB(osbInstance *osb.GetInstanceResponse) (bool, error) {
 	if osbInstance == nil {
@@ -185,7 +189,7 @@ func (mg *ServiceInstance) BuildOSBUpdateRequest() (*osb.UpdateInstanceRequest, 
 	}, nil
 }
 
-// updateStatusFromProvisionResponse updates the ServiceInstance status based on the OSB ProvisionInstance response.
+// updateStatus updates the ServiceInstance status based on the OSB ProvisionInstance response.
 func (mg *ServiceInstance) UpdateStatus(resp *osb.ProvisionResponse) {
 	mg.Status.AtProvider.Context = mg.Spec.ForProvider.Context
 	mg.Status.AtProvider.DashboardURL = resp.DashboardURL
@@ -271,7 +275,7 @@ func (mg *ServiceInstance) CreateRequestPollLastOperation(originatingIdentity os
 // updateInstanceStatusForAsyncDeletion updates the ServiceInstance status when
 // a deletion is performed asynchronously.
 func (mg *ServiceInstance) UpdateStatusForAsyncDeletion(resp *osb.DeprovisionResponse) {
-	mg.SetLastOperationState("deleting")
+	mg.SetLastOperationState(osb.StateDeleting)
 	if resp.OperationKey != nil {
 		mg.SetLastOperationKey(resp.OperationKey)
 	}
@@ -299,10 +303,4 @@ func (mg *ServiceInstance) GetSpecForProvider() common.InstanceData {
 // or an interface implemented on *InstanceData.
 func (mg *ServiceInstance) GetSpecForProviderPtr() *common.InstanceData {
 	return &mg.Spec.ForProvider
-}
-
-// HasNotInstanceID returns true if the ServiceInstance does not have an InstanceID set.
-// This is typically used to determine whether the instance has been provisioned yet.
-func (mg *ServiceInstance) HasNotInstanceID() bool {
-	return mg.Spec.ForProvider.InstanceId == ""
 }

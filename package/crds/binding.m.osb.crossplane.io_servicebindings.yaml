@@ -309,16 +309,16 @@ spec:
                       SerializableEndpoints represents a JSON-encoded slice of osb.Endpoint.
                       It is stored as a string but can be converted back to a slice of Endpoints.
                     type: string
-                  last_operation_description:
+                  lastOperationDescription:
                     type: string
-                  last_operation_key:
+                  lastOperationKey:
                     description: |-
                       OperationKey is an extra identifier from the broker in order to provide extra
                       identifiers for asynchronous operations.
                     type: string
-                  last_operation_polled_time:
+                  lastOperationPolled_time:
                     type: string
-                  last_operation_state:
+                  lastOperationState:
                     description: |-
                       LastOperationState is a typedef representing the state of an ongoing
                       operation for an instance.

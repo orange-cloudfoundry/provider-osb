@@ -35,10 +35,10 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
-	apis_cluster "github.com/orange-cloudfoundry/provider-osb/apis/cluster"
-	apis_namespaced "github.com/orange-cloudfoundry/provider-osb/apis/namespaced"
-	controller_cluster "github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster"
-	controller_namespaced "github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced"
+	apisCluster "github.com/orange-cloudfoundry/provider-osb/apis/cluster"
+	apisNamespaced "github.com/orange-cloudfoundry/provider-osb/apis/namespaced"
+	controllerCluster "github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster"
+	controllerNamespaced "github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced"
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 )
 
@@ -54,7 +54,8 @@ func main() {
 
 		maxReconcileRate = app.Flag("max-reconcile-rate", "The global maximum rate per second at which resources may checked for drift from the desired state.").Default("10").Int()
 
-		enableManagementPolicies = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("false").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
+		enableManagementPolicies      = app.Flag("enable-management-policies", "Enable support for Management Policies.").Default("false").Envar("ENABLE_MANAGEMENT_POLICIES").Bool()
+		enableAutomaticRotateBindings = app.Flag("enable-automatic-binding-rotation", "Enable automatic Rotate Bindings.").Default("false").Envar("ENABLE_AUTOMATIC_ROTATE_BINDINGS").Bool()
 	)
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -91,14 +92,14 @@ func main() {
 		RenewDeadline:              func() *time.Duration { d := 50 * time.Second; return &d }(),
 	})
 	kingpin.FatalIfError(err, "Cannot create controller manager")
-	kingpin.FatalIfError(apis_cluster.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs cluster to scheme")
-	kingpin.FatalIfError(apis_namespaced.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs namespace to scheme")
+	kingpin.FatalIfError(apisCluster.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs cluster to scheme")
+	kingpin.FatalIfError(apisNamespaced.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs namespace to scheme")
 
 	metricRecorder := managed.NewMRMetricRecorder()
-	statemetrics := statemetrics.NewMRStateMetrics()
+	stateMetrics := statemetrics.NewMRStateMetrics()
 
 	metrics.Registry.MustRegister(metricRecorder)
-	metrics.Registry.MustRegister(statemetrics)
+	metrics.Registry.MustRegister(stateMetrics)
 
 	o := controller.Options{
 		Logger:                  log,
@@ -109,16 +110,21 @@ func main() {
 		MetricOptions: &controller.MetricOptions{
 			PollStateMetricInterval: *pollStateMetricInterval,
 			MRMetrics:               metricRecorder,
-			MRStateMetrics:          statemetrics,
+			MRStateMetrics:          stateMetrics,
 		},
 	}
 
 	if *enableManagementPolicies {
 		o.Features.Enable(features.EnableBetaManagementPolicies)
-		log.Info("Alpha feature enabled", "flag", features.EnableBetaManagementPolicies)
+		log.Info("Beta feature enabled", "flag", features.EnableBetaManagementPolicies)
 	}
 
-	kingpin.FatalIfError(controller_cluster.Setup(mgr, o), "Cannot setup OSB controllers cluster mode")
-	kingpin.FatalIfError(controller_namespaced.Setup(mgr, o), "Cannot setup OSB controllers namespaced mode")
+	if *enableAutomaticRotateBindings {
+		o.Features.Enable(features.EnableAlphaRotateBindings)
+		log.Info("Alpha feature enabled", "flag", features.EnableAlphaRotateBindings)
+	}
+
+	kingpin.FatalIfError(controllerCluster.Setup(mgr, o), "Cannot setup OSB controllers cluster mode")
+	kingpin.FatalIfError(controllerNamespaced.Setup(mgr, o), "Cannot setup OSB controllers namespaced mode")
 	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
 }

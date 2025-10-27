@@ -9,7 +9,6 @@
 package v1alpha1
 
 import (
-	applicationv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/application/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
@@ -83,7 +82,7 @@ func (in *ServiceInstanceObservation) DeepCopyInto(out *ServiceInstanceObservati
 	}
 	if in.ApplicationData != nil {
 		in, out := &in.ApplicationData, &out.ApplicationData
-		*out = new(applicationv1alpha1.ApplicationSpec)
+		*out = new(common.ApplicationData)
 		(*in).DeepCopyInto(*out)
 	}
 	in.InstanceData.DeepCopyInto(&out.InstanceData)

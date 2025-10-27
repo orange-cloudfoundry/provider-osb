@@ -9,7 +9,7 @@ import (
 // to retrieve application data from a resource spec.
 //
 // Any struct implementing these methods can be used with
-// NewApplicationDataFromRef.
+// ResolveApplicationData.
 type ApplicationDataProviderCluster interface {
 	HasApplicationRef() bool
 	HasApplicationData() bool
@@ -21,7 +21,7 @@ type ApplicationDataProviderCluster interface {
 // to retrieve application data from a resource spec.
 //
 // Any struct implementing these methods can be used with
-// NewApplicationDataFromRef.
+// ResolveApplicationData.
 type ApplicationDataProviderNamespaced interface {
 	HasApplicationRef() bool
 	HasApplicationData() bool

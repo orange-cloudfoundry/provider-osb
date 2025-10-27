@@ -41,6 +41,26 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
 )
 
+var (
+	errNotServiceInstance                = errors.New("managed resource is not a ServiceInstance custom resource")
+	errCannotTrackProviderConfig         = errors.New("cannot track ProviderConfig usage")
+	errCannotCreateNewOsbClient          = errors.New("cannot create new OSB client")
+	errCannotMakeOriginatingIdentity     = errors.New("cannot make originating identity from value")
+	errInstanceIDNotSet                  = errors.New("InstanceId must be set in the ServiceInstance spec")
+	errParseParametersFailed             = errors.New("failed to parse ServiceInstance parameters")
+	errParseContextFailed                = errors.New("failed to parse ServiceInstance context")
+	errCannotBuildOSBUpdateRequest       = errors.New("cannot build update request")
+	errOSBGetInstance                    = errors.New("OSB GetInstance request failed")
+	errCannotUpdateServiceInstanceStatus = errors.New("cannot update ServiceInstance status")
+	errOSBProvisionInstanceFailed        = errors.New("OSB ProvisionInstance request failed")
+	errOSBUpdateInstanceFailed           = errors.New("OSB UpdateInstance request failed")
+	errCannotListServiceBindings         = errors.New("cannot list ServiceBindings")
+	errCannotUpdateActiveBindingsStatus  = errors.New("cannot update active bindings status")
+	errCannotDeleteWithActiveBindings    = errors.New("cannot delete ServiceInstance, it has active bindings")
+	errOSBDeprovisionInstanceFailed      = errors.New("OSB DeprovisionInstance request failed")
+	errOSBPollLastOperationFailed        = errors.New("OSB PollLastOperation request failed")
+)
+
 // Setup adds a controller that reconciles ServiceInstance managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ServiceInstanceGroupKind)
@@ -53,6 +73,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 			newOsbClient: util.NewOsbClient}),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
+		managed.WithManagementPolicies(),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
 	return ctrl.NewControllerManagedBy(mgr).
@@ -80,7 +101,7 @@ type connector struct {
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
 	obj, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return nil, errors.New("managed resource is not an Application custom resource")
+		return nil, errNotServiceInstance
 	}
 
 	if err := c.usage.Track(ctx, mg.(resource.ModernManaged)); err != nil {
@@ -95,13 +116,13 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	// Extract credentials from the ProviderConfig
 	creds, err := resource.CommonCredentialExtractor(ctx, pcSpec.Credentials.Source, c.kube, pcSpec.Credentials.CommonCredentialSelectors)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", "cannot get credentials", err)
+		return nil, fmt.Errorf("%w: %s", errCannotTrackProviderConfig, err)
 	}
 
 	// Create a new OSB client using the resolved ProviderConfig and extracted credentials
 	osbClient, err := util.NewOsbClient(pc, creds)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", "cannot create new osb client", err)
+		return nil, fmt.Errorf("%w: %s", errCannotCreateNewOsbClient, err)
 	}
 
 	// Add extra data to the originating identity from the ProviderConfig
@@ -110,12 +131,12 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	// Create the originating identity object
 	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", "cannot make originating identity from value", err)
+		return nil, fmt.Errorf("%w: %s", errCannotMakeOriginatingIdentity, err)
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
 	return &external{
-		osb:                 osbClient,
+		osbClient:           osbClient,
 		kube:                c.kube,
 		originatingIdentity: *oid,
 	}, nil
@@ -126,7 +147,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	osb                 osb.Client
+	osbClient           osb.Client
 	kube                client.Client
 	originatingIdentity osb.OriginatingIdentity
 }
@@ -135,11 +156,11 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Assert that the managed resource is of type ServiceInstance.
 	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New("managed resource is not a ServiceInstance custom resource")
+		return managed.ExternalObservation{}, errNotServiceInstance
 	}
 
-	if instance.HasNotInstanceID() {
-		return managed.ExternalObservation{}, errors.New("InstanceId must be set in the ServiceInstance spec")
+	if instance.IsInstanceIDEmpty() {
+		return managed.ExternalObservation{}, errInstanceIDNotSet
 	}
 
 	// Manage pending async operations (poll only for "in progress" state)
@@ -152,7 +173,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return c.handleDeletionWithActiveBindings(ctx, instance)
 	}
 
-	// Build the GetInstanceRequest uinstanceng the InstanceId from the ServiceInstance spec.
+	// Build the GetInstanceRequest with the InstanceId from the ServiceInstance spec.
 	req := &osb.GetInstanceRequest{
 		InstanceID: instance.Spec.ForProvider.InstanceId,
 		//ServiceID:  instance.Spec.ForProvider.ServiceId,
@@ -160,7 +181,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// Call the OSB client's GetInstance method to retrieve the current state of the instance.
-	osbInstance, err := c.osb.GetInstance(req)
+	osbInstance, err := c.osbClient.GetInstance(req)
 
 	if err != nil {
 		if util.IsResourceGone(err) {
@@ -170,16 +191,16 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			}, nil
 		}
 		// Other errors are unexpected
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB GetInstance request failed", err)
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", errOSBGetInstance, err)
 	}
 
-	// Compare the deinstancered spec from the ServiceInstance with the actual instance returned from OSB.
+	// Compare the uninstantiated spec from the ServiceInstance with the actual instance returned from OSB.
 	// This determines if the external resource is up to date with the deinstancered state.
 	upToDate, err := instance.CompareSpecWithOSB(osbInstance)
 	if err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot compare ServiceInstance spec with OSB instance", err)
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", errOSBGetInstance, err)
 	}
-	// These fmt statements should be removed in the real implementation.
+
 	return managed.ExternalObservation{
 		// Return false when the external resource does not exist. This lets
 		// the managed resource reconciler know that it needs to call Create to
@@ -204,30 +225,30 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalCreation{}, errors.New("managed resource is not a ServiceInstance custom resource")
+		return managed.ExternalCreation{}, errNotServiceInstance
 	}
 
 	params, err := instance.Spec.ForProvider.Parameters.ToParameters()
 	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("failed to parse ServiceInstance parameters: %w", err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errParseParametersFailed, err)
 	}
 
 	ctxMap, err := instance.Spec.ForProvider.Context.ToMap()
 	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("failed to parse ServiceInstance context: %w", err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errParseContextFailed, err)
 	}
 
 	req := instance.BuildOSBProvisionRequest(params, ctxMap)
 
-	resp, err := c.osb.ProvisionInstance(req)
+	resp, err := c.osbClient.ProvisionInstance(req)
 	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("OSB ProvisionInstance request failed: %w", err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errOSBProvisionInstanceFailed, err)
 	}
 
 	instance.UpdateStatusFromOSB(resp)
 
 	if err := c.kube.Status().Update(ctx, instance); err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("cannot update ServiceInstance status: %w", err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, err)
 	}
 
 	return managed.ExternalCreation{}, nil
@@ -238,19 +259,19 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
 	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalUpdate{}, fmt.Errorf("managed resource is not a ServiceInstance custom resource")
+		return managed.ExternalUpdate{}, errNotServiceInstance
 	}
 
 	// Build the OSB update request.
 	req, err := instance.BuildOSBUpdateRequest()
 	if err != nil {
-		return managed.ExternalUpdate{}, err
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotBuildOSBUpdateRequest, err)
 	}
 
 	// Send the request to the OSB broker.
-	resp, err := c.osb.UpdateInstance(req)
+	resp, err := c.osbClient.UpdateInstance(req)
 	if err != nil {
-		return managed.ExternalUpdate{}, fmt.Errorf("OSB UpdateInstance request failed: %w", err)
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errOSBUpdateInstanceFailed, err)
 	}
 
 	// Update the instance status based on the response.
@@ -258,7 +279,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	// Persist the updated status in Kubernetes.
 	if err := c.kube.Status().Update(ctx, instance); err != nil {
-		return managed.ExternalUpdate{}, fmt.Errorf("cannot update ServiceInstance status: %w", err)
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, err)
 	}
 
 	return managed.ExternalUpdate{
@@ -269,7 +290,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalDelete{}, errors.New("managed resource is not a ServiceInstance custom resource")
+		return managed.ExternalDelete{}, errNotServiceInstance
 	}
 
 	// If the InstanceId is not set, there is nothing to delete.
@@ -282,7 +303,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 	// If there are active bindings, we cannot delete the ServiceInstance.
 	if instance.HasActiveBindings() {
-		return managed.ExternalDelete{}, errors.New("cannot delete ServiceInstance, it has active bindings")
+		return managed.ExternalDelete{}, errCannotDeleteWithActiveBindings
 	}
 
 	return c.deprovision(ctx, instance)
@@ -306,7 +327,7 @@ func (c *external) removeFinalizer(ctx context.Context, instance *v1alpha1.Servi
 
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, latest); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot update ServiceInstance status", err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, err)
 	}
 
 	// If the last operation was a deletion and it has succeeded, we consider the resource as deleted.
@@ -319,7 +340,7 @@ func (c *external) removeFinalizer(ctx context.Context, instance *v1alpha1.Servi
 func (c *external) handleLastOperationInProgress(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
 	req := instance.CreateRequestPollLastOperation(c.originatingIdentity)
 
-	resp, err := c.osb.PollLastOperation(req)
+	resp, err := c.osbClient.PollLastOperation(req)
 
 	if err != nil {
 		if util.IsResourceGone(err) {
@@ -329,7 +350,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, instance *
 			}, nil
 		}
 		// Other errors are unexpected
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "OSB PollLastOperation request failed", err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errOSBPollLastOperationFailed, err)
 	}
 
 	latest, err := util.GetLatestKubeObject(ctx, c.kube, instance)
@@ -345,7 +366,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, instance *
 
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, latest); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot update ServiceInstance status", err)
+		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", errCannotUpdateServiceInstanceStatus, err)
 	}
 
 	return managed.ExternalObservation{
@@ -359,7 +380,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, instance *
 func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1alpha1.ServiceInstance) error {
 	var bindingList apisbinding.ServiceBindingList
 	if err := c.kube.List(ctx, &bindingList, client.InNamespace(instance.GetNamespace())); err != nil {
-		return fmt.Errorf("cannot list ServiceBindings: %w", err)
+		return fmt.Errorf("%w: %v", errCannotListServiceBindings, err)
 	}
 
 	apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
@@ -374,12 +395,12 @@ func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1a
 // along with any error encountered during the process.
 func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
 	if err := c.UpdateActiveBindingsStatus(ctx, instance); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot update active bindings status", err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %v", errCannotUpdateActiveBindingsStatus, err)
 	}
 
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, instance); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", "cannot update ServiceInstance ressource status", err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %v", errCannotUpdateServiceInstanceStatus, err)
 	}
 
 	// If the resource is being deleted, we consider it as existing and up to date.
@@ -394,13 +415,13 @@ func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instanc
 func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalDelete, error) {
 	req := instance.BuildDeprovisionRequest(c.originatingIdentity)
 
-	resp, err := c.osb.DeprovisionInstance(req)
+	resp, err := c.osbClient.DeprovisionInstance(req)
 	if err != nil {
 		if util.IsResourceGone(err) {
 			// Resource is already gone; nothing to do.
 			return managed.ExternalDelete{}, nil
 		}
-		return managed.ExternalDelete{}, fmt.Errorf("OSB DeprovisionInstance request failed: %w", err)
+		return managed.ExternalDelete{}, fmt.Errorf("%w: %v", errOSBDeprovisionInstanceFailed, err)
 	}
 
 	if resp.Async {
@@ -408,7 +429,7 @@ func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceIn
 		instance.UpdateStatusForAsyncDeletion(resp)
 		// Persist status to Kubernetes
 		if err := c.kube.Status().Update(ctx, instance); err != nil {
-			return managed.ExternalDelete{}, fmt.Errorf("cannot update ServiceInstance status: %w", err)
+			return managed.ExternalDelete{}, fmt.Errorf("%w: %v", errCannotUpdateServiceInstanceStatus, err)
 		}
 	}
 

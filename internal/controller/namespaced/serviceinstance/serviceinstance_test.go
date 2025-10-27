@@ -65,8 +65,8 @@ func TestObserve(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := external{
-				kube: tc.fields.kube,
-				osb:  tc.fields.newOsbClient,
+				kube:      tc.fields.kube,
+				osbClient: tc.fields.newOsbClient,
 			}
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {

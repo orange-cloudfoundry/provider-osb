@@ -55,6 +55,16 @@ import (
 // https://github.com/golang/go/wiki/TestComments
 // https://github.com/crossplane/crossplane/blob/master/CONTRIBUTING.md#contributing-code
 
+func EquateErrors() cmp.Option {
+	return cmp.Comparer(func(x, y error) bool {
+		if x == nil || y == nil {
+			return x == y
+		}
+		// Vérifie si l’un des deux wrappe l’autre
+		return errors.Is(x, y) || errors.Is(y, x)
+	})
+}
+
 type notServiceBinding struct {
 	resource.Managed
 }
@@ -252,7 +262,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: errors.New("managed resource is not a ServiceBinding"),
+				err: errNotServiceBindingCR,
 			},
 		},
 		"NotResourceExists": {
@@ -291,7 +301,7 @@ func TestObserve(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalObservation{},
-				err: fmt.Errorf("%s: %w", "OSB GetBinding request failed", errPanic),
+				err: errOSBBindRequestFailed,
 			},
 		},
 		"ResourceUpToDateCredentialsChanged": {
@@ -451,12 +461,12 @@ func TestObserve(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			e := external{
 				kube:          tc.fields.kube,
-				osb:           tc.fields.client,
+				osbClient:     tc.fields.client,
 				rotateBinding: tc.fields.rotateBinding,
 			}
 
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
-			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Observe(...): -want error, +got error:\n%s\n", tc.reason, diff)
 			}
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
@@ -494,7 +504,7 @@ func TestCreate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: errors.New("managed resource is not a ServiceBinding"),
+				err: errNotServiceBindingCR,
 			},
 		},
 		"ErrorCreate": {
@@ -510,7 +520,7 @@ func TestCreate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
-				err: fmt.Errorf("%s: %w", "OSB Bind request failed", errPanic),
+				err: errOSBBindRequestFailed,
 			},
 		},
 		"SuccessCreate": {
@@ -558,9 +568,9 @@ func TestCreate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{osb: tc.fields.client, originatingIdentity: tc.fields.oid}
+			e := external{osbClient: tc.fields.client, originatingIdentity: tc.fields.oid}
 			got, err := e.Create(tc.args.ctx, tc.args.mg)
-			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Create(...): -want error, +got error:\n%s\n", tc.reason, diff)
 			}
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
@@ -597,7 +607,7 @@ func TestUpdate(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalUpdate{},
-				err: errors.New("managed resource is not a ServiceBinding"),
+				err: errNotServiceBindingCR,
 			},
 		},
 		"SuccessUpdateBindingRotation": {
@@ -623,9 +633,9 @@ func TestUpdate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{osb: tc.fields.client}
+			e := external{osbClient: tc.fields.client}
 			got, err := e.Update(tc.args.ctx, tc.args.mg)
-			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Update(...): -want error, +got error:\n%s\n", tc.reason, diff)
 			}
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
@@ -662,7 +672,7 @@ func TestDelete(t *testing.T) {
 			},
 			want: want{
 				o:   managed.ExternalDelete{},
-				err: errors.New("managed resource is not a ServiceBinding"),
+				err: errNotServiceBindingCR,
 			},
 		},
 		"SuccessDelete": {
@@ -709,13 +719,13 @@ func TestDelete(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := external{
-				osb: tc.fields.client,
+				osbClient: tc.fields.client,
 				kube: &test.MockClient{
 					MockUpdate: test.NewMockUpdateFn(nil),
 				},
 			}
 			got, err := e.Delete(tc.args.ctx, tc.args.mg)
-			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {
+			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Delete(...): -want error, +got error:\n%s\n", tc.reason, diff)
 			}
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
