@@ -9,7 +9,7 @@ require (
 	github.com/crossplane/crossplane-tools v0.0.0-20250731192036-00d407d8b7ec
 	github.com/golang/mock v1.6.0
 	github.com/google/go-cmp v0.7.0
-	github.com/orange-cloudfoundry/go-open-service-broker-client/v2 v2.0.0-20251024132328-e3b8bb25219e
+	github.com/orange-cloudfoundry/go-open-service-broker-client/v2 v2.0.0-20251029083801-d5ede4ec1547
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	k8s.io/api v0.33.2
 	k8s.io/apiextensions-apiserver v0.33.2
