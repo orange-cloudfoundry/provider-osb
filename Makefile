@@ -7,6 +7,11 @@ PLATFORMS ?= linux_amd64 linux_arm64
 -include build/makelib/common.mk
 
 # ====================================================================================
+# Setup crossplane cli
+CROSSPLANE_CLI_VERSION ?= v2.0.2
+CROSSPLANE_CLI := $(TOOLS_HOST_DIR)/crossplane-cli-$(CROSSPLANE_CLI_VERSION)
+
+# ====================================================================================
 # Setup Output
 
 -include build/makelib/output.mk
@@ -159,5 +164,8 @@ crossplane.help:
 	@echo "$$CROSSPLANE_MAKE_HELP"
 
 help-special: crossplane.help
+
+crossplane.install_cli:
+	@make $(CROSSPLANE_CLI)
 
 .PHONY: crossplane.help help-special

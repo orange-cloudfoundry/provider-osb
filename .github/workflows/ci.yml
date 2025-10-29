@@ -233,7 +233,7 @@ jobs:
         run: make modules.download modules.check
 
       - name: Setup Crossplane CLI
-        run: make /home/runner/work/provider-osb/provider-osb/.cache/tools/linux_x86_64/crossplane-cli-v2.0.2
+        run: make crossplane.install_cli
 
       - name: Build Artifacts
         run: make -j2 build.all
