@@ -19,9 +19,17 @@ import (
 )
 
 var (
-	errMarshalParameters   = errors.New("failed to marshal or parse binding parameters from osb response")
-	errMarshalEndpoints    = errors.New("failed to marshal or parse binding endpoints from osb response")
-	errMarshalVolumeMounts = errors.New("failed to marshal or parse binding volume mounts binding from osb response")
+	errMarshalParameters                          = errors.New("failed to marshal or parse binding parameters from osb response")
+	errMarshalEndpoints                           = errors.New("failed to marshal or parse binding endpoints from osb response")
+	errMarshalVolumeMounts                        = errors.New("failed to marshal or parse binding volume mounts binding from osb response")
+	errFailedToParseFromBindingStatus             = errors.New("failed to parse parameters from binding status")
+	errFailedToParseStatusParameters              = errors.New("failed to parse Status.AtProvider.Parameters JSON")
+	errFailedToParseSpecParamaters                = errors.New("failed to parse Spec.ForProvider.Parameters JSON")
+	errFailedToMarshalCredential                  = errors.New("failed to marshal credential")
+	errFailedRequestOSBRotateBinding              = errors.New("failed to marshal credential")
+	errFailedMarshallingContextFromServiceBinding = errors.New("failed to marshalling mg.Spec.ForProvider.Context")
+	errFailedUnMarshallingRequestContext          = errors.New("failed to unmarshalling request context from ServiceBinding")
+	errFailedUnMarshallingRequestParams           = errors.New("failed to unmarshalling request parameters from ServiceBinding")
 )
 
 // SetConditions sets the Conditions field in the ServiceBinding status.
@@ -100,7 +108,7 @@ func (mg *ServiceBinding) CreateResponseData(resp osb.GetBindingResponse) respon
 func (mg *ServiceBinding) CreateResponseDataWithBindingParameters(resp osb.BindResponse) (responseData, error) {
 	params, err := mg.Status.AtProvider.Parameters.ToParameters()
 	if err != nil {
-		return responseData{}, fmt.Errorf("failed to parse parameters from binding status: %w", err)
+		return responseData{}, fmt.Errorf("%w: %s", errFailedToParseFromBindingStatus, fmt.Sprint(err))
 	}
 
 	return responseData{
@@ -133,17 +141,17 @@ func (mg *ServiceBinding) setAtProvider(observation ServiceBindingObservation) e
 func (mg *ServiceBinding) SetResponseDataInStatus(data responseData) error {
 	params, err := json.Marshal(data.Parameters)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errMarshalParameters, err)
+		return fmt.Errorf("%w: %s", errMarshalParameters, fmt.Sprint(err))
 	}
 
 	endpoints, err := json.Marshal(data.Endpoints)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errMarshalEndpoints, err)
+		return fmt.Errorf("%w: %s", errMarshalEndpoints, fmt.Sprint(err))
 	}
 
 	volumeMounts, err := json.Marshal(data.VolumeMounts)
 	if err != nil {
-		return fmt.Errorf("%w: %v", errMarshalVolumeMounts, err)
+		return fmt.Errorf("%w: %s", errMarshalVolumeMounts, fmt.Sprint(err))
 	}
 
 	return mg.setAtProvider(ServiceBindingObservation{
@@ -170,11 +178,11 @@ func (mg *ServiceBinding) SetResponseDataInStatus(data responseData) error {
 func (mg *ServiceBinding) IsStatusParametersNotLikeSpecParameters() (bool, error) {
 	var statusMap, specMap map[string]interface{}
 	if err := json.Unmarshal([]byte(mg.Status.AtProvider.Parameters), &statusMap); err != nil {
-		return true, fmt.Errorf("failed to parse Status.AtProvider.Parameters JSON: %w", err)
+		return true, fmt.Errorf("%w: %s", errFailedToParseStatusParameters, fmt.Sprint(err))
 	}
 
 	if err := json.Unmarshal([]byte(mg.Spec.ForProvider.Parameters), &specMap); err != nil {
-		return true, fmt.Errorf("failed to parse Spec.ForProvider.Parameters JSON: %w", err)
+		return true, fmt.Errorf("%w: %s", errFailedToParseSpecParamaters, fmt.Sprint(err))
 	}
 
 	return !reflect.DeepEqual(statusMap, specMap), nil
@@ -207,7 +215,7 @@ func extractCredentials(resp *osb.BindResponse) (map[string][]byte, error) {
 	for key, value := range resp.Credentials {
 		data, err := json.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal credential '%s' from response: %w", key, err)
+			return nil, fmt.Errorf("%w: '%s' from response: %s", errFailedToMarshalCredential, key, fmt.Sprint(err))
 		}
 		creds[key] = data
 	}
@@ -226,7 +234,7 @@ func (mg *ServiceBinding) TriggerRotation(osb osb.Client, data BindingData, oid 
 	req := mg.buildRotateBindingRequest(data, oid, newUUID)
 	resp, err := osb.RotateBinding(req)
 	if err != nil {
-		return nil, fmt.Errorf("OSB RotateBinding request failed: %w", err)
+		return nil, fmt.Errorf("%w: %s", errFailedRequestOSBRotateBinding, fmt.Sprint(err))
 	}
 
 	// Update the binding's external name only if the request succeeded
@@ -392,17 +400,17 @@ func (mg *ServiceBinding) MarkBindingAsExpiringSoon(expireAt time.Time) {
 func (mg *ServiceBinding) ConvertSpecsData() (map[string]any, map[string]any, error) {
 	requestContextBytes, err := json.Marshal(mg.Spec.ForProvider.Context)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context from ServiceBinding", err)
+		return nil, nil, fmt.Errorf("%w: { values: %v: error: %s }", errFailedMarshallingContextFromServiceBinding, mg.Spec.ForProvider.Context, fmt.Sprint(err))
 	}
 	var requestContext map[string]any
 	if err = json.Unmarshal(requestContextBytes, &requestContext); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing context to bytes from ServiceBinding", err)
+		return nil, nil, fmt.Errorf("%w: %s", errFailedUnMarshallingRequestContext, fmt.Sprint(err))
 	}
 
 	// Convert spec.Parameters of type *apiextensions.JSON to map[string]any
 	var requestParams map[string]any
 	if err = json.Unmarshal([]byte(mg.Spec.ForProvider.Parameters), &requestParams); err != nil {
-		return nil, nil, fmt.Errorf("%s: %w", "error while marshalling or parsing parameters to bytes from ServiceBinding", err)
+		return nil, nil, fmt.Errorf("%w: %s", errFailedUnMarshallingRequestParams, fmt.Sprint(err))
 	}
 	return requestContext, requestParams, nil
 }

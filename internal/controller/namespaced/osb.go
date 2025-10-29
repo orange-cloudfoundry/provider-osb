@@ -17,6 +17,7 @@ limitations under the License.
 package namespaced
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
@@ -27,6 +28,8 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/servicebinding"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/serviceinstance"
 )
+
+var errFailedToSetupNamespacedController = errors.New("failed to set up cluster controller ")
 
 // Setup creates all OSB controllers with the supplied logger and adds them to
 // the supplied manager.
@@ -40,7 +43,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 
 	for name, setup := range controllers {
 		if err := setup(mgr, o); err != nil {
-			return fmt.Errorf("failed to set up namespaced controller '%s': %w", name, err)
+			return fmt.Errorf("%w '%s': %s", errFailedToSetupNamespacedController, name, fmt.Sprint(err))
 		}
 	}
 

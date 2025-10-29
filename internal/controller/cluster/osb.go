@@ -17,6 +17,7 @@ limitations under the License.
 package cluster
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
@@ -27,6 +28,8 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/servicebinding"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/serviceinstance"
 )
+
+var errFailedToSetupClusterController = errors.New("failed to set up cluster controller ")
 
 // Setup creates all OSB controllers with the supplied logger and adds them to
 // the supplied manager.
@@ -40,7 +43,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 
 	for name, setup := range controllers {
 		if err := setup(mgr, o); err != nil {
-			return fmt.Errorf("failed to set up cluster controller '%s': %w", name, err)
+			return fmt.Errorf("%w '%s': %s", errFailedToSetupClusterController, name, fmt.Sprint(err))
 		}
 	}
 

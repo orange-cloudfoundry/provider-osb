@@ -11,6 +11,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+var (
+	errWhileRetrievingReferencedApplication = errors.New("error while retrieving referenced application")
+	errBindingReferencedNotExist            = errors.New("binding referenced an application which does not exist")
+)
+
 // ResolveApplicationData returns the ApplicationData associated with a ServiceBindingParameters.
 // It first checks if an ApplicationRef is set and retrieves the referenced Application from the Kubernetes API.
 // If the reference does not exist, it returns an error. If no reference is set but ApplicationData exists
@@ -24,9 +29,9 @@ func ResolveApplicationData(ctx context.Context, kube client.Client, spec interf
 
 		if err := kube.Get(ctx, spec.GetApplicationRef().ToObjectKey(), &application); err != nil {
 			if kerrors.IsNotFound(err) {
-				return nil, errors.New("binding referenced an application which does not exist")
+				return nil, errBindingReferencedNotExist
 			}
-			return nil, fmt.Errorf("%s: %w", "error while retrieving referenced application", err)
+			return nil, fmt.Errorf("%w: %s", errWhileRetrievingReferencedApplication, fmt.Sprint(err))
 		}
 
 		appCopy := application.Spec.ForProvider

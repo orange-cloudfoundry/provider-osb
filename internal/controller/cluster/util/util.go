@@ -111,7 +111,7 @@ func NewOsbClient(conf v1alpha1.ProviderConfig, creds []byte) (osb.Client, error
 		credsString := string(creds)
 		basicAuth, err := decodeB64StringToBasicAuthConfig(credsString)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", errCannotDecodeBasicAuth, err)
+			return nil, fmt.Errorf("%w: %s", errCannotDecodeBasicAuth, fmt.Sprint(err))
 		}
 		authConfig := osb.AuthConfig{
 			BasicAuthConfig: &basicAuth,
@@ -267,12 +267,12 @@ func resolveProviderConfigLegacy(ctx context.Context, client client.Client, mg r
 	}
 	pc := &v1alpha1.ProviderConfig{}
 	if err := client.Get(ctx, types.NamespacedName{Name: configRef.Name}, pc); err != nil {
-		return nil, fmt.Errorf("%w: %v", errCannotGetProviderConfig, err)
+		return nil, fmt.Errorf("%w: %s", errCannotGetProviderConfig, fmt.Sprint(err))
 	}
 
 	t := resource.NewLegacyProviderConfigUsageTracker(client, &v1alpha1.ProviderConfigUsage{})
 	if err := t.Track(ctx, mg); err != nil {
-		return nil, fmt.Errorf("%s: %w", ErrCannotTrackProviderConfigUsage, err)
+		return nil, fmt.Errorf("%w: %s", ErrCannotTrackProviderConfigUsage, fmt.Sprint(err))
 	}
 
 	return legacyToModernProviderConfigSpec(pc)
@@ -304,19 +304,19 @@ func Connect(
 	// Resolve the ProviderConfig associated with the managed resource
 	pc, err := ResolveProviderConfig(ctx, kubeClient, mg)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%w: %v", errCannotGetProviderConfig, err)
+		return nil, nil, nil, fmt.Errorf("%w: %s", errCannotGetProviderConfig, fmt.Sprint(err))
 	}
 
 	// Extract credentials from the ProviderConfig
 	creds, err := resource.CommonCredentialExtractor(ctx, pc.Spec.Credentials.Source, kubeClient, pc.Spec.Credentials.CommonCredentialSelectors)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", errCannotGetCredentials, err)
+		return nil, nil, nil, fmt.Errorf("%w: %s", errCannotGetCredentials, fmt.Sprint(err))
 	}
 
 	// Create a new OSB client using the resolved ProviderConfig and extracted credentials
 	osbclient, err := newOsbClient(*pc, creds)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", errCannotCreateNewOsbClient, err)
+		return nil, nil, nil, fmt.Errorf("%w: %s", errCannotCreateNewOsbClient, fmt.Sprint(err))
 	}
 
 	// Add extra data to the originating identity from the ProviderConfig
@@ -325,7 +325,7 @@ func Connect(
 	// Create the originating identity object
 	oid, err := MakeOriginatingIdentityFromValue(oidValue)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("%s: %w", errCannotMakeOriginatingIdentity, err)
+		return nil, nil, nil, fmt.Errorf("%w: %s", errCannotMakeOriginatingIdentity, fmt.Sprint(err))
 	}
 
 	// Return the OSB client, the Kubernetes client, and the originating identity
@@ -337,7 +337,7 @@ func Connect(
 func GetLatestKubeObject[T client.Object](ctx context.Context, kube client.Client, obj T) (T, error) {
 	key := client.ObjectKeyFromObject(obj)
 	if err := kube.Get(ctx, key, obj); err != nil {
-		return obj, fmt.Errorf("%w: %v", errCannotGetResource, err)
+		return obj, fmt.Errorf("%w: %s", errCannotGetResource, fmt.Sprint(err))
 	}
 	return obj, nil
 }
@@ -367,7 +367,9 @@ func UpdateStatusFromLastOp[T LastOperationStatusSetter](obj T, resp *osb.LastOp
 	case osb.StateSucceeded:
 		obj.SetConditions(xpv1.Available())
 	case osb.StateInProgress:
-		return
+		obj.SetConditions(xpv1.Unavailable())
+	case osb.StateDeleting:
+		obj.SetConditions(xpv1.Unavailable())
 	case osb.StateFailed:
 		obj.SetConditions(xpv1.Unavailable())
 	}
@@ -404,7 +406,7 @@ func MarshalMapValues(input map[string]any) (map[string][]byte, error) {
 	for k, v := range input {
 		b, err := json.Marshal(v)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s, %v", errMarshalMapValue, k, err)
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalMapValue, k, fmt.Sprint(err))
 		}
 		output[k] = b
 	}
@@ -420,7 +422,7 @@ func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 	for key, value := range resp.Credentials {
 		data, err := json.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s, %v", errMarshalCredential, key, err)
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalCredential, key, fmt.Sprint(err))
 		}
 		creds[key] = data
 	}
@@ -433,7 +435,7 @@ func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 func ParseISO8601Time(value, field string) (time.Time, error) {
 	t, err := time.Parse(Iso8601dateFormat, value)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%w: %s, %v", errParseISO8601Time, field, err)
+		return time.Time{}, fmt.Errorf("%w: %s, %v", errParseISO8601Time, field, fmt.Sprint(err))
 	}
 	return t, nil
 }

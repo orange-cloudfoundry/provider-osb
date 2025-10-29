@@ -98,7 +98,7 @@ type connector struct {
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
 	osbClient, kube, originatingIdentity, err := util.Connect(ctx, c.kubeClient, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errCannotConnect, err)
+		return nil, fmt.Errorf("%s: %w", fmt.Sprint(errCannotConnect), err)
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
@@ -158,14 +158,14 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			}, nil
 		}
 		// Other errors are unexpected
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", errOSBGetInstance, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errOSBGetInstance, fmt.Sprint(err))
 	}
 
 	// Compare the uninstantiated spec from the ServiceInstance with the actual instance returned from OSB.
 	// This determines if the external resource is up to date with the deinstancered state.
 	upToDate, err := instance.CompareSpecWithOSB(osbInstance)
 	if err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%s: %w", errCompareSpecWithOSB, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCompareSpecWithOSB, fmt.Sprint(err))
 	}
 
 	return managed.ExternalObservation{
@@ -197,25 +197,25 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	params, err := instance.Spec.ForProvider.Parameters.ToParameters()
 	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errParseParametersFailed, err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errParseParametersFailed, fmt.Sprint(err))
 	}
 
 	ctxMap, err := instance.Spec.ForProvider.Context.ToMap()
 	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errParseContextFailed, err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errParseContextFailed, fmt.Sprint(err))
 	}
 
 	req := instance.BuildOSBProvisionRequest(params, ctxMap)
 
 	resp, err := c.osb.ProvisionInstance(req)
 	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errOSBProvisionInstanceFailed, err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errOSBProvisionInstanceFailed, fmt.Sprint(err))
 	}
 
 	instance.UpdateStatusFromOSB(resp)
 
 	if err := c.kube.Status().Update(ctx, instance); err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, fmt.Sprint(err))
 	}
 
 	return managed.ExternalCreation{}, nil
@@ -232,13 +232,13 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	// Build the OSB update request.
 	req, err := instance.BuildOSBUpdateRequest()
 	if err != nil {
-		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotBuildOSBUpdateRequest, err)
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotBuildOSBUpdateRequest, fmt.Sprint(err))
 	}
 
 	// Send the request to the OSB broker.
 	resp, err := c.osb.UpdateInstance(req)
 	if err != nil {
-		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errOSBUpdateInstanceFailed, err)
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errOSBUpdateInstanceFailed, fmt.Sprint(err))
 	}
 
 	// Update the instance status based on the response.
@@ -246,7 +246,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	// Persist the updated status in Kubernetes.
 	if err := c.kube.Status().Update(ctx, instance); err != nil {
-		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, err)
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, fmt.Sprint(err))
 	}
 
 	return managed.ExternalUpdate{
@@ -294,7 +294,7 @@ func (c *external) removeFinalizer(ctx context.Context, instance *v1alpha1.Servi
 
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, latest); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %v", errCannotUpdateServiceInstanceStatus, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, fmt.Sprint(err))
 	}
 
 	// If the last operation was a deletion and it has succeeded, we consider the resource as deleted.
@@ -317,7 +317,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, instance *
 			}, nil
 		}
 		// Other errors are unexpected
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errOSBPollLastOperationFailed, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errOSBPollLastOperationFailed, fmt.Sprint(err))
 	}
 
 	latest, err := util.GetLatestKubeObject(ctx, c.kube, instance)
@@ -333,7 +333,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, instance *
 
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, latest); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, fmt.Sprint(err))
 	}
 
 	return managed.ExternalObservation{
@@ -347,7 +347,7 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, instance *
 func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1alpha1.ServiceInstance) error {
 	var bindingList apisbinding.ServiceBindingList
 	if err := c.kube.List(ctx, &bindingList, client.InNamespace(instance.GetNamespace())); err != nil {
-		return fmt.Errorf("%w: %v", errCannotListServiceBindings, err)
+		return fmt.Errorf("%w: %s", errCannotListServiceBindings, fmt.Sprint(err))
 	}
 
 	apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
@@ -362,12 +362,12 @@ func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1a
 // along with any error encountered during the process.
 func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
 	if err := c.UpdateActiveBindingsStatus(ctx, instance); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %v", errCannotUpdateActiveBindingsStatus, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateActiveBindingsStatus, fmt.Sprint(err))
 	}
 
 	// Update the status of the ServiceInstance resource in Kubernetes.
 	if err := c.kube.Status().Update(ctx, instance); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %v", errCannotUpdateServiceInstanceStatus, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, fmt.Sprint(err))
 	}
 
 	// If the resource is being deleted, we consider it as existing and up to date.
@@ -388,7 +388,7 @@ func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceIn
 			// Resource is already gone; nothing to do.
 			return managed.ExternalDelete{}, nil
 		}
-		return managed.ExternalDelete{}, fmt.Errorf("%w: %v", errOSBDeprovisionInstanceFailed, err)
+		return managed.ExternalDelete{}, fmt.Errorf("%w: %s", errOSBDeprovisionInstanceFailed, fmt.Sprint(err))
 	}
 
 	if resp.Async {
@@ -396,7 +396,7 @@ func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceIn
 		instance.UpdateStatusForAsyncDeletion(resp)
 		// Persist status to Kubernetes
 		if err := c.kube.Status().Update(ctx, instance); err != nil {
-			return managed.ExternalDelete{}, fmt.Errorf("%w: %v", errCannotUpdateServiceInstanceStatus, err)
+			return managed.ExternalDelete{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, fmt.Sprint(err))
 		}
 	}
 

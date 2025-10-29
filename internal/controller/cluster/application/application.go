@@ -74,7 +74,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1alpha1.ApplicationList{}, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return fmt.Errorf("%w: %s: %v", errCannotRegisterMRStateRecorder, v1alpha1.ApplicationGroupVersionKind.Kind, err)
+			return fmt.Errorf("%w: %s: %v", errCannotRegisterMRStateRecorder, v1alpha1.ApplicationGroupVersionKind.Kind, fmt.Sprint(err))
 		}
 	}
 
@@ -104,7 +104,7 @@ type connector struct {
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
 	osbClient, kube, originatingIdentity, err := util.Connect(ctx, c.kube, c.newOsbClient, mg, c.originatingIdentityValue)
 	if err != nil {
-		return nil, fmt.Errorf("%v: %w", errCannotConnect, err)
+		return nil, fmt.Errorf("%v: %w", fmt.Sprint(errCannotConnect), err)
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.

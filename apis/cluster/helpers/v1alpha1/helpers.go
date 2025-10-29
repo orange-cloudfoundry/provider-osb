@@ -82,7 +82,7 @@ func GetDataFromServiceBinding(
 	// Try to fetch application data directly from the binding spec.
 	appData, err := applicationv1alpha1.ResolveApplicationData(ctx, kube, &spec)
 	if err != nil {
-		return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %v", errAppDataFetchFailed, err)
+		return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %s", errAppDataFetchFailed, fmt.Sprint(err))
 	}
 
 	// Initialize instance data pointer.
@@ -96,7 +96,7 @@ func GetDataFromServiceBinding(
 			if kerrors.IsNotFound(err) {
 				return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %s/%s", errInstanceNotFound, binding.Namespace, binding.Name)
 			}
-			return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %v", errInstanceFetchFailed, err)
+			return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %s", errInstanceFetchFailed, fmt.Sprint(err))
 		}
 
 		instanceData = &common.InstanceData{}
@@ -106,7 +106,7 @@ func GetDataFromServiceBinding(
 		if appData == nil {
 			appData, err = applicationv1alpha1.ResolveApplicationData(ctx, kube, instance.GetSpecForProviderPtr())
 			if err != nil {
-				return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %v", errAppDataFetchFromInstance, err)
+				return bindingv1alpha1.BindingData{}, fmt.Errorf("%w: %s", errAppDataFetchFromInstance, fmt.Sprint(err))
 			}
 		}
 

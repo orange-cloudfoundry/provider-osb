@@ -110,7 +110,7 @@ func NewOsbClient(pc resource.ProviderConfig, creds []byte) (osb.Client, error) 
 	case *v1alpha1.ClusterProviderConfig:
 		conf = c
 	default:
-		return nil, fmt.Errorf("%w: %v", errUnsupportedProviderType, pc)
+		return nil, fmt.Errorf("%w: %s", errUnsupportedProviderType, pc)
 	}
 
 	config := osb.DefaultClientConfiguration()
@@ -123,7 +123,7 @@ func NewOsbClient(pc resource.ProviderConfig, creds []byte) (osb.Client, error) 
 	if len(creds) > 0 {
 		basicAuth, err := decodeB64StringToBasicAuthConfig(string(creds))
 		if err != nil {
-			return nil, fmt.Errorf("%w: %v", errCannotDecodeBasicAuth, err)
+			return nil, fmt.Errorf("%w: %s", errCannotDecodeBasicAuth, fmt.Sprint(err))
 		}
 		config.AuthConfig = &osb.AuthConfig{BasicAuthConfig: &basicAuth}
 	}
@@ -211,7 +211,7 @@ type NoOpOsbClient fake.FakeClient
 func GetLatestKubeObject[T client.Object](ctx context.Context, kube client.Client, obj T) (T, error) {
 	key := client.ObjectKeyFromObject(obj)
 	if err := kube.Get(ctx, key, obj); err != nil {
-		return obj, fmt.Errorf("%w: %v", errCannotGetResource, err)
+		return obj, fmt.Errorf("%w: %s", errCannotGetResource, fmt.Sprint(err))
 	}
 	return obj, nil
 }
@@ -241,7 +241,9 @@ func UpdateStatusFromLastOp[T LastOperationStatusSetter](obj T, resp *osb.LastOp
 	case osb.StateSucceeded:
 		obj.SetConditions(xpv1.Available())
 	case osb.StateInProgress:
-		return
+		obj.SetConditions(xpv1.Unavailable())
+	case osb.StateDeleting:
+		obj.SetConditions(xpv1.Unavailable())
 	case osb.StateFailed:
 		obj.SetConditions(xpv1.Unavailable())
 	}
@@ -278,7 +280,7 @@ func MarshalMapValues(input map[string]any) (map[string][]byte, error) {
 	for k, v := range input {
 		b, err := json.Marshal(v)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s, %v", errMarshalMapValue, k, err)
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalMapValue, k, fmt.Sprint(err))
 		}
 		output[k] = b
 	}
@@ -294,7 +296,7 @@ func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 	for key, value := range resp.Credentials {
 		data, err := json.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s, %v", errMarshalCredential, key, err)
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalCredential, key, fmt.Sprint(err))
 		}
 		creds[key] = data
 	}
@@ -307,7 +309,7 @@ func GetCredsFromResponse(resp *osb.BindResponse) (map[string][]byte, error) {
 func ParseISO8601Time(value, field string) (time.Time, error) {
 	t, err := time.Parse(Iso8601dateFormat, value)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("%w: %s, %v", errParseISO8601Time, field, err)
+		return time.Time{}, fmt.Errorf("%w: %s, %v", errParseISO8601Time, field, fmt.Sprint(err))
 	}
 	return t, nil
 }
@@ -356,7 +358,7 @@ func ResolveProviderConfig(
 			Name:      ref.Name,
 			Namespace: obj.GetNamespace(),
 		}, npc); err != nil {
-			return nil, nil, fmt.Errorf("%w: %v", errCannotGetProviderConfig, err)
+			return nil, nil, fmt.Errorf("%w: %s", errCannotGetProviderConfig, fmt.Sprint(err))
 		}
 		pcSpec = &npc.Spec
 		pc = npc
@@ -364,13 +366,13 @@ func ResolveProviderConfig(
 	case v1alpha1.ClusterProviderConfigKind:
 		cpc := &v1alpha1.ClusterProviderConfig{}
 		if err := kube.Get(ctx, client.ObjectKey{Name: ref.Name}, cpc); err != nil {
-			return nil, nil, fmt.Errorf("%w: %v", errCannotGetClusterProviderConfig, err)
+			return nil, nil, fmt.Errorf("%w: %s", errCannotGetClusterProviderConfig, fmt.Sprint(err))
 		}
 		pcSpec = &cpc.Spec
 		pc = cpc
 
 	default:
-		return nil, nil, fmt.Errorf("%w: %v", errUnknownProviderConfigKind, ref.Kind)
+		return nil, nil, fmt.Errorf("%w: %s", errUnknownProviderConfigKind, ref.Kind)
 	}
 
 	return pc, pcSpec, nil

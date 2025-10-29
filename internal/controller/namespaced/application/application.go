@@ -79,7 +79,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, &v1alpha1.ApplicationList{}, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return fmt.Errorf("%w: %s: %v", errCannotRegisterMRStateRecorder, v1alpha1.ApplicationGroupVersionKind.Kind, err)
+			return fmt.Errorf("%w: %s: %v", errCannotRegisterMRStateRecorder, v1alpha1.ApplicationGroupVersionKind.Kind, fmt.Sprint(err))
 		}
 	}
 
@@ -125,13 +125,13 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	// Extract credentials from the ProviderConfig
 	creds, err := resource.CommonCredentialExtractor(ctx, pcSpec.Credentials.Source, c.kube, pcSpec.Credentials.CommonCredentialSelectors)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errCannotGetCredentials, err)
+		return nil, fmt.Errorf("%w: %s", errCannotGetCredentials, fmt.Sprint(err))
 	}
 
 	// Create a new OSB client using the resolved ProviderConfig and extracted credentials
 	osbClient, err := util.NewOsbClient(pc, creds)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errCannotCreateNewOsbClient, err)
+		return nil, fmt.Errorf("%w: %s", errCannotCreateNewOsbClient, fmt.Sprint(err))
 	}
 
 	// Add extra data to the originating identity from the ProviderConfig
@@ -140,7 +140,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	// Create the originating identity object
 	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errCannotMakeOriginatingIdentity, err)
+		return nil, fmt.Errorf("%w: %s", errCannotMakeOriginatingIdentity, fmt.Sprint(err))
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.

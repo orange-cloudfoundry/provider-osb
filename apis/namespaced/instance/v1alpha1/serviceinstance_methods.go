@@ -1,12 +1,19 @@
 package v1alpha1
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
+)
+
+var (
+	errFailedToParseServiceInstanceParameters    = errors.New("error while marshalling or parsing parameters to bytes from ServiceBinding")
+	errFailedToMarshallServiceInstanceParameters = errors.New("failed to marshal ServiceInstance parameters")
+	errFailedToMarshallServiceInstanceContext    = errors.New("failed to marshal ServiceInstance context")
 )
 
 // GetProviderConfigReference of this ServiceInstance.
@@ -116,7 +123,7 @@ func (mg *ServiceInstance) compareParametersWithOSB(osbInstance *osb.GetInstance
 
 	params, err := mg.Spec.ForProvider.Parameters.ToParameters()
 	if err != nil {
-		return false, fmt.Errorf("failed to parse ServiceInstance parameters: %w", err)
+		return false, fmt.Errorf("%w: %s", errFailedToParseServiceInstanceParameters, fmt.Sprint(err))
 	}
 
 	if !reflect.DeepEqual(params, osbInstance.Parameters) {
@@ -171,12 +178,12 @@ func (mg *ServiceInstance) BuildOSBProvisionRequest(params map[string]interface{
 func (mg *ServiceInstance) BuildOSBUpdateRequest() (*osb.UpdateInstanceRequest, error) {
 	params, err := mg.Spec.ForProvider.Parameters.ToParameters()
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal ServiceInstance parameters: %w", err)
+		return nil, fmt.Errorf("%w: %s", errFailedToMarshallServiceInstanceParameters, fmt.Sprint(err))
 	}
 
 	ctxMap, err := mg.Spec.ForProvider.Context.ToMap()
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal ServiceInstance context: %w", err)
+		return nil, fmt.Errorf("%w: %s", errFailedToMarshallServiceInstanceContext, fmt.Sprint(err))
 	}
 
 	return &osb.UpdateInstanceRequest{

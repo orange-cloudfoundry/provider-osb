@@ -55,16 +55,6 @@ import (
 // https://github.com/golang/go/wiki/TestComments
 // https://github.com/crossplane/crossplane/blob/master/CONTRIBUTING.md#contributing-code
 
-func EquateErrors() cmp.Option {
-	return cmp.Comparer(func(x, y error) bool {
-		if x == nil || y == nil {
-			return x == y
-		}
-		// Vérifie si l’un des deux wrappe l’autre
-		return errors.Is(x, y) || errors.Is(y, x)
-	})
-}
-
 type notServiceBinding struct {
 	resource.Managed
 }
