@@ -59,7 +59,8 @@ var (
 	errCannotDeleteWithActiveBindings    = errors.New("cannot delete ServiceInstance, it has active bindings")
 	errOSBDeprovisionInstanceFailed      = errors.New("OSB DeprovisionInstance request failed")
 	errOSBPollLastOperationFailed        = errors.New("OSB PollLastOperation request failed")
-	ErrCannotTrackProviderConfigUsage    = errors.New("cannot track ProviderConfig usage")
+	errCannotTrackProviderConfigUsage    = errors.New("cannot track ProviderConfig usage")
+	errFailedToCompareSpecWithOSB        = errors.New("failed to compare spec with osb")
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -106,7 +107,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	if err := c.usage.Track(ctx, mg.(resource.ModernManaged)); err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrCannotTrackProviderConfigUsage, fmt.Sprint(err))
+		return nil, fmt.Errorf("%w: %s", errCannotTrackProviderConfigUsage, fmt.Sprint(err))
 	}
 
 	pc, pcSpec, err := util.ResolveProviderConfig(ctx, c.kube, obj)
@@ -199,7 +200,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// This determines if the external resource is up to date with the deinstancered state.
 	upToDate, err := instance.CompareSpecWithOSB(osbInstance)
 	if err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errOSBGetInstance, fmt.Sprint(err))
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToCompareSpecWithOSB, fmt.Sprint(err))
 	}
 
 	return managed.ExternalObservation{
