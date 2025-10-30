@@ -256,8 +256,8 @@ func (sb *ServiceBinding) TriggerRotation(osb osbClient.Client, data BindingData
 }
 
 // HasInstanceRef returns true if the ServiceBindingParameters has an associated InstanceRef.
-func (spec *ServiceBindingParameters) HasInstanceRef() bool {
-	return spec.InstanceRef != nil
+func (sbp *ServiceBindingParameters) HasInstanceRef() bool {
+	return sbp.InstanceRef != nil
 }
 
 // HasNoInstanceRef returns true if the ServiceBindingParameters does NOT have an associated InstanceRef.
@@ -269,17 +269,17 @@ func (sb *ServiceBinding) HasNoProviderInstanceRef() bool {
 // GetInstanceRef returns the reference to the ServiceInstance that this
 // ServiceBinding is associated with. The returned value is a pointer to a
 // clusterName, containing the name and namespace of the referenced instance.
-func (spec *ServiceBindingParameters) GetInstanceRef() *common.NamespacedName {
-	return spec.InstanceRef
+func (sbp *ServiceBindingParameters) GetInstanceRef() *common.NamespacedName {
+	return sbp.InstanceRef
 }
 
 // IsBoundToInstance returns true if the ServiceBinding is linked to the ServiceInstance
 // with the given name.
-func (b *ServiceBinding) IsBoundToInstance(instanceName string) bool {
-	if b.Spec.ForProvider.InstanceRef == nil {
+func (sb *ServiceBinding) IsBoundToInstance(instanceName string) bool {
+	if sb.Spec.ForProvider.InstanceRef == nil {
 		return false
 	}
-	return b.Spec.ForProvider.InstanceRef.Name == instanceName
+	return sb.Spec.ForProvider.InstanceRef.Name == instanceName
 }
 
 // IsNotBeingDeleted returns true if the ServiceBinding has not been marked for deletion.
@@ -290,26 +290,26 @@ func (b *ServiceBinding) IsNotBeingDeleted() bool {
 // HasInstanceData returns true if the ServiceBindingParameters contains InstanceData.
 // This indicates whether the binding has been associated with a ServiceInstance
 // and has stored instance-specific information.
-func (spec *ServiceBindingParameters) HasInstanceData() bool {
-	return spec.InstanceData != nil
+func (sbp *ServiceBindingParameters) HasInstanceData() bool {
+	return sbp.InstanceData != nil
 }
 
 // HasApplicationRef returns true if the ServiceBindingParameters has an associated ApplicationRef.
-func (spec *ServiceBindingParameters) HasApplicationRef() bool {
-	return spec.ApplicationRef != nil
+func (sbp *ServiceBindingParameters) HasApplicationRef() bool {
+	return sbp.ApplicationRef != nil
 }
 
 // HasApplicationData returns true if the ServiceBindingParameters contains ApplicationData.
 // This indicates whether the binding has been associated with a ServiceInstance
 // and has stored instance-specific information.
-func (spec *ServiceBindingParameters) HasApplicationData() bool {
-	return spec.ApplicationData != nil
+func (sbp *ServiceBindingParameters) HasApplicationData() bool {
+	return sbp.ApplicationData != nil
 }
 
 // GetApplicationData returns the inline ApplicationData stored in the
 // ServiceBindingParameters, if available. Returns nil if no inline data exists.
-func (spec *ServiceBindingParameters) GetApplicationData() *common.ApplicationData {
-	return spec.ApplicationData
+func (sbp *ServiceBindingParameters) GetApplicationData() *common.ApplicationData {
+	return sbp.ApplicationData
 }
 
 // ensureBindingUUID returns the existing external name or generates a new UUID if missing.
@@ -417,6 +417,6 @@ func (sb *ServiceBinding) ConvertSpecsData() (map[string]any, map[string]any, er
 
 // GetApplicationRef returns the reference to the associated application
 // from the ServiceBindingParameters. It may return nil if no reference is set.
-func (spec *ServiceBindingParameters) GetApplicationRef() *common.NamespacedName {
-	return spec.ApplicationRef
+func (sbp *ServiceBindingParameters) GetApplicationRef() *common.NamespacedName {
+	return sbp.ApplicationRef
 }
