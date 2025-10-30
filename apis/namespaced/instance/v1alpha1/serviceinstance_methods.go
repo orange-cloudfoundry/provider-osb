@@ -14,42 +14,50 @@ var (
 	errFailedToParseServiceInstanceParameters    = errors.New("error while marshalling or parsing parameters to bytes from ServiceBinding")
 	errFailedToMarshallServiceInstanceParameters = errors.New("failed to marshal ServiceInstance parameters")
 	errFailedToMarshallServiceInstanceContext    = errors.New("failed to marshal ServiceInstance context")
+	errInstanceIdIsEmpty                         = errors.New("instanceID is empty")
+	errPlanIdEmpty                               = errors.New("planID is empty")
+	errServiceIdEmpty                            = errors.New("serviceID is empty")
+	errOrganizationGuidEmpty                     = errors.New("organizationGuid is empty")
+	errSpaceGuidEmpty                            = errors.New("spaceGuid is empty")
+	errCtxMapEmpty                               = errors.New("ctxMap is empty")
+	errOidPlatformIsEmpty                        = errors.New("oid platform is empty")
+	errOidValueIsEmpty                           = errors.New("oid value is empty")
 )
 
 // GetProviderConfigReference of this ServiceInstance.
-func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.ProviderConfigReference {
-	if mg.Spec.ForProvider.ApplicationData == nil {
+func (si *ServiceInstance) GetProviderConfigReference() *xpv1.ProviderConfigReference {
+	if si.Spec.ForProvider.ApplicationData == nil {
 		return nil
 	}
 
-	return mg.Spec.ForProvider.ApplicationData.ProviderConfigReference
+	return si.Spec.ForProvider.ApplicationData.ProviderConfigReference
 }
 
 // SetLastOperationState sets the LastOperationState in the ServiceInstance status.
 // This is used to track the state of the last operation performed on the instance.
-func (mg *ServiceInstance) SetLastOperationState(state osbClient.LastOperationState) {
-	mg.Status.AtProvider.LastOperationState = state
+func (si *ServiceInstance) SetLastOperationState(state osbClient.LastOperationState) {
+	si.Status.AtProvider.LastOperationState = state
 }
 
 // SetLastOperationDescription sets the LastOperationDescription in the ServiceInstance status.
 // This is used to store a human-readable description of the last operation performed.
-func (mg *ServiceInstance) SetLastOperationDescription(desc string) {
-	mg.Status.AtProvider.LastOperationDescription = desc
+func (si *ServiceInstance) SetLastOperationDescription(desc string) {
+	si.Status.AtProvider.LastOperationDescription = desc
 }
 
 // SetLastOperationKey sets the LastOperationKey of the ServiceInstance's status.
 //
 // Parameters:
 // - operationKey: a pointer to the OSB OperationKey returned by the broker
-func (mg *ServiceInstance) SetLastOperationKey(operationKey *osbClient.OperationKey) {
-	mg.Status.AtProvider.LastOperationKey = *operationKey
+func (si *ServiceInstance) SetLastOperationKey(operationKey *osbClient.OperationKey) {
+	si.Status.AtProvider.LastOperationKey = *operationKey
 }
 
 // IsDeletable returns true if the ServiceInstance is in deleting state
 // and has no active bindings.
-func (mg *ServiceInstance) IsDeletable() bool {
-	return mg.Status.AtProvider.LastOperationState == osbClient.StateDeleting &&
-		!mg.Status.AtProvider.HasActiveBindings
+func (si *ServiceInstance) IsDeletable() bool {
+	return si.Status.AtProvider.LastOperationState == osbClient.StateDeleting &&
+		!si.Status.AtProvider.HasActiveBindings
 }
 
 // IsStateInProgress checks if the ServiceInstance's last operation state
@@ -57,8 +65,8 @@ func (mg *ServiceInstance) IsDeletable() bool {
 //
 // Returns:
 // - bool: true if the last operation is in progress, false otherwise
-func (mg *ServiceInstance) IsStateInProgress() bool {
-	return mg.Status.AtProvider.LastOperationState == osbClient.StateInProgress
+func (si *ServiceInstance) IsStateInProgress() bool {
+	return si.Status.AtProvider.LastOperationState == osbClient.StateInProgress
 }
 
 // IsStateDeleting checks if the ServiceInstance's last operation state
@@ -66,8 +74,8 @@ func (mg *ServiceInstance) IsStateInProgress() bool {
 //
 // Returns:
 // - bool: true if the last operation state is "deleting", false otherwise
-func (mg *ServiceInstance) IsStateDeleting() bool {
-	return mg.Status.AtProvider.LastOperationState == osbClient.StateDeleting
+func (si *ServiceInstance) IsStateDeleting() bool {
+	return si.Status.AtProvider.LastOperationState == osbClient.StateDeleting
 }
 
 // IsAlreadyDeleted checks if the given ServiceInstance has no InstanceId set,
@@ -79,9 +87,9 @@ func (mg *ServiceInstance) IsStateDeleting() bool {
 //
 // Returns:
 // - bool: true if the instance is considered already deleted, false otherwise
-func (mg *ServiceInstance) IsAlreadyDeleted() bool {
+func (si *ServiceInstance) IsAlreadyDeleted() bool {
 	// If the InstanceId is empty, the resource does not exist externally
-	return mg.Spec.ForProvider.InstanceId == ""
+	return si.Spec.ForProvider.InstanceId == ""
 }
 
 // HasActiveBindings checks if the ServiceInstance currently has active bindings.
@@ -90,16 +98,16 @@ func (mg *ServiceInstance) IsAlreadyDeleted() bool {
 //
 // Returns:
 // - bool: true if there are active bindings, false otherwise
-func (mg *ServiceInstance) HasActiveBindings() bool {
-	return mg.Status.AtProvider.HasActiveBindings
+func (si *ServiceInstance) HasActiveBindings() bool {
+	return si.Status.AtProvider.HasActiveBindings
 }
 
 // HasPlanID checks if the ServiceInstance has a PlanID set.
 //
 // Returns:
 // - bool: true if PlanID is not empty, false otherwise
-func (mg *ServiceInstance) HasPlanID() bool {
-	return mg.Spec.ForProvider.PlanId != ""
+func (si *ServiceInstance) HasPlanID() bool {
+	return si.Spec.ForProvider.PlanId != ""
 }
 
 // IsPlanIDDifferent checks if the ServiceInstance's PlanID is different
@@ -110,18 +118,18 @@ func (mg *ServiceInstance) HasPlanID() bool {
 //
 // Returns:
 // - bool: true if PlanIDs are different, false if they match
-func (mg *ServiceInstance) IsPlanIDDifferent(osbPlanID string) bool {
-	return mg.Spec.ForProvider.PlanId != osbPlanID
+func (si *ServiceInstance) IsPlanIDDifferent(osbPlanID string) bool {
+	return si.Spec.ForProvider.PlanId != osbPlanID
 }
 
 // compareParametersWithOSB compares parameters between a ServiceInstance spec
 // and its OSB instance response.
-func (mg *ServiceInstance) compareParametersWithOSB(osbInstance *osbClient.GetInstanceResponse) (bool, error) {
-	if len(mg.Spec.ForProvider.Parameters) == 0 {
+func (si *ServiceInstance) compareParametersWithOSB(osbInstance *osbClient.GetInstanceResponse) (bool, error) {
+	if len(si.Spec.ForProvider.Parameters) == 0 {
 		return true, nil
 	}
 
-	params, err := mg.Spec.ForProvider.Parameters.ToParameters()
+	params, err := si.Spec.ForProvider.Parameters.ToParameters()
 	if err != nil {
 		return false, fmt.Errorf("%w: %s", errFailedToParseServiceInstanceParameters, fmt.Sprint(err))
 	}
@@ -135,179 +143,268 @@ func (mg *ServiceInstance) compareParametersWithOSB(osbInstance *osbClient.GetIn
 
 // CompareSpecWithOSB compares a ServiceInstance spec with the corresponding OSB instance response.
 // It returns true if both representations are consistent, false otherwise.
-func (mg *ServiceInstance) CompareSpecWithOSB(osbInstance *osbClient.GetInstanceResponse) (bool, error) {
+func (si *ServiceInstance) CompareSpecWithOSB(osbInstance *osbClient.GetInstanceResponse) (bool, error) {
 	if osbInstance == nil {
 		return false, nil
 	}
 
 	// Compare PlanID
-	if mg.HasPlanID() && mg.IsPlanIDDifferent(osbInstance.PlanID) {
+	if si.HasPlanID() && si.IsPlanIDDifferent(osbInstance.PlanID) {
 		return false, nil
 	}
 
 	// Compare parameters
-	if ok, err := mg.compareParametersWithOSB(osbInstance); err != nil || !ok {
+	if ok, err := si.compareParametersWithOSB(osbInstance); err != nil || !ok {
 		return ok, err
 	}
 
 	// Compare context
-	if !reflect.DeepEqual(mg.Spec.ForProvider.Context, mg.Status.AtProvider.Context) {
+	if !reflect.DeepEqual(si.Spec.ForProvider.Context, si.Status.AtProvider.Context) {
 		return false, nil
 	}
 
 	return true, nil
 }
 
-// buildOSBProvisionRequest creates an OSB ProvisionRequest from a ServiceInstance spec.
-func (mg *ServiceInstance) BuildOSBProvisionRequest(params map[string]interface{}, ctxMap map[string]interface{}) *osbClient.ProvisionRequest {
-	return &osbClient.ProvisionRequest{
-		InstanceID:        mg.Spec.ForProvider.InstanceId,
-		ServiceID:         mg.Spec.ForProvider.ServiceId,
-		PlanID:            mg.Spec.ForProvider.PlanId,
-		OrganizationGUID:  mg.Spec.ForProvider.OrganizationGuid,
-		SpaceGUID:         mg.Spec.ForProvider.SpaceGuid,
-		Parameters:        params,
+// BuildProvisionRequest creates an OSB ProvisionRequest from a ServiceInstance spec.
+func (si *ServiceInstance) BuildProvisionRequest(params map[string]any, ctxMap map[string]any) (*osbClient.ProvisionRequest, error) {
+	if si.Spec.ForProvider.InstanceId == "" {
+		return &osbClient.ProvisionRequest{}, errInstanceIdIsEmpty
+	}
+
+	if si.Spec.ForProvider.PlanId == "" {
+		return &osbClient.ProvisionRequest{}, errPlanIdEmpty
+	}
+
+	if si.Spec.ForProvider.ServiceId == "" {
+		return &osbClient.ProvisionRequest{}, errServiceIdEmpty
+	}
+
+	if si.Spec.ForProvider.OrganizationGuid == "" {
+		return &osbClient.ProvisionRequest{}, errOrganizationGuidEmpty
+	}
+
+	if si.Spec.ForProvider.SpaceGuid == "" {
+		return &osbClient.ProvisionRequest{}, errSpaceGuidEmpty
+	}
+
+	if len(ctxMap) == 0 {
+		return &osbClient.ProvisionRequest{}, errCtxMapEmpty
+	}
+
+	provisionRequest := &osbClient.ProvisionRequest{
+		InstanceID:        si.Spec.ForProvider.InstanceId,
+		ServiceID:         si.Spec.ForProvider.ServiceId,
+		PlanID:            si.Spec.ForProvider.PlanId,
+		OrganizationGUID:  si.Spec.ForProvider.OrganizationGuid,
+		SpaceGUID:         si.Spec.ForProvider.SpaceGuid,
 		AcceptsIncomplete: true,
 		Context:           ctxMap,
 	}
+
+	if params != nil {
+		provisionRequest.Parameters = params
+	}
+
+	return provisionRequest, nil
 }
 
-// buildUpdateRequest constructs an OSB UpdateInstanceRequest from the given ServiceInstance.
+// buildUpdateInstanceRequest constructs an OSB UpdateInstanceRequest from the given ServiceInstance.
 // It converts the ServiceInstance spec parameters and context into the format expected by the OSB client.
 // Returns the prepared request or an error if the conversion fails.
-func (mg *ServiceInstance) BuildOSBUpdateRequest() (*osbClient.UpdateInstanceRequest, error) {
-	params, err := mg.Spec.ForProvider.Parameters.ToParameters()
+func (si *ServiceInstance) BuildUpdateInstanceRequest(oid osbClient.OriginatingIdentity) (*osbClient.UpdateInstanceRequest, error) {
+	params, err := si.Spec.ForProvider.Parameters.ToParameters()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", errFailedToMarshallServiceInstanceParameters, fmt.Sprint(err))
 	}
 
-	ctxMap, err := mg.Spec.ForProvider.Context.ToMap()
+	ctxMap, err := si.Spec.ForProvider.Context.ToMap()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", errFailedToMarshallServiceInstanceContext, fmt.Sprint(err))
 	}
 
-	return &osbClient.UpdateInstanceRequest{
-		InstanceID:        mg.Spec.ForProvider.InstanceId,
-		ServiceID:         mg.Spec.ForProvider.ServiceId,
-		PlanID:            &mg.Spec.ForProvider.PlanId,
-		Parameters:        params,
-		AcceptsIncomplete: true,
-		Context:           ctxMap,
-	}, nil
+	if si.Spec.ForProvider.InstanceId == "" {
+		return &osbClient.UpdateInstanceRequest{}, errInstanceIdIsEmpty
+	}
+
+	if si.Spec.ForProvider.ServiceId == "" {
+		return &osbClient.UpdateInstanceRequest{}, errServiceIdEmpty
+	}
+
+	if oid.Platform != "" {
+		return &osbClient.UpdateInstanceRequest{}, errOidPlatformIsEmpty
+	}
+
+	if oid.Value != "" {
+		return &osbClient.UpdateInstanceRequest{}, errOidValueIsEmpty
+	}
+
+	updateInstanceRequest := &osbClient.UpdateInstanceRequest{
+		InstanceID:          si.Spec.ForProvider.InstanceId,
+		ServiceID:           si.Spec.ForProvider.ServiceId,
+		AcceptsIncomplete:   true,
+		OriginatingIdentity: &oid,
+	}
+	// TODO oid
+
+	if si.Spec.ForProvider.PlanId != "" {
+		updateInstanceRequest.PlanID = &si.Spec.ForProvider.PlanId
+	}
+
+	if len(ctxMap) > 0 {
+		updateInstanceRequest.Context = ctxMap
+	}
+
+	if params != nil {
+		updateInstanceRequest.Parameters = params
+	}
+
+	return updateInstanceRequest, nil
 }
 
 // updateStatus updates the ServiceInstance status based on the OSB ProvisionInstance response.
-func (mg *ServiceInstance) UpdateStatus(resp *osbClient.ProvisionResponse) {
-	mg.Status.AtProvider.Context = mg.Spec.ForProvider.Context
-	mg.Status.AtProvider.DashboardURL = resp.DashboardURL
+func (si *ServiceInstance) UpdateStatus(resp *osbClient.ProvisionResponse) {
+	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
+	si.Status.AtProvider.DashboardURL = resp.DashboardURL
 
 	if resp.Async {
-		mg.Status.SetConditions(xpv1.Creating())
-		mg.Status.AtProvider.LastOperationState = osbClient.StateInProgress
+		si.Status.SetConditions(xpv1.Creating())
+		si.Status.AtProvider.LastOperationState = osbClient.StateInProgress
 		if resp.OperationKey != nil {
-			mg.Status.AtProvider.LastOperationKey = *resp.OperationKey
+			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
 		return
 	}
 
-	mg.Status.SetConditions(xpv1.Available())
-	mg.Status.AtProvider.LastOperationState = osbClient.StateSucceeded
+	si.Status.SetConditions(xpv1.Available())
+	si.Status.AtProvider.LastOperationState = osbClient.StateSucceeded
 }
 
 // SetStatusContextFromProviderContext copies the context from the ServiceInstance's
 // spec (ForProvider) into its status (AtProvider). This keeps the observed state
 // in sync with the desired configuration.
-func (mg *ServiceInstance) SetStatusContextFromProviderContext() {
-	mg.Status.AtProvider.Context = mg.Spec.ForProvider.Context
+func (si *ServiceInstance) SetStatusContextFromProviderContext() {
+	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
 }
 
 // SetDashboardURL updates the ServiceInstance status with the provided dashboard URL.
 // This method is typically called after receiving a response from the service broker.
-func (mg *ServiceInstance) SetDashboardURL(url *string) {
-	mg.Status.AtProvider.DashboardURL = url
+func (si *ServiceInstance) SetDashboardURL(url *string) {
+	si.Status.AtProvider.DashboardURL = url
 }
 
 // updateInstanceStatusFromUpdate updates the status of the ServiceInstance
 // based on the OSB UpdateInstanceResponse. It sets the dashboard URL, context,
 // and last operation state. If the update is asynchronous, it also sets the
 // last operation key and marks the operation as in progress.
-func (mg *ServiceInstance) UpdateStatusFromOSB(resp osbClient.OSBAsyncResponse) {
-	mg.SetStatusContextFromProviderContext()
-	mg.SetDashboardURL(resp.GetDashboardURL())
+func (si *ServiceInstance) UpdateStatusFromOSB(resp osbClient.OSBAsyncResponse) {
+	si.SetStatusContextFromProviderContext()
+	si.SetDashboardURL(resp.GetDashboardURL())
 
 	if resp.IsAsync() {
-		mg.Status.SetConditions(xpv1.Creating())
-		mg.SetLastOperationState(osbClient.StateInProgress)
+		si.Status.SetConditions(xpv1.Creating())
+		si.SetLastOperationState(osbClient.StateInProgress)
 		if resp.GetOperationKey() != nil {
-			mg.SetLastOperationKey(resp.GetOperationKey())
+			si.SetLastOperationKey(resp.GetOperationKey())
 		}
 		return
 	}
 
-	mg.Status.SetConditions(xpv1.Available())
-	mg.SetLastOperationState(osbClient.StateSucceeded)
+	si.Status.SetConditions(xpv1.Available())
+	si.SetLastOperationState(osbClient.StateSucceeded)
 }
 
 // IsInstanceIDEmpty returns true if the ServiceInstance has no InstanceId set
 // in its spec. This can be used to check whether the instance has been
 // provisioned or not.
-func (mg *ServiceInstance) IsInstanceIDEmpty() bool {
-	return mg.Spec.ForProvider.InstanceId == ""
+func (si *ServiceInstance) IsInstanceIDEmpty() bool {
+	return si.Spec.ForProvider.InstanceId == ""
 }
 
 // createRequestPollLastOperation builds and returns an OSB LastOperationRequest
 // for polling the current status of an asynchronous operation on a service mg.
-func (mg *ServiceInstance) CreateRequestPollLastOperation(originatingIdentity osbClient.OriginatingIdentity) *osbClient.LastOperationRequest {
-
-	return &osbClient.LastOperationRequest{
-		// mgID identifies the service mg whose operation is being polled.
-		InstanceID: mg.Spec.ForProvider.InstanceId,
-
-		// ServiceID identifies the service offering (from the broker catalog).
-		ServiceID: &mg.Spec.ForProvider.ServiceId,
-
-		// PlanID identifies the plan of the service offering used by this mg.
-		PlanID: &mg.Spec.ForProvider.PlanId,
-
-		// OriginatingIdentity contains information about the user or system
-		// making the OSB request (useful for auditing and multi-tenancy).
-		OriginatingIdentity: &originatingIdentity,
-
-		// OperationKey uniquely identifies the asynchronous operation being checked.
-		// It is provided by the broker when the operation was initiated asynchronously.
-		OperationKey: &mg.Status.AtProvider.LastOperationKey,
+func (si *ServiceInstance) BuildPollLastOperationRequest(oid osbClient.OriginatingIdentity) (*osbClient.LastOperationRequest, error) {
+	if si.Spec.ForProvider.InstanceId == "" {
+		return &osbClient.LastOperationRequest{}, errInstanceIdIsEmpty
 	}
+
+	if oid.Platform != "" {
+		return &osbClient.LastOperationRequest{}, errOidPlatformIsEmpty
+	}
+
+	if oid.Value != "" {
+		return &osbClient.LastOperationRequest{}, errOidValueIsEmpty
+	}
+
+	lastOperationRequest := &osbClient.LastOperationRequest{
+		InstanceID:          si.Spec.ForProvider.InstanceId,
+		OriginatingIdentity: &oid,
+	}
+
+	if si.Spec.ForProvider.ServiceId != "" {
+		lastOperationRequest.ServiceID = &si.Spec.ForProvider.ServiceId
+	}
+
+	if si.Spec.ForProvider.PlanId != "" {
+		lastOperationRequest.PlanID = &si.Spec.ForProvider.PlanId
+	}
+
+	if si.Status.AtProvider.LastOperationKey != "" {
+		lastOperationRequest.OperationKey = &si.Status.AtProvider.LastOperationKey
+	}
+
+	return lastOperationRequest, nil
 }
 
 // updateInstanceStatusForAsyncDeletion updates the ServiceInstance status when
 // a deletion is performed asynchronously.
-func (mg *ServiceInstance) UpdateStatusForAsyncDeletion(resp *osbClient.DeprovisionResponse) {
-	mg.SetLastOperationState(osbClient.StateDeleting)
+func (si *ServiceInstance) UpdateStatusForAsyncDeletion(resp *osbClient.DeprovisionResponse) {
+	si.SetLastOperationState(osbClient.StateDeleting)
 	if resp.OperationKey != nil {
-		mg.SetLastOperationKey(resp.OperationKey)
+		si.SetLastOperationKey(resp.OperationKey)
 	}
 }
 
 // buildDeprovisionRequest constructs an OSB DeprovisionRequest from a ServiceInstance.
-func (mg *ServiceInstance) BuildDeprovisionRequest(originatingIdentity osbClient.OriginatingIdentity) *osbClient.DeprovisionRequest {
-	return &osbClient.DeprovisionRequest{
-		InstanceID:          mg.Spec.ForProvider.InstanceId,
-		ServiceID:           mg.Spec.ForProvider.ServiceId,
-		PlanID:              mg.Spec.ForProvider.PlanId,
-		AcceptsIncomplete:   true,
-		OriginatingIdentity: &originatingIdentity,
+func (si *ServiceInstance) BuildDeprovisionRequest(oid osbClient.OriginatingIdentity) (*osbClient.DeprovisionRequest, error) {
+	if si.Spec.ForProvider.InstanceId == "" {
+		return &osbClient.DeprovisionRequest{}, errInstanceIdIsEmpty
 	}
+
+	if si.Spec.ForProvider.ServiceId == "" {
+		return &osbClient.DeprovisionRequest{}, errServiceIdEmpty
+	}
+
+	if si.Spec.ForProvider.PlanId == "" {
+		return &osbClient.DeprovisionRequest{}, errPlanIdEmpty
+	}
+
+	if oid.Platform != "" {
+		return &osbClient.DeprovisionRequest{}, errOidPlatformIsEmpty
+	}
+
+	if oid.Value != "" {
+		return &osbClient.DeprovisionRequest{}, errOidValueIsEmpty
+	}
+
+	return &osbClient.DeprovisionRequest{
+		InstanceID:          si.Spec.ForProvider.InstanceId,
+		ServiceID:           si.Spec.ForProvider.ServiceId,
+		PlanID:              si.Spec.ForProvider.PlanId,
+		AcceptsIncomplete:   true,
+		OriginatingIdentity: &oid,
+	}, nil
 }
 
 // GetSpecForProvider returns a copy of the ForProvider spec.
 // Useful for read-only operations or when you do not want to modify the original.
-func (mg *ServiceInstance) GetSpecForProvider() common.InstanceData {
-	return mg.Spec.ForProvider
+func (si *ServiceInstance) GetSpecForProvider() common.InstanceData {
+	return si.Spec.ForProvider
 }
 
 // GetSpecForProviderPtr returns a pointer to the ForProvider spec.
 // Useful for passing to functions that expect a pointer receiver
 // or an interface implemented on *InstanceData.
-func (mg *ServiceInstance) GetSpecForProviderPtr() *common.InstanceData {
-	return &mg.Spec.ForProvider
+func (si *ServiceInstance) GetSpecForProviderPtr() *common.InstanceData {
+	return &si.Spec.ForProvider
 }

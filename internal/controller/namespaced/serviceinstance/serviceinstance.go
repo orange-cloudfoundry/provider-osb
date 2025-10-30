@@ -42,25 +42,28 @@ import (
 )
 
 var (
-	errNotServiceInstance                = errors.New("managed resource is not a ServiceInstance custom resource")
-	errCannotTrackProviderConfig         = errors.New("cannot track ProviderConfig usage")
-	errCannotCreateNewOsbClient          = errors.New("cannot create new OSB client")
-	errCannotMakeOriginatingIdentity     = errors.New("cannot make originating identity from value")
-	errInstanceIDNotSet                  = errors.New("InstanceId must be set in the ServiceInstance spec")
-	errParseParametersFailed             = errors.New("failed to parse ServiceInstance parameters")
-	errParseContextFailed                = errors.New("failed to parse ServiceInstance context")
-	errCannotBuildOSBUpdateRequest       = errors.New("cannot build update request")
-	errOSBGetInstance                    = errors.New("OSB GetInstance request failed")
-	errCannotUpdateServiceInstanceStatus = errors.New("cannot update ServiceInstance status")
-	errOSBProvisionInstanceFailed        = errors.New("OSB ProvisionInstance request failed")
-	errOSBUpdateInstanceFailed           = errors.New("OSB UpdateInstance request failed")
-	errCannotListServiceBindings         = errors.New("cannot list ServiceBindings")
-	errCannotUpdateActiveBindingsStatus  = errors.New("cannot update active bindings status")
-	errCannotDeleteWithActiveBindings    = errors.New("cannot delete ServiceInstance, it has active bindings")
-	errOSBDeprovisionInstanceFailed      = errors.New("OSB DeprovisionInstance request failed")
-	errOSBPollLastOperationFailed        = errors.New("OSB PollLastOperation request failed")
-	errCannotTrackProviderConfigUsage    = errors.New("cannot track ProviderConfig usage")
-	errFailedToCompareSpecWithOSB        = errors.New("failed to compare spec with osb")
+	errNotServiceInstance                    = errors.New("managed resource is not a ServiceInstance custom resource")
+	errCannotTrackProviderConfig             = errors.New("cannot track ProviderConfig usage")
+	errCannotCreateNewOsbClient              = errors.New("cannot create new OSB client")
+	errCannotMakeOriginatingIdentity         = errors.New("cannot make originating identity from value")
+	errInstanceIDNotSet                      = errors.New("InstanceId must be set in the ServiceInstance spec")
+	errParseParametersFailed                 = errors.New("failed to parse ServiceInstance parameters")
+	errParseContextFailed                    = errors.New("failed to parse ServiceInstance context")
+	errCannotBuildUpdateRequest              = errors.New("cannot build update request")
+	errOSBGetInstance                        = errors.New("OSB GetInstance request failed")
+	errCannotUpdateServiceInstanceStatus     = errors.New("cannot update ServiceInstance status")
+	errOSBProvisionInstanceFailed            = errors.New("OSB ProvisionInstance request failed")
+	errOSBUpdateInstanceFailed               = errors.New("OSB UpdateInstance request failed")
+	errCannotListServiceBindings             = errors.New("cannot list ServiceBindings")
+	errCannotUpdateActiveBindingsStatus      = errors.New("cannot update active bindings status")
+	errCannotDeleteWithActiveBindings        = errors.New("cannot delete ServiceInstance, it has active bindings")
+	errOSBDeprovisionInstanceFailed          = errors.New("OSB DeprovisionInstance request failed")
+	errOSBPollLastOperationFailed            = errors.New("OSB PollLastOperation request failed")
+	errCannotTrackProviderConfigUsage        = errors.New("cannot track ProviderConfig usage")
+	errFailedToCompareSpecWithOSB            = errors.New("failed to compare spec with osb")
+	errFailedToBuildDeprovisionRequest       = errors.New("failed to build deprovision request")
+	errFailedToBuildPollLastOperationRequest = errors.New("failed to build poll last operation request")
+	errFailedToBuildProvisionRequest         = errors.New("failed to build provision request")
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -240,7 +243,10 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errParseContextFailed, fmt.Sprint(err))
 	}
 
-	req := instance.BuildOSBProvisionRequest(params, ctxMap)
+	req, err := instance.BuildProvisionRequest(params, ctxMap)
+	if err != nil {
+		return managed.ExternalCreation{}, fmt.Errorf("%w, %s", errFailedToBuildProvisionRequest, err)
+	}
 
 	resp, err := c.osb.ProvisionInstance(req)
 	if err != nil {
@@ -265,9 +271,9 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Build the OSB update request.
-	req, err := instance.BuildOSBUpdateRequest()
+	req, err := instance.BuildUpdateInstanceRequest(c.originatingIdentity)
 	if err != nil {
-		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotBuildOSBUpdateRequest, fmt.Sprint(err))
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotBuildUpdateRequest, fmt.Sprint(err))
 	}
 
 	// Send the request to the OSB broker.
@@ -340,7 +346,10 @@ func (c *external) removeFinalizer(ctx context.Context, instance *v1alpha1.Servi
 
 // Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
 func (c *external) handleLastOperationInProgress(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
-	req := instance.CreateRequestPollLastOperation(c.originatingIdentity)
+	req, err := instance.BuildPollLastOperationRequest(c.originatingIdentity)
+	if err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildPollLastOperationRequest, err)
+	}
 
 	resp, err := c.osb.PollLastOperation(req)
 
@@ -415,7 +424,10 @@ func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instanc
 // deprovision handles the deprovisioning of a ServiceInstance in the external system.
 // It returns an ExternalDelete indicating whether the resource still exists or not.
 func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalDelete, error) {
-	req := instance.BuildDeprovisionRequest(c.originatingIdentity)
+	req, err := instance.BuildDeprovisionRequest(c.originatingIdentity)
+	if err != nil {
+		return managed.ExternalDelete{}, fmt.Errorf("%w: %s", errFailedToBuildDeprovisionRequest, err)
+	}
 
 	resp, err := c.osb.DeprovisionInstance(req)
 	if err != nil {

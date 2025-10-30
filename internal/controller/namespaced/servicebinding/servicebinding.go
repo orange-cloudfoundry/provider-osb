@@ -81,6 +81,10 @@ var (
 	errNilBindingMetadataResponse               = errors.New("GetBindingResponse.Metadata is nil for binding")
 	errUpdateBindingStatus                      = errors.New("failed to update binding status")
 	errMarshalCredentials                       = errors.New("failed to marshal credentials from response")
+	errFailedToBuildBindRequest                 = errors.New("failed to build bind request")
+	errFailedToBuildUnbindRequest               = errors.New("failed to build unbind request")
+	errFailedToBuildBindingLastOperationRequest = errors.New("failed to build binding last operation request")
+	errFailedToBuildGetBindingRequest           = errors.New("failed to build get binding request")
 )
 
 // Setup adds a controller that reconciles ServiceBinding managed resources.
@@ -228,7 +232,10 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// get binding from broker
-	req := binding.CreateGetBindingRequest(bindingData)
+	req, err := binding.BuildGetBindingRequest(bindingData)
+	if err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildGetBindingRequest, fmt.Sprint(err))
+	}
 
 	resp, err := c.osb.GetBinding(req)
 
@@ -311,11 +318,11 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errConvertBindingSpecFailed, fmt.Sprint(err))
 	}
 
-	// Ensure the binding has a valid external name (UUID).
-	bindingUUID := binding.EnsureBindingUUID()
-
 	// Build OSB BindRequest.
-	req := binding.BuildBindRequest(bindingData, bindingUUID, c.originatingIdentity, requestContext, requestParams)
+	req, err := binding.BuildBindRequest(bindingData, c.originatingIdentity, requestContext, requestParams)
+	if err != nil {
+		return managed.ExternalCreation{}, fmt.Errorf("%w, %s", errFailedToBuildBindRequest, err)
+	}
 
 	// Execute the OSB bind request and handle async responses.
 	resp, creation, err, shouldReturn := handleBindRequest(c, req, binding)
@@ -389,7 +396,10 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalDelete{}, fmt.Errorf("%w: %s", errRetrieveBindingDataFailed, fmt.Sprint(err))
 	}
 
-	req := binding.BuildUnbindRequest(bindingData, c.originatingIdentity)
+	req, err := binding.BuildUnbindRequest(bindingData, c.originatingIdentity)
+	if err != nil {
+		return managed.ExternalDelete{}, fmt.Errorf("%w, %s", errFailedToBuildUnbindRequest, err)
+	}
 
 	resp, err := c.osb.Unbind(req)
 	if err != nil {
@@ -425,9 +435,12 @@ func (c *external) Disconnect(ctx context.Context) error {
 // It updates the binding status based on the OSB response, handles async finalizers, and returns
 // a managed.ExternalObservation indicating whether the resource still exists.
 func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData v1alpha1.BindingData) (managed.ExternalObservation, error) {
-	lastOpReq := binding.BuildBindingLastOperationRequest(bindingData, c.originatingIdentity)
+	req, err := binding.BuildBindingLastOperationRequest(bindingData, c.originatingIdentity)
+	if err != nil {
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildBindingLastOperationRequest, err)
+	}
 
-	resp, err := c.osb.PollBindingLastOperation(lastOpReq)
+	resp, err := c.osb.PollBindingLastOperation(req)
 	if err != nil {
 		if handled, obs, err := c.handlePollError(ctx, binding, err); handled {
 			return obs, err

@@ -205,7 +205,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errParseContextFailed, fmt.Sprint(err))
 	}
 
-	req := instance.BuildOSBProvisionRequest(params, ctxMap)
+	req := instance.BuildProvisionRequest(params, ctxMap)
 
 	resp, err := c.osb.ProvisionInstance(req)
 	if err != nil {
@@ -230,7 +230,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Build the OSB update request.
-	req, err := instance.BuildOSBUpdateRequest()
+	req, err := instance.BuildUpdateRequest()
 	if err != nil {
 		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotBuildOSBUpdateRequest, fmt.Sprint(err))
 	}
