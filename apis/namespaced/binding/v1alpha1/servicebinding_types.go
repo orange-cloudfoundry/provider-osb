@@ -47,10 +47,10 @@ type ServiceBindingParameters struct {
 type ServiceBindingObservation struct {
 	// TODO add context and route to test if these were updated and return error if so
 	Parameters               common.SerializableParameters `json:"parameters,omitempty"`
-	RouteServiceURL          *string                       `json:"route_service_url,omitempty"`
+	RouteServiceURL          *string                       `json:"routeServiceUrl,omitempty"`
 	Endpoints                SerializableEndpoints         `json:"endpoints,omitempty"`
-	VolumeMounts             SerializableVolumeMounts      `json:"volume_mounts,omitempty"`
-	SyslogDrainURL           *string                       `json:"syslog_drain_url,omitempty"`
+	VolumeMounts             SerializableVolumeMounts      `json:"volumeMounts,omitempty"`
+	SyslogDrainURL           *string                       `json:"syslogDrainUrl,omitempty"`
 	Metadata                 *osb.BindingMetadata          `json:"metadata,omitempty"`
 	LastOperationState       osb.LastOperationState        `json:"lastOperationState,omitempty"`
 	LastOperationKey         osb.OperationKey              `json:"lastOperationKey,omitempty"`
