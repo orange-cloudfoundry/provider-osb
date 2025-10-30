@@ -33,7 +33,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/application/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/cluster/v1alpha1"
@@ -92,7 +92,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // is called.
 type connector struct {
 	kube                     client.Client
-	newOsbClient             func(config apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
+	newOsbClient             func(config apisv1alpha1.ProviderConfig, creds []byte) (osbClient.Client, error)
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
 
@@ -120,9 +120,9 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	osb                 osb.Client
+	osb                 osbClient.Client
 	kube                client.Client
-	originatingIdentity osb.OriginatingIdentity
+	originatingIdentity osbClient.OriginatingIdentity
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {

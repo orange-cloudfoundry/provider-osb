@@ -10,7 +10,7 @@ import (
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster/util"
 
@@ -40,7 +40,7 @@ func (sb *ServiceBinding) SetConditions(c ...xpv1.Condition) {
 
 // SetLastOperationState sets the LastOperationState in the ServiceBinding status.
 // This is used to track the state of the last operation performed on the binding.
-func (sb *ServiceBinding) SetLastOperationState(state osb.LastOperationState) {
+func (sb *ServiceBinding) SetLastOperationState(state osbClient.LastOperationState) {
 	sb.Status.AtProvider.LastOperationState = state
 }
 
@@ -54,7 +54,7 @@ func (sb *ServiceBinding) SetLastOperationDescription(desc string) {
 //
 // Parameters:
 // - operationKey: a pointer to the OSB OperationKey returned by the broker
-func (sb *ServiceBinding) SetLastOperationKey(operationKey *osb.OperationKey) {
+func (sb *ServiceBinding) SetLastOperationKey(operationKey *osbClient.OperationKey) {
 	sb.Status.AtProvider.LastOperationKey = *operationKey
 }
 
@@ -64,7 +64,7 @@ func (sb *ServiceBinding) SetLastOperationKey(operationKey *osb.OperationKey) {
 // Returns:
 // - bool: true if the last operation is in progress, false otherwise
 func (sb *ServiceBinding) IsStateInProgress() bool {
-	return sb.Status.AtProvider.LastOperationState == osb.StateInProgress
+	return sb.Status.AtProvider.LastOperationState == osbClient.StateInProgress
 }
 
 // IsExternalNameEmpty returns true if the ServiceBinding has no external name set.
@@ -90,7 +90,7 @@ func (sb *ServiceBinding) SetExternalName(uuid string) {
 // CreateResponseData constructs a responseData object from an OSB GetBindingResponse.
 // It extracts parameters, endpoints, volume mounts, and other metadata
 // from the broker response and converts them into the internal responseData format.
-func (sb *ServiceBinding) CreateResponseData(resp osb.GetBindingResponse) responseData {
+func (sb *ServiceBinding) CreateResponseData(resp osbClient.GetBindingResponse) responseData {
 	return responseData{
 		Parameters:      resp.Parameters,
 		Endpoints:       resp.Endpoints,
@@ -105,7 +105,7 @@ func (sb *ServiceBinding) CreateResponseData(resp osb.GetBindingResponse) respon
 // combining it with the existing parameters stored in the ServiceBinding status.
 // It converts the serialized parameters back into a structured format.
 // Returns an error if the parameters in the current status cannot be parsed.
-func (sb *ServiceBinding) CreateResponseDataWithBindingParameters(resp osb.BindResponse) (responseData, error) {
+func (sb *ServiceBinding) CreateResponseDataWithBindingParameters(resp osbClient.BindResponse) (responseData, error) {
 	params, err := sb.Status.AtProvider.Parameters.ToParameters()
 	if err != nil {
 		return responseData{}, fmt.Errorf("%w: %s", errFailedToParseFromBindingStatus, fmt.Sprint(err))
@@ -191,16 +191,16 @@ func (sb *ServiceBinding) IsStatusParametersNotLikeSpecParameters() (bool, error
 // CreateGetBindingRequest constructs an OSB GetBindingRequest for the ServiceBinding.
 // It uses the external name of the binding as the BindingID and the associated
 // ServiceInstance's InstanceID.
-func (sb *ServiceBinding) CreateGetBindingRequest(binding BindingData) *osb.GetBindingRequest {
-	return &osb.GetBindingRequest{
+func (sb *ServiceBinding) CreateGetBindingRequest(binding BindingData) *osbClient.GetBindingRequest {
+	return &osbClient.GetBindingRequest{
 		InstanceID: binding.InstanceData.InstanceId,
 		BindingID:  sb.GetExternalName(),
 	}
 }
 
 // buildRotateBindingRequest constructs an OSB RotateBindingRequest for a binding.
-func (sb *ServiceBinding) buildRotateBindingRequest(data BindingData, oid osb.OriginatingIdentity, newUUID string) *osb.RotateBindingRequest {
-	return &osb.RotateBindingRequest{
+func (sb *ServiceBinding) buildRotateBindingRequest(data BindingData, oid osbClient.OriginatingIdentity, newUUID string) *osbClient.RotateBindingRequest {
+	return &osbClient.RotateBindingRequest{
 		InstanceID:           data.InstanceData.InstanceId,
 		BindingID:            newUUID,
 		AcceptsIncomplete:    true, // TODO: make configurable
@@ -210,7 +210,7 @@ func (sb *ServiceBinding) buildRotateBindingRequest(data BindingData, oid osb.Or
 }
 
 // extractCredentials marshals OSB BindResponse credentials into map[string][]byte.
-func extractCredentials(resp *osb.BindResponse) (map[string][]byte, error) {
+func extractCredentials(resp *osbClient.BindResponse) (map[string][]byte, error) {
 	creds := make(map[string][]byte, len(resp.Credentials))
 	for key, value := range resp.Credentials {
 		data, err := json.Marshal(value)
@@ -228,7 +228,7 @@ func extractCredentials(resp *osb.BindResponse) (map[string][]byte, error) {
 // Updates the ServiceBinding status with LastOperation info in case of async rotation.
 // triggerRotation triggers a credentials rotation for the given ServiceBinding.
 // It returns the new credentials if the rotation is synchronous, or nil otherwise.
-func (sb *ServiceBinding) TriggerRotation(osb osb.Client, data BindingData, oid osb.OriginatingIdentity) (map[string][]byte, error) {
+func (sb *ServiceBinding) TriggerRotation(osb osbClient.Client, data BindingData, oid osbClient.OriginatingIdentity) (map[string][]byte, error) {
 	newUUID := string(uuid.NewUUID())
 
 	req := sb.buildRotateBindingRequest(data, oid, newUUID)
@@ -326,13 +326,13 @@ func (sb *ServiceBinding) EnsureBindingUUID() string {
 func (sb *ServiceBinding) BuildBindRequest(
 	data BindingData,
 	bindingID string,
-	oid osb.OriginatingIdentity,
+	oid osbClient.OriginatingIdentity,
 	ctxMap, params map[string]any,
-) osb.BindRequest {
-	return osb.BindRequest{
+) osbClient.BindRequest {
+	return osbClient.BindRequest{
 		BindingID:           bindingID,
 		InstanceID:          data.InstanceData.InstanceId,
-		BindResource:        &osb.BindResource{AppGUID: &data.ApplicationData.Guid, Route: &sb.Spec.ForProvider.Route},
+		BindResource:        &osbClient.BindResource{AppGUID: &data.ApplicationData.Guid, Route: &sb.Spec.ForProvider.Route},
 		AcceptsIncomplete:   true, // TODO: make configurable
 		OriginatingIdentity: &oid,
 		PlanID:              data.InstanceData.PlanId,
@@ -344,8 +344,8 @@ func (sb *ServiceBinding) BuildBindRequest(
 }
 
 // buildUnbindRequest constructs an OSB UnbindRequest for the given ServiceBinding.
-func (sb *ServiceBinding) BuildUnbindRequest(data BindingData, oid osb.OriginatingIdentity) *osb.UnbindRequest {
-	return &osb.UnbindRequest{
+func (sb *ServiceBinding) BuildUnbindRequest(data BindingData, oid osbClient.OriginatingIdentity) *osbClient.UnbindRequest {
+	return &osbClient.UnbindRequest{
 		InstanceID:          data.InstanceData.InstanceId,
 		BindingID:           meta.GetExternalName(sb),
 		AcceptsIncomplete:   true, // TODO: make configurable
@@ -356,8 +356,8 @@ func (sb *ServiceBinding) BuildUnbindRequest(data BindingData, oid osb.Originati
 }
 
 // buildBindingLastOperationRequest constructs an OSB BindingLastOperationRequest for polling.
-func (sb *ServiceBinding) BuildBindingLastOperationRequest(data BindingData, oid osb.OriginatingIdentity) *osb.BindingLastOperationRequest {
-	return &osb.BindingLastOperationRequest{
+func (sb *ServiceBinding) BuildBindingLastOperationRequest(data BindingData, oid osbClient.OriginatingIdentity) *osbClient.BindingLastOperationRequest {
+	return &osbClient.BindingLastOperationRequest{
 		InstanceID:          data.InstanceData.InstanceId,
 		BindingID:           meta.GetExternalName(sb),
 		ServiceID:           &data.InstanceData.ServiceId,

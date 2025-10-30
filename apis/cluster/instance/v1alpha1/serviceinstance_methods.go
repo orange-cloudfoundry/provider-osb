@@ -6,7 +6,7 @@ import (
 	"reflect"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 )
 
@@ -33,7 +33,7 @@ func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.Reference {
 
 // SetLastOperationState sets the LastOperationState in the ServiceInstance status.
 // This is used to track the state of the last operation performed on the instance.
-func (mg *ServiceInstance) SetLastOperationState(state osb.LastOperationState) {
+func (mg *ServiceInstance) SetLastOperationState(state osbClient.LastOperationState) {
 	mg.Status.AtProvider.LastOperationState = state
 }
 
@@ -47,14 +47,14 @@ func (mg *ServiceInstance) SetLastOperationDescription(desc string) {
 //
 // Parameters:
 // - operationKey: a pointer to the OSB OperationKey returned by the broker
-func (mg *ServiceInstance) SetLastOperationKey(operationKey *osb.OperationKey) {
+func (mg *ServiceInstance) SetLastOperationKey(operationKey *osbClient.OperationKey) {
 	mg.Status.AtProvider.LastOperationKey = *operationKey
 }
 
 // IsDeletable returns true if the ServiceInstance is in deleting state
 // and has no active bindings.
 func (mg *ServiceInstance) IsDeletable() bool {
-	return mg.Status.AtProvider.LastOperationState == osb.StateDeleting &&
+	return mg.Status.AtProvider.LastOperationState == osbClient.StateDeleting &&
 		!mg.Status.AtProvider.HasActiveBindings
 }
 
@@ -64,7 +64,7 @@ func (mg *ServiceInstance) IsDeletable() bool {
 // Returns:
 // - bool: true if the last operation is in progress, false otherwise
 func (mg *ServiceInstance) IsStateInProgress() bool {
-	return mg.Status.AtProvider.LastOperationState == osb.StateInProgress
+	return mg.Status.AtProvider.LastOperationState == osbClient.StateInProgress
 }
 
 // IsStateDeleting checks if the ServiceInstance's last operation state
@@ -73,7 +73,7 @@ func (mg *ServiceInstance) IsStateInProgress() bool {
 // Returns:
 // - bool: true if the last operation state is "deleting", false otherwise
 func (mg *ServiceInstance) IsStateDeleting() bool {
-	return mg.Status.AtProvider.LastOperationState == osb.StateDeleting
+	return mg.Status.AtProvider.LastOperationState == osbClient.StateDeleting
 }
 
 // IsAlreadyDeleted checks if the given ServiceInstance has no InstanceId set,
@@ -122,7 +122,7 @@ func (mg *ServiceInstance) IsPlanIDDifferent(osbPlanID string) bool {
 
 // compareParametersWithOSB compares parameters between a ServiceInstance spec
 // and its OSB instance response.
-func (mg *ServiceInstance) compareParametersWithOSB(osbInstance *osb.GetInstanceResponse) (bool, error) {
+func (mg *ServiceInstance) compareParametersWithOSB(osbInstance *osbClient.GetInstanceResponse) (bool, error) {
 	if len(mg.Spec.ForProvider.Parameters) == 0 {
 		return true, nil
 	}
@@ -141,7 +141,7 @@ func (mg *ServiceInstance) compareParametersWithOSB(osbInstance *osb.GetInstance
 
 // CompareSpecWithOSB compares a ServiceInstance spec with the corresponding OSB instance response.
 // It returns true if both representations are consistent, false otherwise.
-func (mg *ServiceInstance) CompareSpecWithOSB(osbInstance *osb.GetInstanceResponse) (bool, error) {
+func (mg *ServiceInstance) CompareSpecWithOSB(osbInstance *osbClient.GetInstanceResponse) (bool, error) {
 	if osbInstance == nil {
 		return false, nil
 	}
@@ -165,8 +165,8 @@ func (mg *ServiceInstance) CompareSpecWithOSB(osbInstance *osb.GetInstanceRespon
 }
 
 // BuildOSBProvisionRequest creates an OSB ProvisionRequest from a ServiceInstance spec.
-func (mg *ServiceInstance) BuildOSBProvisionRequest(params map[string]interface{}, ctxMap map[string]interface{}) *osb.ProvisionRequest {
-	return &osb.ProvisionRequest{
+func (mg *ServiceInstance) BuildOSBProvisionRequest(params map[string]interface{}, ctxMap map[string]interface{}) *osbClient.ProvisionRequest {
+	return &osbClient.ProvisionRequest{
 		InstanceID:        mg.Spec.ForProvider.InstanceId,
 		ServiceID:         mg.Spec.ForProvider.ServiceId,
 		PlanID:            mg.Spec.ForProvider.PlanId,
@@ -181,7 +181,7 @@ func (mg *ServiceInstance) BuildOSBProvisionRequest(params map[string]interface{
 // buildUpdateRequest constructs an OSB UpdateInstanceRequest from the given ServiceInstance.
 // It converts the ServiceInstance spec parameters and context into the format expected by the OSB client.
 // Returns the prepared request or an error if the conversion fails.
-func (mg *ServiceInstance) BuildOSBUpdateRequest() (*osb.UpdateInstanceRequest, error) {
+func (mg *ServiceInstance) BuildOSBUpdateRequest() (*osbClient.UpdateInstanceRequest, error) {
 	params, err := mg.Spec.ForProvider.Parameters.ToParameters()
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", errFailedToMarshallServiceInstanceParameters, fmt.Sprint(err))
@@ -192,7 +192,7 @@ func (mg *ServiceInstance) BuildOSBUpdateRequest() (*osb.UpdateInstanceRequest, 
 		return nil, fmt.Errorf("%w: %s", errFailedToMarshallServiceInstanceContext, fmt.Sprint(err))
 	}
 
-	return &osb.UpdateInstanceRequest{
+	return &osbClient.UpdateInstanceRequest{
 		InstanceID:        mg.Spec.ForProvider.InstanceId,
 		ServiceID:         mg.Spec.ForProvider.ServiceId,
 		PlanID:            &mg.Spec.ForProvider.PlanId,
@@ -203,13 +203,13 @@ func (mg *ServiceInstance) BuildOSBUpdateRequest() (*osb.UpdateInstanceRequest, 
 }
 
 // updateStatus updates the ServiceInstance status based on the OSB ProvisionInstance response.
-func (mg *ServiceInstance) UpdateStatus(resp *osb.ProvisionResponse) {
+func (mg *ServiceInstance) UpdateStatus(resp *osbClient.ProvisionResponse) {
 	mg.Status.AtProvider.Context = mg.Spec.ForProvider.Context
 	mg.Status.AtProvider.DashboardURL = resp.DashboardURL
 
 	if resp.Async {
 		mg.Status.SetConditions(xpv1.Creating())
-		mg.Status.AtProvider.LastOperationState = osb.StateInProgress
+		mg.Status.AtProvider.LastOperationState = osbClient.StateInProgress
 		if resp.OperationKey != nil {
 			mg.Status.AtProvider.LastOperationKey = *resp.OperationKey
 		}
@@ -217,7 +217,7 @@ func (mg *ServiceInstance) UpdateStatus(resp *osb.ProvisionResponse) {
 	}
 
 	mg.Status.SetConditions(xpv1.Available())
-	mg.Status.AtProvider.LastOperationState = osb.StateSucceeded
+	mg.Status.AtProvider.LastOperationState = osbClient.StateSucceeded
 }
 
 // SetStatusContextFromProviderContext copies the context from the ServiceInstance's
@@ -237,13 +237,13 @@ func (mg *ServiceInstance) SetDashboardURL(url *string) {
 // based on the OSB UpdateInstanceResponse. It sets the dashboard URL, context,
 // and last operation state. If the update is asynchronous, it also sets the
 // last operation key and marks the operation as in progress.
-func (mg *ServiceInstance) UpdateStatusFromOSB(resp osb.OSBAsyncResponse) {
+func (mg *ServiceInstance) UpdateStatusFromOSB(resp osbClient.OSBAsyncResponse) {
 	mg.SetStatusContextFromProviderContext()
 	mg.SetDashboardURL(resp.GetDashboardURL())
 
 	if resp.IsAsync() {
 		mg.Status.SetConditions(xpv1.Creating())
-		mg.SetLastOperationState(osb.StateInProgress)
+		mg.SetLastOperationState(osbClient.StateInProgress)
 		if resp.GetOperationKey() != nil {
 			mg.SetLastOperationKey(resp.GetOperationKey())
 		}
@@ -251,7 +251,7 @@ func (mg *ServiceInstance) UpdateStatusFromOSB(resp osb.OSBAsyncResponse) {
 	}
 
 	mg.Status.SetConditions(xpv1.Available())
-	mg.SetLastOperationState(osb.StateSucceeded)
+	mg.SetLastOperationState(osbClient.StateSucceeded)
 }
 
 // IsInstanceIDEmpty returns true if the ServiceInstance has no InstanceId set
@@ -263,9 +263,9 @@ func (mg *ServiceInstance) IsInstanceIDEmpty() bool {
 
 // createRequestPollLastOperation builds and returns an OSB LastOperationRequest
 // for polling the current status of an asynchronous operation on a service mg.
-func (mg *ServiceInstance) CreateRequestPollLastOperation(originatingIdentity osb.OriginatingIdentity) *osb.LastOperationRequest {
+func (mg *ServiceInstance) CreateRequestPollLastOperation(originatingIdentity osbClient.OriginatingIdentity) *osbClient.LastOperationRequest {
 
-	return &osb.LastOperationRequest{
+	return &osbClient.LastOperationRequest{
 		// mgID identifies the service mg whose operation is being polled.
 		InstanceID: mg.Spec.ForProvider.InstanceId,
 
@@ -287,16 +287,16 @@ func (mg *ServiceInstance) CreateRequestPollLastOperation(originatingIdentity os
 
 // updateInstanceStatusForAsyncDeletion updates the ServiceInstance status when
 // a deletion is performed asynchronously.
-func (mg *ServiceInstance) UpdateStatusForAsyncDeletion(resp *osb.DeprovisionResponse) {
-	mg.SetLastOperationState(osb.StateDeleting)
+func (mg *ServiceInstance) UpdateStatusForAsyncDeletion(resp *osbClient.DeprovisionResponse) {
+	mg.SetLastOperationState(osbClient.StateDeleting)
 	if resp.OperationKey != nil {
 		mg.SetLastOperationKey(resp.OperationKey)
 	}
 }
 
 // buildDeprovisionRequest constructs an OSB DeprovisionRequest from a ServiceInstance.
-func (mg *ServiceInstance) BuildDeprovisionRequest(originatingIdentity osb.OriginatingIdentity) *osb.DeprovisionRequest {
-	return &osb.DeprovisionRequest{
+func (mg *ServiceInstance) BuildDeprovisionRequest(originatingIdentity osbClient.OriginatingIdentity) *osbClient.DeprovisionRequest {
+	return &osbClient.DeprovisionRequest{
 		InstanceID:          mg.Spec.ForProvider.InstanceId,
 		ServiceID:           mg.Spec.ForProvider.ServiceId,
 		PlanID:              mg.Spec.ForProvider.PlanId,

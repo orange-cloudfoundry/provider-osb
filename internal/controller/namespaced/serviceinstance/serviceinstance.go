@@ -32,7 +32,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
 	apishelpers "github.com/orange-cloudfoundry/provider-osb/apis/namespaced/helpers/v1alpha1"
@@ -91,7 +91,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 type connector struct {
 	kube                     client.Client
 	usage                    util.ModernTracker
-	newOsbClient             func(config resource.ProviderConfig, creds []byte) (osb.Client, error)
+	newOsbClient             func(config resource.ProviderConfig, creds []byte) (osbClient.Client, error)
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
 
@@ -138,7 +138,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
 	return &external{
-		osbClient:           osbClient,
+		osb:                 osbClient,
 		kube:                c.kube,
 		originatingIdentity: *oid,
 	}, nil
@@ -149,9 +149,9 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	osbClient           osb.Client
+	osb                 osbClient.Client
 	kube                client.Client
-	originatingIdentity osb.OriginatingIdentity
+	originatingIdentity osbClient.OriginatingIdentity
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
@@ -176,14 +176,14 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// Build the GetInstanceRequest with the InstanceId from the ServiceInstance spec.
-	req := &osb.GetInstanceRequest{
+	req := &osbClient.GetInstanceRequest{
 		InstanceID: instance.Spec.ForProvider.InstanceId,
 		//ServiceID:  instance.Spec.ForProvider.ServiceId,
 		//PlanID:     instance.Spec.ForProvider.PlanId,
 	}
 
 	// Call the OSB client's GetInstance method to retrieve the current state of the instance.
-	osbInstance, err := c.osbClient.GetInstance(req)
+	osbInstance, err := c.osb.GetInstance(req)
 
 	if err != nil {
 		if util.IsResourceGone(err) {
@@ -242,7 +242,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	req := instance.BuildOSBProvisionRequest(params, ctxMap)
 
-	resp, err := c.osbClient.ProvisionInstance(req)
+	resp, err := c.osb.ProvisionInstance(req)
 	if err != nil {
 		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errOSBProvisionInstanceFailed, fmt.Sprint(err))
 	}
@@ -271,7 +271,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Send the request to the OSB broker.
-	resp, err := c.osbClient.UpdateInstance(req)
+	resp, err := c.osb.UpdateInstance(req)
 	if err != nil {
 		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errOSBUpdateInstanceFailed, fmt.Sprint(err))
 	}
@@ -342,7 +342,7 @@ func (c *external) removeFinalizer(ctx context.Context, instance *v1alpha1.Servi
 func (c *external) handleLastOperationInProgress(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
 	req := instance.CreateRequestPollLastOperation(c.originatingIdentity)
 
-	resp, err := c.osbClient.PollLastOperation(req)
+	resp, err := c.osb.PollLastOperation(req)
 
 	if err != nil {
 		if util.IsResourceGone(err) {
@@ -417,7 +417,7 @@ func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instanc
 func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalDelete, error) {
 	req := instance.BuildDeprovisionRequest(c.originatingIdentity)
 
-	resp, err := c.osbClient.DeprovisionInstance(req)
+	resp, err := c.osb.DeprovisionInstance(req)
 	if err != nil {
 		if util.IsResourceGone(err) {
 			// Resource is already gone; nothing to do.

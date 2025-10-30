@@ -42,7 +42,7 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced/util"
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
 
 const (
@@ -137,7 +137,7 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 type connector struct {
 	kube                     client.Client
 	usage                    util.ModernTracker
-	newOsbClient             func(config resource.ProviderConfig, creds []byte) (osb.Client, error)
+	newOsbClient             func(config resource.ProviderConfig, creds []byte) (osbClient.Client, error)
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 	rotateBinding            bool
 }
@@ -185,7 +185,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	}
 
 	return &external{
-		osbCient:            osbClient,
+		osb:                 osbClient,
 		kube:                c.kube,
 		originatingIdentity: *oid,
 		rotateBinding:       c.rotateBinding,
@@ -197,9 +197,9 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	osbCient            osb.Client
+	osb                 osbClient.Client
 	kube                client.Client
-	originatingIdentity osb.OriginatingIdentity
+	originatingIdentity osbClient.OriginatingIdentity
 	rotateBinding       bool
 }
 
@@ -230,7 +230,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// get binding from broker
 	req := binding.CreateGetBindingRequest(bindingData)
 
-	resp, err := c.osbCient.GetBinding(req)
+	resp, err := c.osb.GetBinding(req)
 
 	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
 	if err != nil {
@@ -362,7 +362,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	// Trigger binding rotation.
 	// We count on the next reconciliation to update renew_before and expires_at (Observe)
-	creds, err := binding.TriggerRotation(c.osbCient, bindingData, c.originatingIdentity)
+	creds, err := binding.TriggerRotation(c.osb, bindingData, c.originatingIdentity)
 	if err != nil {
 		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errOSBRotatingRequestFailed, fmt.Sprint(err))
 	}
@@ -391,7 +391,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	req := binding.BuildUnbindRequest(bindingData, c.originatingIdentity)
 
-	resp, err := c.osbCient.Unbind(req)
+	resp, err := c.osb.Unbind(req)
 	if err != nil {
 		return managed.ExternalDelete{}, fmt.Errorf("%w: %s", errOSBUnbindRequestFailed, fmt.Sprint(err))
 	}
@@ -427,7 +427,7 @@ func (c *external) Disconnect(ctx context.Context) error {
 func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData v1alpha1.BindingData) (managed.ExternalObservation, error) {
 	lastOpReq := binding.BuildBindingLastOperationRequest(bindingData, c.originatingIdentity)
 
-	resp, err := c.osbCient.PollBindingLastOperation(lastOpReq)
+	resp, err := c.osb.PollBindingLastOperation(lastOpReq)
 	if err != nil {
 		if handled, obs, err := c.handlePollError(ctx, binding, err); handled {
 			return obs, err
@@ -471,7 +471,7 @@ func (c *external) handlePollError(ctx context.Context, binding *v1alpha1.Servic
 // handleRenewalBindings checks whether a binding should be renewed based on its metadata.
 // It sets conditions on the binding and returns a managed.ExternalObservation indicating
 // whether the resource is up-to-date. Returns a bool to signal whether the operation was handled.
-func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.ServiceBinding, c *external) (managed.ExternalObservation, error, bool) {
+func handleRenewalBindings(resp *osbClient.GetBindingResponse, binding *v1alpha1.ServiceBinding, c *external) (managed.ExternalObservation, error, bool) {
 	if resp == nil {
 		// Defensive: should never happen, but prevents future panics
 		return managed.ExternalObservation{}, fmt.Errorf("%w:  %s/%s", errNilBindingResponse, binding.GetNamespace(), binding.GetName()), false
@@ -521,11 +521,11 @@ func handleRenewalBindings(resp *osb.GetBindingResponse, binding *v1alpha1.Servi
 //   - bool: whether the caller should return immediately (true if async or error).
 func handleBindRequest(
 	c *external,
-	bindRequest osb.BindRequest,
+	bindRequest osbClient.BindRequest,
 	binding *v1alpha1.ServiceBinding,
-) (*osb.BindResponse, managed.ExternalCreation, error, bool) {
+) (*osbClient.BindResponse, managed.ExternalCreation, error, bool) {
 
-	resp, err := c.osbCient.Bind(&bindRequest)
+	resp, err := c.osb.Bind(&bindRequest)
 	if err != nil {
 		return nil, managed.ExternalCreation{}, fmt.Errorf("%w: %s", errOSBBindRequestFailed, fmt.Sprint(err)), true
 	}

@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
@@ -40,7 +40,7 @@ import (
 func TestObserve(t *testing.T) {
 	type fields struct {
 		kube         client.Client
-		newOsbClient osb.Client
+		newOsbClient osbClient.Client
 	}
 
 	type args struct {
@@ -65,8 +65,8 @@ func TestObserve(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := external{
-				kube:      tc.fields.kube,
-				osbClient: tc.fields.newOsbClient,
+				kube: tc.fields.kube,
+				osb:  tc.fields.newOsbClient,
 			}
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, err, test.EquateErrors()); diff != "" {

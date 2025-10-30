@@ -29,7 +29,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/cluster/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
@@ -85,14 +85,14 @@ var (
 	}
 	stateInProgress = v1alpha1.ServiceInstanceStatus{
 		AtProvider: v1alpha1.ServiceInstanceObservation{
-			LastOperationState: osb.StateInProgress,
+			LastOperationState: osbClient.StateInProgress,
 			HasActiveBindings:  false,
 			LastOperationKey:   "op-key",
 		},
 	}
 	stateDeletingNoBindings = v1alpha1.ServiceInstanceStatus{
 		AtProvider: v1alpha1.ServiceInstanceObservation{
-			LastOperationState: osb.StateDeleting,
+			LastOperationState: osbClient.StateDeleting,
 			HasActiveBindings:  false,
 			LastOperationKey:   "op-key",
 		},
@@ -184,8 +184,8 @@ func TestObserve(t *testing.T) {
 	defer ctrl.Finish()
 
 	type fields struct {
-		client osb.Client
-		kube   client.Client
+		osb  osbClient.Client
+		kube client.Client
 	}
 
 	type args struct {
@@ -237,10 +237,10 @@ func TestObserve(t *testing.T) {
 		"LastOperationInProgress": {
 			reason: "Should call handleLastOperationInProgress if LastOperationState is in progress",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					PollLastOperationReaction: &osbfake.PollLastOperationReaction{
-						Response: &osb.LastOperationResponse{
-							State: osb.StateInProgress,
+						Response: &osbClient.LastOperationResponse{
+							State: osbClient.StateInProgress,
 						},
 					},
 				},
@@ -261,12 +261,12 @@ func TestObserve(t *testing.T) {
 		"DeletingNoActiveBindings": {
 			reason: "Should remove finalizer when deleting and no active bindings",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					PollLastOperationReaction: &osbfake.PollLastOperationReaction{
-						Response: &osb.LastOperationResponse{
-							State: osb.StateInProgress,
+						Response: &osbClient.LastOperationResponse{
+							State: osbClient.StateInProgress,
 						},
-						Error: &osb.HTTPStatusCodeError{
+						Error: &osbClient.HTTPStatusCodeError{
 							StatusCode: http.StatusGone, // 410
 						},
 					},
@@ -287,8 +287,8 @@ func TestObserve(t *testing.T) {
 		"DeletionWithActiveBindings": {
 			reason: "Should check for active bindings when resource is being deleted",
 			fields: fields{
-				client: &osbfake.FakeClient{}, // Pas utilisé ici
-				kube:   newMockKubeClientForServiceInstance(ctrl, deletionWithActiveBindings),
+				osb:  &osbfake.FakeClient{}, // Pas utilisé ici
+				kube: newMockKubeClientForServiceInstance(ctrl, deletionWithActiveBindings),
 			},
 			args: args{
 				ctx: context.TODO(),
@@ -305,9 +305,9 @@ func TestObserve(t *testing.T) {
 		"GetInstanceSuccessUpToDate": {
 			reason: "Should return ResourceExists=true and ResourceUpToDate=true when GetInstance succeeds and spec is up to date",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					GetInstanceReaction: &osbfake.GetInstanceReaction{
-						Response: &osb.GetInstanceResponse{
+						Response: &osbClient.GetInstanceResponse{
 							DashboardURL: DashboardURL,
 							PlanID:       "plan-id-789",
 							Parameters:   map[string]interface{}{},
@@ -334,9 +334,9 @@ func TestObserve(t *testing.T) {
 		"GetInstanceNotFound": {
 			reason: "Should return ResourceExists=false when GetInstance returns 404",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					GetInstanceReaction: &osbfake.GetInstanceReaction{
-						Error: &osb.HTTPStatusCodeError{StatusCode: http.StatusNotFound},
+						Error: &osbClient.HTTPStatusCodeError{StatusCode: http.StatusNotFound},
 					},
 				},
 				kube: newMockKubeClientForServiceInstance(ctrl, basicServiceInstance),
@@ -355,7 +355,7 @@ func TestObserve(t *testing.T) {
 		"GetInstanceOtherError": {
 			reason: "Should return error when GetInstance returns unexpected error",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					GetInstanceReaction: &osbfake.GetInstanceReaction{
 						Error: errors.New("unexpected error"),
 					},
@@ -376,7 +376,7 @@ func TestObserve(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := external{
-				osb:  tc.fields.client,
+				osb:  tc.fields.osb,
 				kube: tc.fields.kube,
 			}
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
@@ -395,8 +395,8 @@ func TestCreate(t *testing.T) {
 	defer ctrl.Finish()
 
 	type fields struct {
-		client osb.Client
-		kube   client.Client
+		osb  osbClient.Client
+		kube client.Client
 	}
 	type args struct {
 		ctx context.Context
@@ -428,9 +428,9 @@ func TestCreate(t *testing.T) {
 		"ProvisionSuccessSync": {
 			reason: "Should create instance and update status for synchronous provisioning",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					ProvisionReaction: &osbfake.ProvisionReaction{
-						Response: &osb.ProvisionResponse{
+						Response: &osbClient.ProvisionResponse{
 							Async:        false,
 							DashboardURL: &DashboardURL,
 						},
@@ -450,12 +450,12 @@ func TestCreate(t *testing.T) {
 		"ProvisionSuccessAsync": {
 			reason: "Should create instance and update status for async provisioning",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					ProvisionReaction: &osbfake.ProvisionReaction{
-						Response: &osb.ProvisionResponse{
+						Response: &osbClient.ProvisionResponse{
 							Async:        true,
 							DashboardURL: &DashboardURL,
-							OperationKey: (*osb.OperationKey)(&OperationKey),
+							OperationKey: (*osbClient.OperationKey)(&OperationKey),
 						},
 					},
 				},
@@ -473,7 +473,7 @@ func TestCreate(t *testing.T) {
 		"ProvisionError": {
 			reason: "Should return error if ProvisionInstance fails",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					ProvisionReaction: &osbfake.ProvisionReaction{
 						Error: errors.New("provision error"),
 					},
@@ -494,7 +494,7 @@ func TestCreate(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := &external{
-				osb:  tc.fields.client,
+				osb:  tc.fields.osb,
 				kube: tc.fields.kube,
 			}
 			got, err := e.Create(tc.args.ctx, tc.args.mg)
@@ -513,8 +513,8 @@ func TestUpdate(t *testing.T) {
 	defer ctrl.Finish()
 
 	type fields struct {
-		client osb.Client
-		kube   client.Client
+		osb  osbClient.Client
+		kube client.Client
 	}
 	type args struct {
 		ctx context.Context
@@ -547,9 +547,9 @@ func TestUpdate(t *testing.T) {
 		"UpdateSuccessSync": {
 			reason: "Should update instance and status for synchronous update",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					UpdateInstanceReaction: &osbfake.UpdateInstanceReaction{
-						Response: &osb.UpdateInstanceResponse{
+						Response: &osbClient.UpdateInstanceResponse{
 							Async:        false,
 							DashboardURL: &DashboardURL,
 						},
@@ -569,12 +569,12 @@ func TestUpdate(t *testing.T) {
 		"UpdateSuccessAsync": {
 			reason: "Should update instance and status for async update",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					UpdateInstanceReaction: &osbfake.UpdateInstanceReaction{
-						Response: &osb.UpdateInstanceResponse{
+						Response: &osbClient.UpdateInstanceResponse{
 							Async:        true,
 							DashboardURL: &DashboardURL,
-							OperationKey: (*osb.OperationKey)(&OperationKey),
+							OperationKey: (*osbClient.OperationKey)(&OperationKey),
 						},
 					},
 				},
@@ -592,7 +592,7 @@ func TestUpdate(t *testing.T) {
 		"UpdateError": {
 			reason: "Should return error if UpdateInstance fails",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					UpdateInstanceReaction: &osbfake.UpdateInstanceReaction{
 						Error: errors.New("update error"),
 					},
@@ -613,7 +613,7 @@ func TestUpdate(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := &external{
-				osb:  tc.fields.client,
+				osb:  tc.fields.osb,
 				kube: tc.fields.kube,
 			}
 			got, err := e.Update(tc.args.ctx, tc.args.mg)
@@ -632,8 +632,8 @@ func TestDelete(t *testing.T) {
 	defer ctrl.Finish()
 
 	type fields struct {
-		client osb.Client
-		kube   client.Client
+		osb  osbClient.Client
+		kube client.Client
 	}
 	type args struct {
 		ctx context.Context
@@ -710,9 +710,9 @@ func TestDelete(t *testing.T) {
 		"DeprovisionSuccessSync": {
 			reason: "Should succeed when deprovision is synchronous",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					DeprovisionReaction: &osbfake.DeprovisionReaction{
-						Response: &osb.DeprovisionResponse{
+						Response: &osbClient.DeprovisionResponse{
 							Async: false,
 						},
 					},
@@ -730,11 +730,11 @@ func TestDelete(t *testing.T) {
 		"DeprovisionSuccessAsync": {
 			reason: "Should succeed when deprovision is asynchronous",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					DeprovisionReaction: &osbfake.DeprovisionReaction{
-						Response: &osb.DeprovisionResponse{
+						Response: &osbClient.DeprovisionResponse{
 							Async:        true,
-							OperationKey: (*osb.OperationKey)(&OperationKey),
+							OperationKey: (*osbClient.OperationKey)(&OperationKey),
 						},
 					},
 				},
@@ -751,9 +751,9 @@ func TestDelete(t *testing.T) {
 		"DeprovisionNotFound": {
 			reason: "Should succeed if instance is already gone (404)",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					DeprovisionReaction: &osbfake.DeprovisionReaction{
-						Error: &osb.HTTPStatusCodeError{StatusCode: http.StatusNotFound},
+						Error: &osbClient.HTTPStatusCodeError{StatusCode: http.StatusNotFound},
 					},
 				},
 				kube: newMockKubeClientForServiceInstance(ctrl, fakeInstance),
@@ -769,7 +769,7 @@ func TestDelete(t *testing.T) {
 		"DeprovisionError": {
 			reason: "Should return error if deprovision fails with unexpected error",
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					DeprovisionReaction: &osbfake.DeprovisionReaction{
 						Error: errors.New("deprovision error"),
 					},
@@ -789,7 +789,7 @@ func TestDelete(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := &external{
-				osb:  tc.fields.client,
+				osb:  tc.fields.osb,
 				kube: tc.fields.kube,
 			}
 			_, err := e.Delete(tc.args.ctx, tc.args.mg)

@@ -146,7 +146,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
 	return &external{
 		kube:                c.kube,
-		osbClient:           osbClient,
+		osb:                 osbClient,
 		originatingIdentity: *oid,
 	}, nil
 }
@@ -156,7 +156,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	osbClient           osb.Client
+	osb                 osb.Client
 	kube                client.Client
 	originatingIdentity osb.OriginatingIdentity
 }

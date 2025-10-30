@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	common "github.com/orange-cloudfoundry/provider-osb/apis/cluster/common"
 )
 
@@ -44,12 +44,12 @@ type ServiceInstanceObservation struct {
 	ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
 	ApplicationData          *common.ApplicationData `json:"applicationData,omitempty"`
 	common.InstanceData      `json:",inline"`
-	Context                  common.KubernetesOSBContext `json:"context,omitempty"`
-	DashboardURL             *string                     `json:"dashboardURL,omitempty"`
-	LastOperationState       osb.LastOperationState      `json:"lastOperationState,omitempty"`
-	LastOperationKey         osb.OperationKey            `json:"lastOperationKey,omitempty"`
-	LastOperationDescription string                      `json:"lastOperationDescription,omitempty"`
-	HasActiveBindings        bool                        `json:"hasActiveBindings,omitempty"`
+	Context                  common.KubernetesOSBContext  `json:"context,omitempty"`
+	DashboardURL             *string                      `json:"dashboardURL,omitempty"`
+	LastOperationState       osbClient.LastOperationState `json:"lastOperationState,omitempty"`
+	LastOperationKey         osbClient.OperationKey       `json:"lastOperationKey,omitempty"`
+	LastOperationDescription string                       `json:"lastOperationDescription,omitempty"`
+	HasActiveBindings        bool                         `json:"hasActiveBindings,omitempty"`
 }
 
 // +kubebuilder:object:root=true

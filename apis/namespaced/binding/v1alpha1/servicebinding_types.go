@@ -28,7 +28,7 @@ import (
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
@@ -51,9 +51,9 @@ type ServiceBindingObservation struct {
 	Endpoints                SerializableEndpoints         `json:"endpoints,omitempty"`
 	VolumeMounts             SerializableVolumeMounts      `json:"volumeMounts,omitempty"`
 	SyslogDrainURL           *string                       `json:"syslogDrainUrl,omitempty"`
-	Metadata                 *osb.BindingMetadata          `json:"metadata,omitempty"`
-	LastOperationState       osb.LastOperationState        `json:"lastOperationState,omitempty"`
-	LastOperationKey         osb.OperationKey              `json:"lastOperationKey,omitempty"`
+	Metadata                 *osbClient.BindingMetadata    `json:"metadata,omitempty"`
+	LastOperationState       osbClient.LastOperationState  `json:"lastOperationState,omitempty"`
+	LastOperationKey         osbClient.OperationKey        `json:"lastOperationKey,omitempty"`
 	LastOperationDescription string                        `json:"lastOperationDescription,omitempty"`
 	LastOperationPolledTime  string                        `json:"lastOperationPolled_time,omitempty"`
 }
@@ -65,13 +65,13 @@ type SerializableVolumeMounts string
 
 // ToVolumeMounts deserializes the JSON string into a slice of osb.VolumeMount.
 // Returns an empty slice if the string is nil or empty.
-func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) {
+func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osbClient.VolumeMount, error) {
 	if v == nil || len([]byte(*v)) == 0 {
-		empty := []osb.VolumeMount{}
+		empty := []osbClient.VolumeMount{}
 		return &empty, nil
 	}
 
-	res := []osb.VolumeMount{}
+	res := []osbClient.VolumeMount{}
 	err := json.Unmarshal([]byte(*v), &res)
 	return &res, err
 }
@@ -83,13 +83,13 @@ type SerializableEndpoints string
 
 // ToEndpoints deserializes the JSON string into a slice of osb.Endpoint.
 // Returns an empty slice if the string is nil or empty.
-func (v *SerializableEndpoints) ToEndpoints() (*[]osb.Endpoint, error) {
+func (v *SerializableEndpoints) ToEndpoints() (*[]osbClient.Endpoint, error) {
 	if v == nil || len([]byte(*v)) == 0 {
-		empty := []osb.Endpoint{}
+		empty := []osbClient.Endpoint{}
 		return &empty, nil
 	}
 
-	res := []osb.Endpoint{}
+	res := []osbClient.Endpoint{}
 	err := json.Unmarshal([]byte(*v), &res)
 	return &res, err
 }
@@ -159,11 +159,11 @@ func init() {
 // Custom Response Type for OSB
 type responseData struct {
 	Parameters      map[string]any
-	Endpoints       *[]osb.Endpoint
-	VolumeMounts    *[]osb.VolumeMount
+	Endpoints       *[]osbClient.Endpoint
+	VolumeMounts    *[]osbClient.VolumeMount
 	RouteServiceURL *string
 	SyslogDrainURL  *string
-	Metadata        *osb.BindingMetadata
+	Metadata        *osbClient.BindingMetadata
 }
 
 type BindingData struct {

@@ -26,7 +26,7 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/google/go-cmp/cmp"
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
@@ -123,7 +123,7 @@ var (
 		Endpoints:       v1alpha1.SerializableEndpoints("[{\"host\":\"basic-host-1\",\"ports\":[443,8080],\"protocol\":\"tcp\"},{\"host\":\"basic-host-2\",\"ports\":[443],\"protocol\":\"udp\"}]"),
 		VolumeMounts:    v1alpha1.SerializableVolumeMounts("[{\"driver\":\"basic-driver\",\"container_dir\":\"basic-dir\",\"mode\":\"basic-mode\",\"device_type\":\"basic-device-type\",\"device\":{\"volume_id\":\"basic-volume\"}}]"),
 		SyslogDrainURL:  &basicSyslogDrainURL,
-		Metadata: &osb.BindingMetadata{
+		Metadata: &osbClient.BindingMetadata{
 			ExpiresAt:   time.Now().AddDate(0, 0, 7).Format(util.Iso8601dateFormat), // expires in 7 days
 			RenewBefore: time.Now().AddDate(0, 0, 6).Format(util.Iso8601dateFormat), // renew before 6 days
 		},
@@ -137,7 +137,7 @@ func withMetadata(binding v1alpha1.ServiceBinding, metadata *osb.BindingMetadata
 }
 */
 
-func withLastOperationState(binding v1alpha1.ServiceBinding, state osb.LastOperationState) *v1alpha1.ServiceBinding {
+func withLastOperationState(binding v1alpha1.ServiceBinding, state osbClient.LastOperationState) *v1alpha1.ServiceBinding {
 	binding.Status.AtProvider.LastOperationState = state
 	return &binding
 }
@@ -155,7 +155,7 @@ func encodeCredentialsBase64(creds map[string][]byte) map[string][]byte {
 	return res
 }
 
-func generateResponse[T osb.GetBindingResponse | osb.BindResponse](resp *T, creds map[string][]byte) error {
+func generateResponse[T osbClient.GetBindingResponse | osbClient.BindResponse](resp *T, creds map[string][]byte) error {
 	credentials := make(map[string]any, len(creds))
 	for k, v := range creds {
 		credentials[k] = v
@@ -171,7 +171,7 @@ func generateResponse[T osb.GetBindingResponse | osb.BindResponse](resp *T, cred
 		return err
 	}
 
-	if getBindingResp, ok := any(resp).(*osb.GetBindingResponse); ok {
+	if getBindingResp, ok := any(resp).(*osbClient.GetBindingResponse); ok {
 		parameters, err := basicParameters.ToParameters()
 		if err != nil {
 			return err
@@ -184,7 +184,7 @@ func generateResponse[T osb.GetBindingResponse | osb.BindResponse](resp *T, cred
 		getBindingResp.RouteServiceURL = &basicRouteServiceURL
 		getBindingResp.SyslogDrainURL = &basicSyslogDrainURL
 	}
-	if bindResp, ok := any(resp).(*osb.BindResponse); ok {
+	if bindResp, ok := any(resp).(*osbClient.BindResponse); ok {
 		bindResp.Credentials = credentials
 		bindResp.Endpoints = endpoints
 		bindResp.VolumeMounts = volumeMounts
@@ -207,7 +207,7 @@ func newFakeKubeClient(t *testing.T) *mymock.MockClient {
 			}
 			sb.Status = v1alpha1.ServiceBindingStatus{
 				AtProvider: v1alpha1.ServiceBindingObservation{
-					LastOperationState: osb.StateInProgress,
+					LastOperationState: osbClient.StateInProgress,
 				},
 			}
 			sb.Spec = v1alpha1.ServiceBindingSpec{}
@@ -227,7 +227,7 @@ func newFakeKubeClient(t *testing.T) *mymock.MockClient {
 func TestObserve(t *testing.T) {
 	type fields struct {
 		kube          client.Client
-		client        osb.Client
+		osb           osbClient.Client
 		rotateBinding bool
 	}
 
@@ -260,13 +260,13 @@ func TestObserve(t *testing.T) {
 			args: args{
 				// We are testing the asynchronous way, since a succeeded or failed last operation
 				// should not impact the workflow in any way
-				mg: withLastOperationState(*basicBinding, osb.StateSucceeded),
+				mg: withLastOperationState(*basicBinding, osbClient.StateSucceeded),
 			},
 
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					GetBindingReaction: &osbfake.GetBindingReaction{
-						Error: osb.HTTPStatusCodeError{
+						Error: osbClient.HTTPStatusCodeError{
 							StatusCode: http.StatusNotFound,
 						},
 					},
@@ -284,7 +284,7 @@ func TestObserve(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					GetBindingReaction: &osbfake.GetBindingReaction{
 						Error: errPanic,
 					},
@@ -299,12 +299,12 @@ func TestObserve(t *testing.T) {
 			args: args{
 				// We are testing the asynchronous way, since a succeeded or failed last operation
 				// should not impact the workflow in any way
-				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osb.StateSucceeded),
+				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osbClient.StateSucceeded),
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
-					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
-						resp := &osb.GetBindingResponse{}
+				osb: &osbfake.FakeClient{
+					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
+						resp := &osbClient.GetBindingResponse{}
 						err := generateResponse(resp, updatedCredentials)
 						return resp, err
 					}),
@@ -320,14 +320,14 @@ func TestObserve(t *testing.T) {
 		},
 		"ResourceHasPendingLastOperationStillInProgress": {
 			args: args{
-				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osb.StateInProgress),
+				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osbClient.StateInProgress),
 			},
 			fields: fields{
 				kube: newFakeKubeClient(t),
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					PollBindingLastOperationReaction: &osbfake.PollBindingLastOperationReaction{
-						Response: &osb.LastOperationResponse{
-							State: osb.StateInProgress,
+						Response: &osbClient.LastOperationResponse{
+							State: osbClient.StateInProgress,
 						},
 					},
 				},
@@ -346,12 +346,12 @@ func TestObserve(t *testing.T) {
 				mg: withObservation(*basicBinding, basicObservation),
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
-					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
-						resp := &osb.GetBindingResponse{}
+				osb: &osbfake.FakeClient{
+					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
+						resp := &osbClient.GetBindingResponse{}
 						err := generateResponse(resp, basicCredentials)
 						// Set renewbefore date to yesterday
-						resp.Metadata = &osb.BindingMetadata{
+						resp.Metadata = &osbClient.BindingMetadata{
 							RenewBefore: time.Now().AddDate(0, 0, -1).Format(util.Iso8601dateFormat),
 							ExpiresAt:   time.Now().AddDate(0, 0, 7).Format(util.Iso8601dateFormat),
 						}
@@ -373,12 +373,12 @@ func TestObserve(t *testing.T) {
 				mg: withObservation(*basicBinding, basicObservation),
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
-					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
-						resp := &osb.GetBindingResponse{}
+				osb: &osbfake.FakeClient{
+					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
+						resp := &osbClient.GetBindingResponse{}
 						err := generateResponse(resp, basicCredentials)
 						// Set renewbefore date to 2 days ago, expires to yesterday
-						resp.Metadata = &osb.BindingMetadata{
+						resp.Metadata = &osbClient.BindingMetadata{
 							RenewBefore: time.Now().AddDate(0, 0, -1).Format(util.Iso8601dateFormat),
 							ExpiresAt:   time.Now().AddDate(0, 0, 7).Format(util.Iso8601dateFormat),
 						}
@@ -401,12 +401,12 @@ func TestObserve(t *testing.T) {
 				mg: withObservation(*basicBinding, basicObservation),
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
-					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
-						resp := &osb.GetBindingResponse{}
+				osb: &osbfake.FakeClient{
+					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
+						resp := &osbClient.GetBindingResponse{}
 						err := generateResponse(resp, basicCredentials)
 						// Set renewbefore date to 2 days ago, expires to yesterday
-						resp.Metadata = &osb.BindingMetadata{
+						resp.Metadata = &osbClient.BindingMetadata{
 							RenewBefore: time.Now().AddDate(0, 0, -2).Format(util.Iso8601dateFormat),
 							ExpiresAt:   time.Now().AddDate(0, 0, -1).Format(util.Iso8601dateFormat),
 						}
@@ -427,12 +427,12 @@ func TestObserve(t *testing.T) {
 			args: args{
 				// We are testing the asynchronous way, since a succeeded or failed last operation
 				// should not impact the workflow in any way
-				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osb.StateSucceeded),
+				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osbClient.StateSucceeded),
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
-					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osb.GetBindingResponse, error) {
-						resp := &osb.GetBindingResponse{}
+				osb: &osbfake.FakeClient{
+					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
+						resp := &osbClient.GetBindingResponse{}
 						err := generateResponse(resp, basicCredentials)
 						return resp, err
 					}),
@@ -452,7 +452,7 @@ func TestObserve(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			e := external{
 				kube:          tc.fields.kube,
-				osbCient:      tc.fields.client,
+				osb:           tc.fields.osb,
 				rotateBinding: tc.fields.rotateBinding,
 			}
 
@@ -469,8 +469,8 @@ func TestObserve(t *testing.T) {
 
 func TestCreate(t *testing.T) {
 	type fields struct {
-		client osb.Client
-		oid    osb.OriginatingIdentity
+		osb osbClient.Client
+		oid osbClient.OriginatingIdentity
 	}
 
 	type args struct {
@@ -503,7 +503,7 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
 						Error: errPanic,
 					},
@@ -519,9 +519,9 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
-					BindReaction: osbfake.DynamicBindReaction(func(req *osb.BindRequest) (*osb.BindResponse, error) {
-						resp := &osb.BindResponse{}
+				osb: &osbfake.FakeClient{
+					BindReaction: osbfake.DynamicBindReaction(func(req *osbClient.BindRequest) (*osbClient.BindResponse, error) {
+						resp := &osbClient.BindResponse{}
 						err := generateResponse(resp, basicCredentials)
 						return resp, err
 					}),
@@ -538,9 +538,9 @@ func TestCreate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					BindReaction: &osbfake.BindReaction{
-						Response: &osb.BindResponse{
+						Response: &osbClient.BindResponse{
 							Async: true,
 						},
 					},
@@ -559,7 +559,7 @@ func TestCreate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{osbCient: tc.fields.client, originatingIdentity: tc.fields.oid}
+			e := external{osb: tc.fields.osb, originatingIdentity: tc.fields.oid}
 			got, err := e.Create(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Create(...): -want error, +got error:\n%s\n", tc.reason, diff)
@@ -573,7 +573,7 @@ func TestCreate(t *testing.T) {
 
 func TestUpdate(t *testing.T) {
 	type fields struct {
-		client osb.Client
+		osb osbClient.Client
 	}
 
 	type args struct {
@@ -606,9 +606,9 @@ func TestUpdate(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
-					RotateBindingReaction: osbfake.DynamicRotateBindingReaction(func(_ *osb.RotateBindingRequest) (*osb.BindResponse, error) {
-						resp := &osb.BindResponse{}
+				osb: &osbfake.FakeClient{
+					RotateBindingReaction: osbfake.DynamicRotateBindingReaction(func(_ *osbClient.RotateBindingRequest) (*osbClient.BindResponse, error) {
+						resp := &osbClient.BindResponse{}
 						err := generateResponse(resp, updatedCredentials)
 						return resp, err
 					}),
@@ -624,7 +624,7 @@ func TestUpdate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{osbCient: tc.fields.client}
+			e := external{osb: tc.fields.osb}
 			got, err := e.Update(tc.args.ctx, tc.args.mg)
 			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Update(...): -want error, +got error:\n%s\n", tc.reason, diff)
@@ -638,7 +638,7 @@ func TestUpdate(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	type fields struct {
-		client osb.Client
+		osb osbClient.Client
 	}
 
 	type args struct {
@@ -671,9 +671,9 @@ func TestDelete(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					UnbindReaction: &osbfake.UnbindReaction{
-						Response: &osb.UnbindResponse{
+						Response: &osbClient.UnbindResponse{
 							Async: false,
 						},
 					},
@@ -688,9 +688,9 @@ func TestDelete(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
-				client: &osbfake.FakeClient{
+				osb: &osbfake.FakeClient{
 					UnbindReaction: &osbfake.UnbindReaction{
-						Response: &osb.UnbindResponse{
+						Response: &osbClient.UnbindResponse{
 							Async: true,
 						},
 					},
@@ -710,7 +710,7 @@ func TestDelete(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := external{
-				osbCient: tc.fields.client,
+				osb: tc.fields.osb,
 				kube: &test.MockClient{
 					MockUpdate: test.NewMockUpdateFn(nil),
 				},
