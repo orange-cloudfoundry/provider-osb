@@ -29,6 +29,7 @@ var (
 	errFailedMarshallingContextFromServiceBinding = errors.New("failed to marshalling sb.Spec.ForProvider.Context")
 	errFailedUnMarshallingRequestContext          = errors.New("failed to unmarshalling request context from ServiceBinding")
 	errFailedUnMarshallingRequestParams           = errors.New("failed to unmarshalling request parameters from ServiceBinding")
+	errStatusParametersIsEmpty                    = errors.New("failed to unmarshalling status parameters is empty")
 )
 
 // SetConditions sets the Conditions field in the ServiceBinding status.
@@ -169,6 +170,10 @@ func (sb *ServiceBinding) SetResponseDataInStatus(data responseData) error {
 	})
 }
 
+func (sb ServiceBinding) isStatusParametersEmpty() bool {
+	return sb.Status.AtProvider.Parameters == ""
+}
+
 // We do not compare credentials, as this logic is managed by creds rotation.
 // We do not compare bindingmetadata either, since the only metadata in binding objects
 // is related to binding rotation (renew_before and expires_at)
@@ -176,6 +181,11 @@ func (sb *ServiceBinding) SetResponseDataInStatus(data responseData) error {
 // TODO add context and route to test if these were updated and return false
 func (sb *ServiceBinding) IsStatusParametersNotLikeSpecParameters() (bool, error) {
 	var statusMap, specMap map[string]interface{}
+
+	if sb.isStatusParametersEmpty() {
+		return true, errStatusParametersIsEmpty
+	}
+
 	if err := json.Unmarshal([]byte(sb.Status.AtProvider.Parameters), &statusMap); err != nil {
 		return true, fmt.Errorf("%w: %s", errFailedToParseStatusParameters, fmt.Sprint(err))
 	}
