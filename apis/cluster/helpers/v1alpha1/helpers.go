@@ -21,6 +21,7 @@ var (
 	errAppDataFetchFromInstance = errors.New("failed to fetch application data from instance")
 	errMissingInstanceData      = errors.New("missing instance data: no reference or inlined data provided")
 	errMissingApplicationData   = errors.New("missing application data: no reference or inlined data provided")
+	errServiceInstanceIsNil     = errors.New("service instance is nil")
 )
 
 // hasActiveBindingsForInstance checks if any of the given ServiceBindings
@@ -47,8 +48,14 @@ func hasActiveBindingsForInstance(instance *instancev1alpha1.ServiceInstance, bi
 func SetActiveBindingsForInstance(
 	instance *instancev1alpha1.ServiceInstance,
 	bindings []bindingv1alpha1.ServiceBinding,
-) {
+) error {
+	if instance == nil {
+		return errServiceInstanceIsNil
+	}
+
 	instance.Status.AtProvider.HasActiveBindings = hasActiveBindingsForInstance(instance, bindings)
+
+	return nil
 }
 
 // ResolveServiceInstance retrieves a ServiceInstance object from Kubernetes

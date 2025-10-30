@@ -42,22 +42,23 @@ import (
 )
 
 var (
-	errNotServiceInstance                = errors.New("managed resource is not a ServiceInstance custom resource")
-	errInstanceIDNotSet                  = errors.New("InstanceId must be set in the ServiceInstance spec")
-	errParseParametersFailed             = errors.New("failed to parse ServiceInstance parameters")
-	errParseContextFailed                = errors.New("failed to parse ServiceInstance context")
-	errCannotConnect                     = errors.New("cannot connect")
-	errCannotBuildOSBUpdateRequest       = errors.New("cannot build update request")
-	errOSBGetInstance                    = errors.New("OSB GetInstance request failed")
-	errCompareSpecWithOSB                = errors.New("cannot compare ServiceInstance spec with OSB instance")
-	errCannotUpdateServiceInstanceStatus = errors.New("cannot update ServiceInstance status")
-	errOSBProvisionInstanceFailed        = errors.New("OSB ProvisionInstance request failed")
-	errOSBUpdateInstanceFailed           = errors.New("OSB UpdateInstance request failed")
-	errCannotListServiceBindings         = errors.New("cannot list ServiceBindings")
-	errCannotUpdateActiveBindingsStatus  = errors.New("cannot update active bindings status")
-	errCannotDeleteWithActiveBindings    = errors.New("cannot delete ServiceInstance, it has active bindings")
-	errOSBDeprovisionInstanceFailed      = errors.New("OSB DeprovisionInstance request failed")
-	errOSBPollLastOperationFailed        = errors.New("OSB PollLastOperation request failed")
+	errNotServiceInstance                   = errors.New("managed resource is not a ServiceInstance custom resource")
+	errInstanceIDNotSet                     = errors.New("InstanceId must be set in the ServiceInstance spec")
+	errParseParametersFailed                = errors.New("failed to parse ServiceInstance parameters")
+	errParseContextFailed                   = errors.New("failed to parse ServiceInstance context")
+	errCannotConnect                        = errors.New("cannot connect")
+	errCannotBuildUpdateRequest             = errors.New("cannot build update request")
+	errOSBGetInstance                       = errors.New("OSB GetInstance request failed")
+	errCompareSpecWithOSB                   = errors.New("cannot compare ServiceInstance spec with OSB instance")
+	errCannotUpdateServiceInstanceStatus    = errors.New("cannot update ServiceInstance status")
+	errOSBProvisionInstanceFailed           = errors.New("OSB ProvisionInstance request failed")
+	errOSBUpdateInstanceFailed              = errors.New("OSB UpdateInstance request failed")
+	errCannotListServiceBindings            = errors.New("cannot list ServiceBindings")
+	errCannotUpdateActiveBindingsStatus     = errors.New("cannot update active bindings status")
+	errCannotDeleteWithActiveBindings       = errors.New("cannot delete ServiceInstance, it has active bindings")
+	errOSBDeprovisionInstanceFailed         = errors.New("OSB DeprovisionInstance request failed")
+	errOSBPollLastOperationFailed           = errors.New("OSB PollLastOperation request failed")
+	errFailedToSetActiveBindingsForInstance = errors.New("failed to set active bindings service for instance")
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -232,7 +233,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 	// Build the OSB update request.
 	req, err := instance.BuildUpdateRequest()
 	if err != nil {
-		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotBuildOSBUpdateRequest, fmt.Sprint(err))
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotBuildUpdateRequest, fmt.Sprint(err))
 	}
 
 	// Send the request to the OSB broker.
@@ -350,7 +351,10 @@ func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1a
 		return fmt.Errorf("%w: %s", errCannotListServiceBindings, fmt.Sprint(err))
 	}
 
-	apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
+	err := apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
+	if err != nil {
+		return fmt.Errorf("%w: %s", errFailedToSetActiveBindingsForInstance, err)
+	}
 
 	return nil
 }

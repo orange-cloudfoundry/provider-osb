@@ -64,6 +64,7 @@ var (
 	errFailedToBuildDeprovisionRequest       = errors.New("failed to build deprovision request")
 	errFailedToBuildPollLastOperationRequest = errors.New("failed to build poll last operation request")
 	errFailedToBuildProvisionRequest         = errors.New("failed to build provision request")
+	errFailedToSetActiveBindingsForInstance  = errors.New("failed to set active bindings service for instance")
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
@@ -394,7 +395,10 @@ func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1a
 		return fmt.Errorf("%w: %s", errCannotListServiceBindings, fmt.Sprint(err))
 	}
 
-	apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
+	err := apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
+	if err != nil {
+		return fmt.Errorf("%w: %s", errFailedToSetActiveBindingsForInstance, err)
+	}
 
 	return nil
 }

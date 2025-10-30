@@ -86,10 +86,10 @@ func (v *SerializableParameters) ToParameters() (map[string]any, error) {
 type KubernetesOSBContext struct {
 	Platform             string            `json:"platform"`
 	Namespace            string            `json:"namespace"`
-	NamespaceAnnotations map[string]string `json:"namespace_annotations,omitempty"`
-	InstanceAnnotations  map[string]string `json:"instance_annotations,omitempty"`
-	ClusterId            string            `json:"cluster_id"`
-	InstanceName         string            `json:"instance_name"`
+	NamespaceAnnotations map[string]string `json:"namespaceAnnotations,omitempty"`
+	InstanceAnnotations  map[string]string `json:"instanceAnnotations,omitempty"`
+	ClusterId            string            `json:"clusterId"`
+	InstanceName         string            `json:"instanceName"`
 }
 
 // KubernetesOSBOriginatingIdentityExtra represents the "extra" attribute in the

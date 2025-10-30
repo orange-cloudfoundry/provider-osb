@@ -15,12 +15,16 @@ import (
 )
 
 var (
-	errAppDataFetchFailed       = errors.New("failed to fetch application data from binding")
-	errInstanceNotFound         = errors.New("referenced service instance not found")
-	errInstanceFetchFailed      = errors.New("failed to retrieve referenced service instance")
-	errAppDataFetchFromInstance = errors.New("failed to fetch application data from instance")
-	errMissingInstanceData      = errors.New("missing instance data: no reference or inlined data provided")
-	errMissingApplicationData   = errors.New("missing application data: no reference or inlined data provided")
+	errAppDataFetchFailed                    = errors.New("failed to fetch application data from binding")
+	errInstanceNotFound                      = errors.New("referenced service instance not found")
+	errInstanceFetchFailed                   = errors.New("failed to retrieve referenced service instance")
+	errAppDataFetchFromInstance              = errors.New("failed to fetch application data from instance")
+	errMissingInstanceData                   = errors.New("missing instance data: no reference or inlined data provided")
+	errMissingApplicationData                = errors.New("missing application data: no reference or inlined data provided")
+	errServiceInstanceEmpty                  = errors.New("service instance is empty")
+	errInstanceRefEmpty                      = errors.New("instance ref is empty")
+	errServiceBindingEmpty                   = errors.New("service binding is empty")
+	errApplicationDataAndApplicationRefEmpty = errors.New("applciation data and application ref are empty, need one of them")
 )
 
 // hasActiveBindingsForInstance checks if any of the given ServiceBindings
@@ -44,8 +48,14 @@ func hasActiveBindingsForInstance(instance *instancev1alpha1.ServiceInstance, bi
 func SetActiveBindingsForInstance(
 	instance *instancev1alpha1.ServiceInstance,
 	bindings []bindingv1alpha1.ServiceBinding,
-) {
+) error {
+	if instance == nil {
+		return errServiceInstanceEmpty
+	}
+
 	instance.Status.AtProvider.HasActiveBindings = hasActiveBindingsForInstance(instance, bindings)
+
+	return nil
 }
 
 // ResolveServiceInstance retrieves a ServiceInstance object from Kubernetes
@@ -53,6 +63,10 @@ func SetActiveBindingsForInstance(
 // It returns an error if the referenced ServiceInstance does not exist
 // or if any other Kubernetes client error occurs.
 func ResolveServiceInstance(ctx context.Context, kube client.Client, spec bindingv1alpha1.ServiceBindingParameters) (instancev1alpha1.ServiceInstance, error) {
+	if spec.InstanceRef == nil {
+		return instancev1alpha1.ServiceInstance{}, errInstanceRefEmpty
+	}
+
 	instance := instancev1alpha1.ServiceInstance{}
 	if err := kube.Get(ctx, spec.InstanceRef.ToObjectKey(), &instance); err != nil {
 		if kerrors.IsNotFound(err) {
@@ -74,7 +88,14 @@ func GetDataFromServiceBinding(
 	binding *bindingv1alpha1.ServiceBinding,
 ) (bindingv1alpha1.BindingData, error) {
 
+	if binding == nil {
+		return bindingv1alpha1.BindingData{}, errServiceBindingEmpty
+	}
+
 	spec := binding.Spec.ForProvider
+	if spec.ApplicationData == nil && spec.ApplicationRef == nil {
+		return bindingv1alpha1.BindingData{}, errApplicationDataAndApplicationRefEmpty
+	}
 
 	// Try to fetch application data directly from the binding spec.
 	appData, err := applicationv1alpha1.ResolveApplicationData(ctx, kube, &spec)

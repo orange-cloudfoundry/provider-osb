@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/namespaced/common"
 )
@@ -22,6 +22,7 @@ var (
 	errCtxMapEmpty                               = errors.New("ctxMap is empty")
 	errOidPlatformIsEmpty                        = errors.New("oid platform is empty")
 	errOidValueIsEmpty                           = errors.New("oid value is empty")
+	errOperationKeyEmpty                         = errors.New("operatiopn key is empty")
 )
 
 // GetProviderConfigReference of this ServiceInstance.
@@ -49,8 +50,8 @@ func (si *ServiceInstance) SetLastOperationDescription(desc string) {
 //
 // Parameters:
 // - operationKey: a pointer to the OSB OperationKey returned by the broker
-func (si *ServiceInstance) SetLastOperationKey(operationKey *osbClient.OperationKey) {
-	si.Status.AtProvider.LastOperationKey = *operationKey
+func (si *ServiceInstance) SetLastOperationKey(operationKey osbClient.OperationKey) {
+	si.Status.AtProvider.LastOperationKey = operationKey
 }
 
 // IsDeletable returns true if the ServiceInstance is in deleting state
@@ -305,7 +306,7 @@ func (si *ServiceInstance) UpdateStatusFromOSB(resp osbClient.OSBAsyncResponse) 
 		si.Status.SetConditions(xpv1.Creating())
 		si.SetLastOperationState(osbClient.StateInProgress)
 		if resp.GetOperationKey() != nil {
-			si.SetLastOperationKey(resp.GetOperationKey())
+			si.SetLastOperationKey(*resp.GetOperationKey())
 		}
 		return
 	}
@@ -361,7 +362,7 @@ func (si *ServiceInstance) BuildPollLastOperationRequest(oid osbClient.Originati
 func (si *ServiceInstance) UpdateStatusForAsyncDeletion(resp *osbClient.DeprovisionResponse) {
 	si.SetLastOperationState(osbClient.StateDeleting)
 	if resp.OperationKey != nil {
-		si.SetLastOperationKey(resp.OperationKey)
+		si.SetLastOperationKey(*resp.OperationKey)
 	}
 }
 
