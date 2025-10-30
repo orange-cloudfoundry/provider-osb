@@ -313,7 +313,7 @@ func (sbp *ServiceBindingParameters) HasInstanceRef() bool {
 }
 
 // HasNoInstanceRef returns true if the ServiceBindingParameters does NOT have an associated InstanceRef.
-func (sb *ServiceBinding) HasNoProviderInstanceRef() bool {
+func (sb *ServiceBinding) HasNoInstanceRef() bool {
 	return sb.Spec.ForProvider.InstanceRef == nil
 }
 

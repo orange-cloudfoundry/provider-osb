@@ -30,7 +30,7 @@ func hasActiveBindingsForInstance(instance *instancev1alpha1.ServiceInstance, bi
 		return false
 	}
 	for _, b := range bindings {
-		if b.HasNoProviderInstanceRef() {
+		if b.HasNoInstanceRef() {
 			continue
 		}
 		if b.IsBoundToInstance(instance.GetName()) && b.IsNotBeingDeleted() {

@@ -27,7 +27,7 @@ var (
 // reference the provided ServiceInstance and are not marked for deletion.
 func hasActiveBindingsForInstance(instance *instancev1alpha1.ServiceInstance, bindings []bindingv1alpha1.ServiceBinding) bool {
 	for _, b := range bindings {
-		if b.HasNoProviderInstanceRef() {
+		if b.HasNoInstanceRef() {
 			continue
 		}
 		if b.IsBoundToInstance(instance.GetName()) && b.IsNotBeingDeleted() {
