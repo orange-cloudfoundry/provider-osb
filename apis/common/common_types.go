@@ -120,7 +120,7 @@ type KubernetesOSBOriginatingIdentityValue struct {
 	Username string                                 `json:"username"`
 	UID      string                                 `json:"uid"`
 	Groups   []string                               `json:"groups"`
-	Extra    *KubernetesOSBOriginatingIdentityExtra `json:"extra"`
+	Extra    *KubernetesOSBOriginatingIdentityExtra `json:"extra,omitempty"`
 }
 
 // ToMap converts the KubernetesOSBContext into a map[string]any.

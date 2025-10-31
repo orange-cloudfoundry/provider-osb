@@ -22,7 +22,6 @@ var (
 	errCtxMapEmpty                               = errors.New("ctxMap is empty")
 	errOidPlatformIsEmpty                        = errors.New("oid platform is empty")
 	errOidValueIsEmpty                           = errors.New("oid value is empty")
-	errOperationKeyEmpty                         = errors.New("operatiopn key is empty")
 )
 
 // GetProviderConfigReference of this ServiceInstance.

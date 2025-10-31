@@ -42,7 +42,7 @@ import (
 )
 
 var (
-	errNotServiceInstance                    = errors.New("managed resource is not a ServiceInstance custom resource")
+	errNotServiceInstanceCR                  = errors.New("managed resource is not a ServiceInstance custom resource")
 	errCannotTrackProviderConfig             = errors.New("cannot track ProviderConfig usage")
 	errCannotCreateNewOsbClient              = errors.New("cannot create new OSB client")
 	errCannotMakeOriginatingIdentity         = errors.New("cannot make originating identity from value")
@@ -64,20 +64,35 @@ var (
 	errFailedToBuildDeprovisionRequest       = errors.New("failed to build deprovision request")
 	errFailedToBuildPollLastOperationRequest = errors.New("failed to build poll last operation request")
 	errFailedToBuildProvisionRequest         = errors.New("failed to build provision request")
-	errFailedToSetActiveBindingsForInstance  = errors.New("failed to set active bindings service for instance")
+	errServiceInstanceEmpty                  = errors.New("service instance is empty")
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ServiceInstanceGroupKind)
+	log := o.Logger.WithValues("controller", name)
+
+	extra := &common.KubernetesOSBOriginatingIdentityExtra{}
+	if err := extra.FromMap(mgr.GetConfig().Impersonate.Extra); err != nil {
+		log.Info("Failed to parse KubernetesOSBOriginatingIdentityExtra from Impersonate.Extra")
+	} else {
+		log.Info("Successfully parsed KubernetesOSBOriginatingIdentityExtra")
+		log.Debug("Successfully parsed KubernetesOSBOriginatingIdentityExtra", "extra", extra)
+	}
 
 	r := managed.NewReconciler(mgr,
 		resource.ManagedKind(v1alpha1.ServiceInstanceGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
-			kube:         mgr.GetClient(),
-			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
+			kube:  mgr.GetClient(),
+			usage: resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
+			originatingIdentityValue: common.KubernetesOSBOriginatingIdentityValue{
+				Username: mgr.GetConfig().Impersonate.UserName,
+				UID:      mgr.GetConfig().Impersonate.UID,
+				Groups:   mgr.GetConfig().Impersonate.Groups,
+				Extra:    extra,
+			},
 			newOsbClient: util.NewOsbClient}),
-		managed.WithLogger(o.Logger.WithValues("controller", name)),
+		managed.WithLogger(log),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithManagementPolicies(),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
@@ -107,7 +122,7 @@ type connector struct {
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
 	obj, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return nil, errNotServiceInstance
+		return nil, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
 	if err := c.usage.Track(ctx, mg.(resource.ModernManaged)); err != nil {
@@ -130,9 +145,6 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", errCannotCreateNewOsbClient, fmt.Sprint(err))
 	}
-
-	// Add extra data to the originating identity from the ProviderConfig
-	c.originatingIdentityValue.Extra = &pcSpec.OriginatingIdentityExtraData
 
 	// Create the originating identity object
 	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)
@@ -162,7 +174,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Assert that the managed resource is of type ServiceInstance.
 	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalObservation{}, errNotServiceInstance
+		return managed.ExternalObservation{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
 	if instance.IsInstanceIDEmpty() {
@@ -231,7 +243,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
 	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalCreation{}, errNotServiceInstance
+		return managed.ExternalCreation{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
 	params, err := instance.Spec.ForProvider.Parameters.ToParameters()
@@ -268,7 +280,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
 	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalUpdate{}, errNotServiceInstance
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
 	// Build the OSB update request.
@@ -299,7 +311,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
 	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalDelete{}, errNotServiceInstance
+		return managed.ExternalDelete{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
 	// If the InstanceId is not set, there is nothing to delete.
@@ -395,10 +407,11 @@ func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1a
 		return fmt.Errorf("%w: %s", errCannotListServiceBindings, fmt.Sprint(err))
 	}
 
-	err := apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
-	if err != nil {
-		return fmt.Errorf("%w: %s", errFailedToSetActiveBindingsForInstance, err)
+	if instance == nil {
+		return errServiceInstanceEmpty
 	}
+
+	apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
 
 	return nil
 }

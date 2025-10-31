@@ -90,6 +90,15 @@ var (
 // Setup adds a controller that reconciles ServiceBinding managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ServiceBindingGroupKind)
+	log := o.Logger.WithValues("controller", name)
+
+	extra := &common.KubernetesOSBOriginatingIdentityExtra{}
+	if err := extra.FromMap(mgr.GetConfig().Impersonate.Extra); err != nil {
+		log.Info("Failed to parse KubernetesOSBOriginatingIdentityExtra from Impersonate.Extra")
+	} else {
+		log.Info("Successfully parsed KubernetesOSBOriginatingIdentityExtra")
+		log.Debug("Successfully parsed KubernetesOSBOriginatingIdentityExtra", "extra", extra)
+	}
 
 	opts := []managed.ReconcilerOption{
 		managed.WithExternalConnecter(&connector{
@@ -99,11 +108,12 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 				Username: mgr.GetConfig().Impersonate.UserName,
 				UID:      mgr.GetConfig().Impersonate.UID,
 				Groups:   mgr.GetConfig().Impersonate.Groups,
+				Extra:    extra,
 			},
 			newOsbClient:  util.NewOsbClient,
 			rotateBinding: o.Features.Enabled(features.EnableAlphaRotateBindings),
 		}),
-		managed.WithLogger(o.Logger.WithValues("controller", name)),
+		managed.WithLogger(log),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
 		managed.WithManagementPolicies(),
@@ -178,9 +188,6 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", errCannotCreateNewOsbClient, fmt.Sprint(err))
 	}
-
-	// Add extra data to the originating identity from the ProviderConfig
-	c.originatingIdentityValue.Extra = &pcSpec.OriginatingIdentityExtraData
 
 	// Create the originating identity object
 	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)

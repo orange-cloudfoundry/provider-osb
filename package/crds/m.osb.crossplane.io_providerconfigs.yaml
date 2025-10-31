@@ -49,7 +49,7 @@ spec:
           spec:
             description: A ProviderConfigSpec defines the desired state of a ProviderConfig.
             properties:
-              broker_url:
+              brokerUrl:
                 description: BrokerURL to send OSB requests to
                 type: string
               credentials:
@@ -108,19 +108,14 @@ spec:
                 required:
                 - source
                 type: object
-              originating_identity_extra_data:
-                description: |-
-                  OriginatingIdentityExtraData represents the extra data present in the Originating-Identity header
-                  from the OSB spec.
-                x-kubernetes-preserve-unknown-fields: true
-              osb_version:
+              osbVersion:
                 description: OSB version is used to add error management
                 type: string
               timeout:
                 description: Timeout to replace the default one when creating client
                 type: integer
             required:
-            - broker_url
+            - brokerUrl
             type: object
           status:
             description: A ProviderConfigStatus reflects the observed state of a ProviderConfig.

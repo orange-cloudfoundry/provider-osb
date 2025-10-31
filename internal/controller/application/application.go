@@ -134,9 +134,6 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		return nil, fmt.Errorf("%w: %s", errCannotCreateNewOsbClient, fmt.Sprint(err))
 	}
 
-	// Add extra data to the originating identity from the ProviderConfig
-	c.originatingIdentityValue.Extra = &pcSpec.OriginatingIdentityExtraData
-
 	// Create the originating identity object
 	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)
 	if err != nil {

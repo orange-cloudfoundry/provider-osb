@@ -147,18 +147,18 @@ func (sb *ServiceBinding) setAtProvider(observation ServiceBindingObservation) e
 //
 // Note: Certain operational fields (e.g., LastOperationState, LastOperationKey, etc.)
 // are intentionally preserved to avoid overwriting ongoing operation data.
-func (sb *ServiceBinding) SetResponseDataInStatus(data responseData) error {
-	params, err := json.Marshal(data.Parameters)
+func (sb *ServiceBinding) SetResponseDataInStatus(response responseData) error {
+	params, err := json.Marshal(response.Parameters)
 	if err != nil {
 		return fmt.Errorf("%w: %s", errMarshalParameters, fmt.Sprint(err))
 	}
 
-	endpoints, err := json.Marshal(data.Endpoints)
+	endpoints, err := json.Marshal(response.Endpoints)
 	if err != nil {
 		return fmt.Errorf("%w: %s", errMarshalEndpoints, fmt.Sprint(err))
 	}
 
-	volumeMounts, err := json.Marshal(data.VolumeMounts)
+	volumeMounts, err := json.Marshal(response.VolumeMounts)
 	if err != nil {
 		return fmt.Errorf("%w: %s", errMarshalVolumeMounts, fmt.Sprint(err))
 	}
@@ -166,11 +166,11 @@ func (sb *ServiceBinding) SetResponseDataInStatus(data responseData) error {
 	return sb.setAtProvider(ServiceBindingObservation{
 		// Update attributes from response data
 		Parameters:      common.SerializableParameters(params),
-		RouteServiceURL: data.RouteServiceURL,
+		RouteServiceURL: response.RouteServiceURL,
 		Endpoints:       SerializableEndpoints(endpoints),
 		VolumeMounts:    SerializableVolumeMounts(volumeMounts),
-		SyslogDrainURL:  data.SyslogDrainURL,
-		Metadata:        data.Metadata,
+		SyslogDrainURL:  response.SyslogDrainURL,
+		Metadata:        response.Metadata,
 		// Do not change these attributes
 		LastOperationState:       sb.Status.AtProvider.LastOperationState,
 		LastOperationKey:         sb.Status.AtProvider.LastOperationKey,
