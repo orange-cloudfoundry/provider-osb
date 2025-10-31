@@ -179,7 +179,7 @@ func (sb *ServiceBinding) SetResponseDataInStatus(response responseData) error {
 	})
 }
 
-func (sb ServiceBinding) isStatusParametersEmpty() bool {
+func (sb *ServiceBinding) isStatusParametersEmpty() bool {
 	return sb.Status.AtProvider.Parameters == ""
 }
 
@@ -326,16 +326,16 @@ func (sbp *ServiceBindingParameters) GetInstanceRef() *common.NamespacedName {
 
 // IsBoundToInstance returns true if the ServiceBinding is linked to the ServiceInstance
 // with the given name.
-func (b *ServiceBinding) IsBoundToInstance(instanceName string) bool {
-	if b.Spec.ForProvider.InstanceRef == nil {
+func (sb *ServiceBinding) IsBoundToInstance(instanceName string) bool {
+	if sb.Spec.ForProvider.InstanceRef == nil {
 		return false
 	}
-	return b.Spec.ForProvider.InstanceRef.Name == instanceName
+	return sb.Spec.ForProvider.InstanceRef.Name == instanceName
 }
 
 // IsNotBeingDeleted returns true if the ServiceBinding has not been marked for deletion.
-func (b *ServiceBinding) IsNotBeingDeleted() bool {
-	return b.DeletionTimestamp.IsZero()
+func (sb *ServiceBinding) IsNotBeingDeleted() bool {
+	return sb.DeletionTimestamp.IsZero()
 }
 
 // HasInstanceData returns true if the ServiceBindingParameters contains InstanceData.
