@@ -379,28 +379,12 @@ func (sb *ServiceBinding) BuildBindRequest(
 	oid osbClient.OriginatingIdentity,
 	ctxMap, params map[string]any,
 ) (osbClient.BindRequest, error) {
+
+	if err := validateInputs(bindingData, oid); err != nil {
+		return osbClient.BindRequest{}, err
+	}
+
 	bindingID := sb.EnsureBindingUUID()
-
-	if oid.Platform != "" {
-		return osbClient.BindRequest{}, errOidPlatformIsEmpty
-	}
-
-	if oid.Value != "" {
-		return osbClient.BindRequest{}, errOidValueIsEmpty
-	}
-
-	if bindingData.InstanceData.InstanceId == "" {
-		return osbClient.BindRequest{}, errInstanceIdIsEmpty
-	}
-
-	if bindingData.InstanceData.PlanId == "" {
-		return osbClient.BindRequest{}, errPlanIdEmpty
-	}
-
-	if bindingData.InstanceData.ServiceId == "" {
-		return osbClient.BindRequest{}, errServiceIdEmpty
-	}
-
 	bindRequest := osbClient.BindRequest{
 		BindingID:           bindingID,
 		OriginatingIdentity: &oid,
@@ -410,6 +394,34 @@ func (sb *ServiceBinding) BuildBindRequest(
 		ServiceID:           bindingData.InstanceData.ServiceId,
 	}
 
+	sb.addBindResource(&bindRequest, bindingData)
+	addContextAndParams(&bindRequest, ctxMap, params)
+
+	return bindRequest, nil
+}
+
+// validateInputs handles all the simple validation checks.
+func validateInputs(bindingData BindingData, oid osbClient.OriginatingIdentity) error {
+	if oid.Platform == "" {
+		return errOidPlatformIsEmpty
+	}
+	if oid.Value == "" {
+		return errOidValueIsEmpty
+	}
+	if bindingData.InstanceData.InstanceId == "" {
+		return errInstanceIdIsEmpty
+	}
+	if bindingData.InstanceData.PlanId == "" {
+		return errPlanIdEmpty
+	}
+	if bindingData.InstanceData.ServiceId == "" {
+		return errServiceIdEmpty
+	}
+	return nil
+}
+
+// addBindResource sets the BindResource and AppGUID.
+func (sb *ServiceBinding) addBindResource(bindRequest *osbClient.BindRequest, bindingData BindingData) {
 	bindResource := &osbClient.BindResource{}
 
 	if bindingData.ApplicationData.Guid != "" {
@@ -424,16 +436,16 @@ func (sb *ServiceBinding) BuildBindRequest(
 	if bindResource.IsNotEmpty() {
 		bindRequest.BindResource = bindResource
 	}
+}
 
+// addContextAndParams adds optional context and parameters.
+func addContextAndParams(bindRequest *osbClient.BindRequest, ctxMap, params map[string]any) {
 	if ctxMap != nil {
 		bindRequest.Context = ctxMap
 	}
-
 	if params != nil {
 		bindRequest.Parameters = params
 	}
-
-	return bindRequest, nil
 }
 
 // buildUnbindRequest constructs an OSB UnbindRequest for the given ServiceBinding.
