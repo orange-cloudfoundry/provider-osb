@@ -103,25 +103,25 @@ spec:
                       KubernetesOSBContext represents the context object for kubernetes in the OSB spec
                       cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                     properties:
-                      cluster_id:
+                      clusterId:
                         type: string
-                      instance_annotations:
+                      instanceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
-                      instance_name:
+                      instanceName:
                         type: string
                       namespace:
                         type: string
-                      namespace_annotations:
+                      namespaceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
                       platform:
                         type: string
                     required:
-                    - cluster_id
-                    - instance_name
+                    - clusterId
+                    - instanceName
                     - namespace
                     - platform
                     type: object
@@ -196,25 +196,25 @@ spec:
                       KubernetesOSBContext represents the context object for kubernetes in the OSB spec
                       cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                     properties:
-                      cluster_id:
+                      clusterId:
                         type: string
-                      instance_annotations:
+                      instanceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
-                      instance_name:
+                      instanceName:
                         type: string
                       namespace:
                         type: string
-                      namespace_annotations:
+                      namespaceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
                       platform:
                         type: string
                     required:
-                    - cluster_id
-                    - instance_name
+                    - clusterId
+                    - instanceName
                     - namespace
                     - platform
                     type: object
@@ -347,25 +347,25 @@ spec:
                       KubernetesOSBContext represents the context object for kubernetes in the OSB spec
                       cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
                     properties:
-                      cluster_id:
+                      clusterId:
                         type: string
-                      instance_annotations:
+                      instanceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
-                      instance_name:
+                      instanceName:
                         type: string
                       namespace:
                         type: string
-                      namespace_annotations:
+                      namespaceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
                       platform:
                         type: string
                     required:
-                    - cluster_id
-                    - instance_name
+                    - clusterId
+                    - instanceName
                     - namespace
                     - platform
                     type: object

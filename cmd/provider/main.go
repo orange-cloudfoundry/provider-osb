@@ -35,10 +35,8 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/statemetrics"
 
-	apisCluster "github.com/orange-cloudfoundry/provider-osb/apis/cluster"
-	apisNamespaced "github.com/orange-cloudfoundry/provider-osb/apis/namespaced"
-	controllerCluster "github.com/orange-cloudfoundry/provider-osb/internal/controller/cluster"
-	controllerNamespaced "github.com/orange-cloudfoundry/provider-osb/internal/controller/namespaced"
+	apis "github.com/orange-cloudfoundry/provider-osb/apis"
+	controllers "github.com/orange-cloudfoundry/provider-osb/internal/controller"
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 )
 
@@ -92,8 +90,7 @@ func main() {
 		RenewDeadline:              func() *time.Duration { d := 50 * time.Second; return &d }(),
 	})
 	kingpin.FatalIfError(err, "Cannot create controller manager")
-	kingpin.FatalIfError(apisCluster.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs cluster to scheme")
-	kingpin.FatalIfError(apisNamespaced.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs namespace to scheme")
+	kingpin.FatalIfError(apis.AddToScheme(mgr.GetScheme()), "Cannot add OSB APIs namespace to scheme")
 
 	metricRecorder := managed.NewMRMetricRecorder()
 	stateMetrics := statemetrics.NewMRStateMetrics()
@@ -124,7 +121,6 @@ func main() {
 		log.Info("Alpha feature enabled", "flag", features.EnableAlphaRotateBindings)
 	}
 
-	kingpin.FatalIfError(controllerCluster.Setup(mgr, o), "Cannot setup OSB controllers cluster mode")
-	kingpin.FatalIfError(controllerNamespaced.Setup(mgr, o), "Cannot setup OSB controllers namespaced mode")
+	kingpin.FatalIfError(controllers.Setup(mgr, o), "Cannot setup OSB controllers mode")
 	kingpin.FatalIfError(mgr.Start(ctrl.SetupSignalHandler()), "Cannot start controller manager")
 }
