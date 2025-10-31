@@ -281,7 +281,7 @@ func (sb *ServiceBinding) TriggerRotation(osb osbClient.Client, data BindingData
 
 	req, err := sb.buildRotateBindingRequest(data, oid, newUUID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", errFailedToBuildRotateBindingRequest, err)
+		return nil, fmt.Errorf("%w: %s", errFailedToBuildRotateBindingRequest, fmt.Sprint(err))
 	}
 
 	resp, err := osb.RotateBinding(req)

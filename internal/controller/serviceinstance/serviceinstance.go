@@ -258,7 +258,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	req, err := instance.BuildProvisionRequest(params, ctxMap)
 	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("%w, %s", errFailedToBuildProvisionRequest, err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w, %s", errFailedToBuildProvisionRequest, fmt.Sprint(err))
 	}
 
 	resp, err := c.osb.ProvisionInstance(req)
@@ -361,7 +361,7 @@ func (c *external) removeFinalizer(ctx context.Context, instance *v1alpha1.Servi
 func (c *external) handleLastOperationInProgress(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
 	req, err := instance.BuildPollLastOperationRequest(c.originatingIdentity)
 	if err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildPollLastOperationRequest, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildPollLastOperationRequest, fmt.Sprint(err))
 	}
 
 	resp, err := c.osb.PollLastOperation(req)
@@ -443,7 +443,7 @@ func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instanc
 func (c *external) deprovision(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalDelete, error) {
 	req, err := instance.BuildDeprovisionRequest(c.originatingIdentity)
 	if err != nil {
-		return managed.ExternalDelete{}, fmt.Errorf("%w: %s", errFailedToBuildDeprovisionRequest, err)
+		return managed.ExternalDelete{}, fmt.Errorf("%w: %s", errFailedToBuildDeprovisionRequest, fmt.Sprint(err))
 	}
 
 	resp, err := c.osb.DeprovisionInstance(req)

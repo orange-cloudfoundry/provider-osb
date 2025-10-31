@@ -328,7 +328,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	// Build OSB BindRequest.
 	req, err := binding.BuildBindRequest(bindingData, c.originatingIdentity, requestContext, requestParams)
 	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("%w, %s", errFailedToBuildBindRequest, err)
+		return managed.ExternalCreation{}, fmt.Errorf("%w, %s", errFailedToBuildBindRequest, fmt.Sprint(err))
 	}
 
 	// Execute the OSB bind request and handle async responses.
@@ -405,7 +405,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	req, err := binding.BuildUnbindRequest(bindingData, c.originatingIdentity)
 	if err != nil {
-		return managed.ExternalDelete{}, fmt.Errorf("%w, %s", errFailedToBuildUnbindRequest, err)
+		return managed.ExternalDelete{}, fmt.Errorf("%w, %s", errFailedToBuildUnbindRequest, fmt.Sprint(err))
 	}
 
 	resp, err := c.osb.Unbind(req)
@@ -444,7 +444,7 @@ func (c *external) Disconnect(ctx context.Context) error {
 func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData v1alpha1.BindingData) (managed.ExternalObservation, error) {
 	req, err := binding.BuildBindingLastOperationRequest(bindingData, c.originatingIdentity)
 	if err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildBindingLastOperationRequest, err)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildBindingLastOperationRequest, fmt.Sprint(err))
 	}
 
 	resp, err := c.osb.PollBindingLastOperation(req)
