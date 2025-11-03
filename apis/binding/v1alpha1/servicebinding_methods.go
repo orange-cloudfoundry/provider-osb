@@ -36,7 +36,6 @@ var (
 	errOidValueIsEmpty                            = errors.New("oid value is empty")
 	errServiceIdEmpty                             = errors.New("serviceID is empty")
 	errBindingIdEmpty                             = errors.New("bindingID is empty")
-	errLastOperationKeyEmpty                      = errors.New("last operation key is empty")
 	errNewBindingUUIDEmpty                        = errors.New("new binding uuid is empty")
 	errFailedToBuildRotateBindingRequest          = errors.New("failed to build rotate binding request")
 )
@@ -215,7 +214,7 @@ func (sb *ServiceBinding) BuildGetBindingRequest(bindingData BindingData) (*osbC
 	}
 
 	bindingId := sb.GetExternalName()
-	if bindingId != "" {
+	if bindingId == "" {
 		return &osbClient.GetBindingRequest{}, errBindingIdEmpty
 	}
 
@@ -227,11 +226,11 @@ func (sb *ServiceBinding) BuildGetBindingRequest(bindingData BindingData) (*osbC
 
 // buildRotateBindingRequest constructs an OSB RotateBindingRequest for a binding.
 func (sb *ServiceBinding) buildRotateBindingRequest(bindingData BindingData, oid osbClient.OriginatingIdentity, newUUID string) (*osbClient.RotateBindingRequest, error) {
-	if oid.Platform != "" {
+	if oid.Platform == "" {
 		return &osbClient.RotateBindingRequest{}, errOidPlatformIsEmpty
 	}
 
-	if oid.Value != "" {
+	if oid.Value == "" {
 		return &osbClient.RotateBindingRequest{}, errOidValueIsEmpty
 	}
 
@@ -450,11 +449,11 @@ func addContextAndParams(bindRequest *osbClient.BindRequest, ctxMap, params map[
 
 // buildUnbindRequest constructs an OSB UnbindRequest for the given ServiceBinding.
 func (sb *ServiceBinding) BuildUnbindRequest(bindingData BindingData, oid osbClient.OriginatingIdentity) (*osbClient.UnbindRequest, error) {
-	if oid.Platform != "" {
+	if oid.Platform == "" {
 		return &osbClient.UnbindRequest{}, errOidPlatformIsEmpty
 	}
 
-	if oid.Value != "" {
+	if oid.Value == "" {
 		return &osbClient.UnbindRequest{}, errOidValueIsEmpty
 	}
 
@@ -487,11 +486,11 @@ func (sb *ServiceBinding) BuildUnbindRequest(bindingData BindingData, oid osbCli
 
 // buildBindingLastOperationRequest constructs an OSB BindingLastOperationRequest for polling.
 func (sb *ServiceBinding) BuildBindingLastOperationRequest(bindingData BindingData, oid osbClient.OriginatingIdentity) (*osbClient.BindingLastOperationRequest, error) {
-	if oid.Platform != "" {
+	if oid.Platform == "" {
 		return &osbClient.BindingLastOperationRequest{}, errOidPlatformIsEmpty
 	}
 
-	if oid.Value != "" {
+	if oid.Value == "" {
 		return &osbClient.BindingLastOperationRequest{}, errOidValueIsEmpty
 	}
 
@@ -510,10 +509,6 @@ func (sb *ServiceBinding) BuildBindingLastOperationRequest(bindingData BindingDa
 	bindingId := meta.GetExternalName(sb)
 	if bindingId == "" {
 		return &osbClient.BindingLastOperationRequest{}, errBindingIdEmpty
-	}
-
-	if sb.Status.AtProvider.LastOperationKey == "" {
-		return &osbClient.BindingLastOperationRequest{}, errLastOperationKeyEmpty
 	}
 
 	return &osbClient.BindingLastOperationRequest{

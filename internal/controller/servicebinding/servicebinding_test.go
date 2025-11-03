@@ -228,6 +228,7 @@ func TestObserve(t *testing.T) {
 	type fields struct {
 		kube          client.Client
 		osb           osbClient.Client
+		oid           osbClient.OriginatingIdentity
 		rotateBinding bool
 	}
 
@@ -330,6 +331,10 @@ func TestObserve(t *testing.T) {
 							State: osbClient.StateInProgress,
 						},
 					},
+				},
+				oid: osbClient.OriginatingIdentity{
+					Platform: "kubernetes",
+					Value:    "some value",
 				},
 			},
 			want: want{
@@ -451,15 +456,22 @@ func TestObserve(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			e := external{
-				kube:          tc.fields.kube,
-				osb:           tc.fields.osb,
-				rotateBinding: tc.fields.rotateBinding,
+				kube:                tc.fields.kube,
+				osb:                 tc.fields.osb,
+				originatingIdentity: tc.fields.oid,
+				rotateBinding:       tc.fields.rotateBinding,
 			}
 
 			got, err := e.Observe(tc.args.ctx, tc.args.mg)
+
+			if err != nil {
+				t.Logf("Original error: %+v", err)
+			}
+
 			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
 				t.Errorf("\n%s\ne.Observe(...): -want error, +got error:\n%s\n", tc.reason, diff)
 			}
+
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
 				t.Errorf("\n%s\ne.Observe(...): -want, +got:\n%s\n", tc.reason, diff)
 			}
@@ -508,6 +520,10 @@ func TestCreate(t *testing.T) {
 						Error: errPanic,
 					},
 				},
+				oid: osbClient.OriginatingIdentity{
+					Platform: "kubernetes",
+					Value:    "some value",
+				},
 			},
 			want: want{
 				o:   managed.ExternalCreation{},
@@ -525,6 +541,10 @@ func TestCreate(t *testing.T) {
 						err := generateResponse(resp, basicCredentials)
 						return resp, err
 					}),
+				},
+				oid: osbClient.OriginatingIdentity{
+					Platform: "kubernetes",
+					Value:    "some value",
 				},
 			},
 			want: want{
@@ -545,6 +565,10 @@ func TestCreate(t *testing.T) {
 						},
 					},
 				},
+				oid: osbClient.OriginatingIdentity{
+					Platform: "kubernetes",
+					Value:    "some value",
+				},
 			},
 			want: want{
 				// no credentials, because async
@@ -559,13 +583,23 @@ func TestCreate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{osb: tc.fields.osb, originatingIdentity: tc.fields.oid}
-			got, err := e.Create(tc.args.ctx, tc.args.mg)
-			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
-				t.Errorf("\n%s\ne.Create(...): -want error, +got error:\n%s\n", tc.reason, diff)
+			e := external{
+				osb:                 tc.fields.osb,
+				originatingIdentity: tc.fields.oid,
 			}
+
+			got, err := e.Create(tc.args.ctx, tc.args.mg)
+
+			if err != nil {
+				t.Logf("Original error: %+v", err)
+			}
+
+			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
+				t.Errorf("\n%s\ne.Observe(...): -want error, +got error:\n%s\n", tc.reason, diff)
+			}
+
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
-				t.Errorf("\n%s\ne.Create(...): -want, +got:\n%s\n", tc.reason, diff)
+				t.Errorf("\n%s\ne.Observe(...): -want, +got:\n%s\n", tc.reason, diff)
 			}
 		})
 	}
@@ -574,6 +608,7 @@ func TestCreate(t *testing.T) {
 func TestUpdate(t *testing.T) {
 	type fields struct {
 		osb osbClient.Client
+		oid osbClient.OriginatingIdentity
 	}
 
 	type args struct {
@@ -613,6 +648,10 @@ func TestUpdate(t *testing.T) {
 						return resp, err
 					}),
 				},
+				oid: osbClient.OriginatingIdentity{
+					Platform: "kubernetes",
+					Value:    "some value",
+				},
 			},
 			want: want{
 				o: managed.ExternalUpdate{
@@ -624,13 +663,23 @@ func TestUpdate(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			e := external{osb: tc.fields.osb}
-			got, err := e.Update(tc.args.ctx, tc.args.mg)
-			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
-				t.Errorf("\n%s\ne.Update(...): -want error, +got error:\n%s\n", tc.reason, diff)
+			e := external{
+				osb:                 tc.fields.osb,
+				originatingIdentity: tc.fields.oid,
 			}
+
+			got, err := e.Update(tc.args.ctx, tc.args.mg)
+
+			if err != nil {
+				t.Logf("Original error: %+v", err)
+			}
+
+			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
+				t.Errorf("\n%s\ne.Observe(...): -want error, +got error:\n%s\n", tc.reason, diff)
+			}
+
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
-				t.Errorf("\n%s\ne.Update(...): -want, +got:\n%s\n", tc.reason, diff)
+				t.Errorf("\n%s\ne.Observe(...): -want, +got:\n%s\n", tc.reason, diff)
 			}
 		})
 	}
@@ -639,6 +688,7 @@ func TestUpdate(t *testing.T) {
 func TestDelete(t *testing.T) {
 	type fields struct {
 		osb osbClient.Client
+		oid osbClient.OriginatingIdentity
 	}
 
 	type args struct {
@@ -678,6 +728,10 @@ func TestDelete(t *testing.T) {
 						},
 					},
 				},
+				oid: osbClient.OriginatingIdentity{
+					Platform: "kubernetes",
+					Value:    "some value",
+				},
 			},
 			want: want{
 				o: managed.ExternalDelete{},
@@ -694,6 +748,10 @@ func TestDelete(t *testing.T) {
 							Async: true,
 						},
 					},
+				},
+				oid: osbClient.OriginatingIdentity{
+					Platform: "kubernetes",
+					Value:    "some value",
 				},
 			},
 			want: want{
@@ -714,13 +772,21 @@ func TestDelete(t *testing.T) {
 				kube: &test.MockClient{
 					MockUpdate: test.NewMockUpdateFn(nil),
 				},
+				originatingIdentity: tc.fields.oid,
 			}
+
 			got, err := e.Delete(tc.args.ctx, tc.args.mg)
-			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
-				t.Errorf("\n%s\ne.Delete(...): -want error, +got error:\n%s\n", tc.reason, diff)
+
+			if err != nil {
+				t.Logf("Original error: %+v", err)
 			}
+
+			if diff := cmp.Diff(tc.want.err, errors.Unwrap(err), test.EquateErrors()); diff != "" {
+				t.Errorf("\n%s\ne.Observe(...): -want error, +got error:\n%s\n", tc.reason, diff)
+			}
+
 			if diff := cmp.Diff(tc.want.o, got); diff != "" {
-				t.Errorf("\n%s\ne.Delete(...): -want, +got:\n%s\n", tc.reason, diff)
+				t.Errorf("\n%s\ne.Observe(...): -want, +got:\n%s\n", tc.reason, diff)
 			}
 		})
 	}

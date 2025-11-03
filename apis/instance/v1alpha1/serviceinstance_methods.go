@@ -231,11 +231,11 @@ func (si *ServiceInstance) BuildUpdateInstanceRequest(oid osbClient.OriginatingI
 		return &osbClient.UpdateInstanceRequest{}, errServiceIdEmpty
 	}
 
-	if oid.Platform != "" {
+	if oid.Platform == "" {
 		return &osbClient.UpdateInstanceRequest{}, errOidPlatformIsEmpty
 	}
 
-	if oid.Value != "" {
+	if oid.Value == "" {
 		return &osbClient.UpdateInstanceRequest{}, errOidValueIsEmpty
 	}
 
@@ -328,11 +328,11 @@ func (si *ServiceInstance) BuildPollLastOperationRequest(oid osbClient.Originati
 		return &osbClient.LastOperationRequest{}, errInstanceIdIsEmpty
 	}
 
-	if oid.Platform != "" {
+	if oid.Platform == "" {
 		return &osbClient.LastOperationRequest{}, errOidPlatformIsEmpty
 	}
 
-	if oid.Value != "" {
+	if oid.Value == "" {
 		return &osbClient.LastOperationRequest{}, errOidValueIsEmpty
 	}
 
@@ -379,11 +379,11 @@ func (si *ServiceInstance) BuildDeprovisionRequest(oid osbClient.OriginatingIden
 		return &osbClient.DeprovisionRequest{}, errPlanIdEmpty
 	}
 
-	if oid.Platform != "" {
+	if oid.Platform == "" {
 		return &osbClient.DeprovisionRequest{}, errOidPlatformIsEmpty
 	}
 
-	if oid.Value != "" {
+	if oid.Value == "" {
 		return &osbClient.DeprovisionRequest{}, errOidValueIsEmpty
 	}
 
