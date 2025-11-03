@@ -28,22 +28,30 @@ import (
 // A ProviderConfigSpec defines the desired state of a ProviderConfig.
 type ProviderConfigSpec struct {
 	// Credentials required to authenticate to this provider.
+	// +kubebuilder:validation:Optional
 	Credentials ProviderCredentials `json:"credentials,omitempty"`
 
 	// BrokerURL to send OSB requests to
 	// TODO add kubebuilder validation annotation for URI format
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^https?://.+`
 	BrokerURL string `json:"brokerUrl"`
 
 	// OSB version is used to add error management
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^2\.\d{1,2}$`
 	OSBVersion string `json:"osbVersion,omitempty"`
 
 	// Timeout to replace the default one when creating client
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Minimum=0
 	Timeout int `json:"timeout,omitempty"`
 }
 
 // ProviderCredentials required to authenticate.
 type ProviderCredentials struct {
 	// Source of the provider credentials.
+	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=None;Secret;InjectedIdentity;Environment;Filesystem
 	Source xpv1.CredentialsSource `json:"source"`
 
@@ -67,9 +75,12 @@ type ProviderConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec         ProviderConfigSpec   `json:"spec"`
-	Status       ProviderConfigStatus `json:"status,omitempty"`
-	DisableAsync bool                 `json:"disable_async"`
+	// +kubebuilder:validation:Required
+	Spec ProviderConfigSpec `json:"spec"`
+	// +kubebuilder:validation:Optional
+	Status ProviderConfigStatus `json:"status,omitempty"`
+	// +kubebuilder:validation:Required
+	DisableAsync bool `json:"disable_async"`
 }
 
 // +kubebuilder:object:root=true

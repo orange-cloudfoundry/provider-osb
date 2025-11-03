@@ -26,7 +26,15 @@ import (
 // NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
 // And it makes `make generate` fail
 type NamespacedName struct {
-	Name      string `json:"name"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Name string `json:"name"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	Namespace string `json:"namespace,omitempty"`
 }
 
@@ -46,14 +54,26 @@ func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 
 // Instance Data represents the schema for a ServiceInstance MR
 type InstanceData struct {
-	AppGuid          string                 `json:"appGuid,omitempty"`
-	InstanceId       string                 `json:"instanceId"`
-	PlanId           string                 `json:"planId"`
-	ServiceId        string                 `json:"serviceId"`
-	Context          KubernetesOSBContext   `json:"context,omitempty"`
-	Parameters       SerializableParameters `json:"parameters,omitempty"`
-	OrganizationGuid string                 `json:"organizationGuid"`
-	SpaceGuid        string                 `json:"spaceGuid"`
+	// +kubebuilder:validation:Optional
+	AppGuid string `json:"appGuid,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	InstanceId string `json:"instanceId"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	PlanId string `json:"planId"`
+	// +kubebuilder:validation:Required
+	ServiceId string `json:"serviceId"`
+	// +kubebuilder:validation:Optional
+	Context KubernetesOSBContext `json:"context,omitempty"`
+	// +kubebuilder:validation:Optional
+	Parameters SerializableParameters `json:"parameters,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	OrganizationGuid string `json:"organizationGuid"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	SpaceGuid string `json:"spaceGuid"`
 }
 
 // SerializableParameters represents a JSON-encoded map of arbitrary parameters.
@@ -75,12 +95,26 @@ func (v *SerializableParameters) ToParameters() (map[string]any, error) {
 // KubernetesOSBContext represents the context object for kubernetes in the OSB spec
 // cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
 type KubernetesOSBContext struct {
-	Platform             string            `json:"platform"`
-	Namespace            string            `json:"namespace"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=kubernetes
+	Platform string `json:"platform"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	Namespace string `json:"namespace"`
+	// +kubebuilder:validation:Optional
 	NamespaceAnnotations map[string]string `json:"namespaceAnnotations,omitempty"`
-	InstanceAnnotations  map[string]string `json:"instanceAnnotations,omitempty"`
-	ClusterId            string            `json:"clusterId"`
-	InstanceName         string            `json:"instanceName"`
+	// +kubebuilder:validation:Optional
+	InstanceAnnotations map[string]string `json:"instanceAnnotations,omitempty"`
+	// +kubebuilder:validation:Required
+	ClusterId string `json:"clusterId"`
+
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	InstanceName string `json:"instanceName"`
 }
 
 // KubernetesOSBOriginatingIdentityExtra represents the "extra" attribute in the
@@ -108,10 +142,18 @@ func (e *KubernetesOSBOriginatingIdentityExtra) ToMap() (map[string][]string, er
 // KubernetesOSBOriginatingIdentityValue represents the Originating-Identity header structure from the OSB spec
 // cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-originating-identity-header
 type KubernetesOSBOriginatingIdentityValue struct {
-	Username string                                 `json:"username"`
-	UID      string                                 `json:"uid"`
-	Groups   []string                               `json:"groups"`
-	Extra    *KubernetesOSBOriginatingIdentityExtra `json:"extra,omitempty"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Username string `json:"username"`
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
+	UID string `json:"uid"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:UniqueItems=true
+	Groups []string `json:"groups"`
+	// +kubebuilder:validation:Optional
+	Extra *KubernetesOSBOriginatingIdentityExtra `json:"extra,omitempty"`
 }
 
 // ToMap converts the KubernetesOSBContext into a map[string]any.

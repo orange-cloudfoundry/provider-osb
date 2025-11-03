@@ -33,28 +33,47 @@ import (
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
 type ServiceBindingParameters struct {
-	AppGuid      string                        `json:"appGuid,omitempty"`
-	InstanceRef  *common.NamespacedName        `json:"instance,omitempty"`
-	InstanceData *common.InstanceData          `json:"instanceData,omitempty"`
-	Context      common.KubernetesOSBContext   `json:"context,omitempty"`
-	Parameters   common.SerializableParameters `json:"parameters,omitempty"`
-	Route        string                        `json:"route,omitempty"`
+	// +kubebuilder:validation:Optional
+	AppGuid string `json:"appGuid,omitempty"`
+	// +kubebuilder:validation:Optional
+	InstanceRef *common.NamespacedName `json:"instance,omitempty"`
+	// +kubebuilder:validation:Optional
+	InstanceData *common.InstanceData `json:"instanceData,omitempty"`
+	// +kubebuilder:validation:Optional
+	Context common.KubernetesOSBContext `json:"context,omitempty"`
+	// +kubebuilder:validation:Optional
+	Parameters common.SerializableParameters `json:"parameters,omitempty"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	Route string `json:"route,omitempty"`
 	// TODO manage additional attributes
 }
 
 // ServiceBindingObservation are the observable fields of a ServiceBinding.
 type ServiceBindingObservation struct {
 	// TODO add context and route to test if these were updated and return error if so
-	Parameters               common.SerializableParameters `json:"parameters,omitempty"`
-	RouteServiceURL          *string                       `json:"routeServiceUrl,omitempty"`
-	Endpoints                SerializableEndpoints         `json:"endpoints,omitempty"`
-	VolumeMounts             SerializableVolumeMounts      `json:"volumeMounts,omitempty"`
-	SyslogDrainURL           *string                       `json:"syslogDrainUrl,omitempty"`
-	Metadata                 *osbClient.BindingMetadata    `json:"metadata,omitempty"`
-	LastOperationState       osbClient.LastOperationState  `json:"lastOperationState,omitempty"`
-	LastOperationKey         osbClient.OperationKey        `json:"lastOperationKey,omitempty"`
-	LastOperationDescription string                        `json:"lastOperationDescription,omitempty"`
-	LastOperationPolledTime  string                        `json:"lastOperationPolled_time,omitempty"`
+	// +kubebuilder:validation:Optional
+	Parameters common.SerializableParameters `json:"parameters,omitempty"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	RouteServiceURL *string `json:"routeServiceUrl,omitempty"`
+	// +kubebuilder:validation:Optional
+	Endpoints SerializableEndpoints `json:"endpoints,omitempty"`
+	// +kubebuilder:validation:Optional
+	VolumeMounts SerializableVolumeMounts `json:"volumeMounts,omitempty"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	SyslogDrainURL *string `json:"syslogDrainUrl,omitempty"`
+	// +kubebuilder:validation:Optional
+	Metadata *osbClient.BindingMetadata `json:"metadata,omitempty"`
+	// +kubebuilder:validation:Optional
+	LastOperationState osbClient.LastOperationState `json:"lastOperationState,omitempty"`
+	// +kubebuilder:validation:Optional
+	LastOperationKey osbClient.OperationKey `json:"lastOperationKey,omitempty"`
+	// +kubebuilder:validation:Optional
+	LastOperationDescription string `json:"lastOperationDescription,omitempty"`
+	// +kubebuilder:validation:Optional
+	LastOperationPolledTime string `json:"lastOperationPolled_time,omitempty"`
 }
 
 // SerializableVolumeMounts represents a JSON-encoded slice of osb.VolumeMount.
@@ -78,6 +97,7 @@ func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osbClient.VolumeMount, e
 // SerializableEndpoints represents a JSON-encoded slice of endpoints.
 // Stored as a string because slices are not directly serializable in Go.
 // It is stored as a string but can be converted back to a slice of Endpoints.
+// +kubebuilder:validation:Type=string
 type SerializableEndpoints string
 
 // ToEndpoints deserializes the JSON string into a slice of osb.Endpoint.
@@ -105,13 +125,15 @@ func (v *SerializableEndpoints) String() string {
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
 type ServiceBindingSpec struct {
 	xpv2.ManagedResourceSpec `json:",inline"`
-	ForProvider              ServiceBindingParameters `json:"forProvider"`
+	// +kubebuilder:validation:Required
+	ForProvider ServiceBindingParameters `json:"forProvider"`
 }
 
 // A ServiceBindingStatus represents the observed state of a ServiceBinding.
 type ServiceBindingStatus struct {
 	xpv1.ResourceStatus `json:",inline"`
-	AtProvider          ServiceBindingObservation `json:"atProvider,omitempty"`
+	// +kubebuilder:validation:Optional
+	AtProvider ServiceBindingObservation `json:"atProvider,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -128,7 +150,9 @@ type ServiceBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ServiceBindingSpec   `json:"spec"`
+	// +kubebuilder:validation:Required
+	Spec ServiceBindingSpec `json:"spec"`
+	// +kubebuilder:validation:Optional
 	Status ServiceBindingStatus `json:"status,omitempty"`
 }
 

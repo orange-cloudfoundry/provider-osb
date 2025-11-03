@@ -51,6 +51,7 @@ spec:
             properties:
               brokerUrl:
                 description: BrokerURL to send OSB requests to
+                pattern: ^https?://.+
                 type: string
               credentials:
                 description: Credentials required to authenticate to this provider.
@@ -110,9 +111,11 @@ spec:
                 type: object
               osbVersion:
                 description: OSB version is used to add error management
+                pattern: ^2\.\d{1,2}$
                 type: string
               timeout:
                 description: Timeout to replace the default one when creating client
+                minimum: 0
                 type: integer
             required:
             - brokerUrl
