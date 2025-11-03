@@ -60,45 +60,8 @@ spec:
                 description: ServiceBindingParameters are the configurable fields
                   of a ServiceBinding.
                 properties:
-                  application:
-                    description: |-
-                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
-                      And it makes `make generate` fail
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  applicationData:
-                    description: ApplicationData represents the schema for an Application
-                      MR
-                    properties:
-                      guid:
-                        type: string
-                      name:
-                        type: string
-                      providerConfigRef:
-                        description: |-
-                          ProviderConfigReference is a typed reference to a ProviderConfig
-                          object, with a known api group.
-                        properties:
-                          kind:
-                            description: Kind of the referenced object.
-                            type: string
-                          name:
-                            description: Name of the referenced object.
-                            type: string
-                        required:
-                        - kind
-                        - name
-                        type: object
-                    required:
-                    - guid
-                    - name
-                    type: object
+                  appGuid:
+                    type: string
                   context:
                     description: |-
                       KubernetesOSBContext represents the context object for kubernetes in the OSB spec
@@ -142,45 +105,8 @@ spec:
                     description: Instance Data represents the schema for a ServiceInstance
                       MR
                     properties:
-                      application:
-                        description: |-
-                          NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
-                          And it makes `make generate` fail
-                        properties:
-                          name:
-                            type: string
-                          namespace:
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      applicationData:
-                        description: ApplicationData represents the schema for an
-                          Application MR
-                        properties:
-                          guid:
-                            type: string
-                          name:
-                            type: string
-                          providerConfigRef:
-                            description: |-
-                              ProviderConfigReference is a typed reference to a ProviderConfig
-                              object, with a known api group.
-                            properties:
-                              kind:
-                                description: Kind of the referenced object.
-                                type: string
-                              name:
-                                description: Name of the referenced object.
-                                type: string
-                            required:
-                            - kind
-                            - name
-                            type: object
-                        required:
-                        - guid
-                        - name
-                        type: object
+                      appGuid:
+                        type: string
                       context:
                         description: |-
                           KubernetesOSBContext represents the context object for kubernetes in the OSB spec

@@ -90,6 +90,7 @@ var (
 		},
 		Spec: v1alpha1.ServiceBindingSpec{
 			ForProvider: v1alpha1.ServiceBindingParameters{
+				AppGuid: "basic-application",
 				Context: common.KubernetesOSBContext{
 					Platform:             "basic-platform",
 					Namespace:            "basic-namespace",
@@ -104,9 +105,6 @@ var (
 					PlanId:     "basic-plan",
 					ServiceId:  "basic-service",
 					InstanceId: "basic-instance",
-				},
-				ApplicationData: &common.ApplicationData{
-					Name: "basic-application",
 				},
 			},
 			ManagedResourceSpec: xpv2.ManagedResourceSpec{

@@ -18,6 +18,11 @@ func (mg *ServiceInstance) GetManagementPolicies() xpv1.ManagementPolicies {
 	return mg.Spec.ManagementPolicies
 }
 
+// GetProviderConfigReference of this ServiceInstance.
+func (mg *ServiceInstance) GetProviderConfigReference() *xpv1.ProviderConfigReference {
+	return mg.Spec.ProviderConfigReference
+}
+
 // GetWriteConnectionSecretToReference of this ServiceInstance.
 func (mg *ServiceInstance) GetWriteConnectionSecretToReference() *xpv1.LocalSecretReference {
 	return mg.Spec.WriteConnectionSecretToReference

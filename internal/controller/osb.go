@@ -23,7 +23,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/orange-cloudfoundry/provider-osb/internal/controller/application"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/config"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/servicebinding"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/serviceinstance"
@@ -36,7 +35,6 @@ var errFailedToSetupNamespacedController = errors.New("failed to set up cluster 
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	controllers := map[string]func(ctrl.Manager, controller.Options) error{
 		"config":          config.Setup,
-		"application":     application.Setup,
 		"servicebinding":  servicebinding.Setup,
 		"serviceinstance": serviceinstance.Setup,
 	}

@@ -42,8 +42,7 @@ type ServiceInstanceStatus struct {
 }
 
 type ServiceInstanceObservation struct {
-	ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
-	ApplicationData          *common.ApplicationData `json:"applicationData,omitempty"`
+	AppGuid                  string `json:"appGuid,omitempty"`
 	common.InstanceData      `json:",inline"`
 	Context                  common.KubernetesOSBContext  `json:"context,omitempty"`
 	DashboardURL             *string                      `json:"dashboardURL,omitempty"`
