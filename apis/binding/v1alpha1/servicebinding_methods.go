@@ -208,8 +208,8 @@ func (sb *ServiceBinding) IsStatusParametersNotLikeSpecParameters() (bool, error
 // CreateGetBindingRequest constructs an OSB GetBindingRequest for the ServiceBinding.
 // It uses the external name of the binding as the BindingID and the associated
 // ServiceInstance's InstanceID.
-func (sb *ServiceBinding) BuildGetBindingRequest(bindingData BindingData) (*osbClient.GetBindingRequest, error) {
-	if bindingData.InstanceData.InstanceId == "" {
+func (sb *ServiceBinding) BuildGetBindingRequest(bindingData ServiceBindingParameters) (*osbClient.GetBindingRequest, error) {
+	if bindingData.InstanceId == "" {
 		return &osbClient.GetBindingRequest{}, errInstanceIdIsEmpty
 	}
 
@@ -219,13 +219,17 @@ func (sb *ServiceBinding) BuildGetBindingRequest(bindingData BindingData) (*osbC
 	}
 
 	return &osbClient.GetBindingRequest{
-		InstanceID: bindingData.InstanceData.InstanceId,
+		InstanceID: bindingData.InstanceId,
 		BindingID:  bindingId,
 	}, nil
 }
 
 // buildRotateBindingRequest constructs an OSB RotateBindingRequest for a binding.
-func (sb *ServiceBinding) buildRotateBindingRequest(bindingData BindingData, oid osbClient.OriginatingIdentity, newUUID string) (*osbClient.RotateBindingRequest, error) {
+func (sb *ServiceBinding) buildRotateBindingRequest(
+	bindingData ServiceBindingParameters,
+	oid osbClient.OriginatingIdentity,
+	newUUID string,
+) (*osbClient.RotateBindingRequest, error) {
 	if oid.Platform == "" {
 		return &osbClient.RotateBindingRequest{}, errOidPlatformIsEmpty
 	}
@@ -234,7 +238,7 @@ func (sb *ServiceBinding) buildRotateBindingRequest(bindingData BindingData, oid
 		return &osbClient.RotateBindingRequest{}, errOidValueIsEmpty
 	}
 
-	if bindingData.InstanceData.InstanceId == "" {
+	if bindingData.InstanceId == "" {
 		return &osbClient.RotateBindingRequest{}, errInstanceIdIsEmpty
 	}
 
@@ -248,7 +252,7 @@ func (sb *ServiceBinding) buildRotateBindingRequest(bindingData BindingData, oid
 	}
 
 	return &osbClient.RotateBindingRequest{
-		InstanceID:           bindingData.InstanceData.InstanceId,
+		InstanceID:           bindingData.InstanceId,
 		BindingID:            newUUID,
 		AcceptsIncomplete:    true, // TODO: make configurable
 		PredecessorBindingID: predecessorBindingID,
@@ -275,7 +279,11 @@ func extractCredentials(resp *osbClient.BindResponse) (map[string][]byte, error)
 // Updates the ServiceBinding status with LastOperation info in case of async rotation.
 // triggerRotation triggers a credentials rotation for the given ServiceBinding.
 // It returns the new credentials if the rotation is synchronous, or nil otherwise.
-func (sb *ServiceBinding) TriggerRotation(osb osbClient.Client, data BindingData, oid osbClient.OriginatingIdentity) (map[string][]byte, error) {
+func (sb *ServiceBinding) TriggerRotation(
+	osb osbClient.Client,
+	data ServiceBindingParameters,
+	oid osbClient.OriginatingIdentity,
+) (map[string][]byte, error) {
 	newUUID := string(uuid.NewUUID())
 
 	req, err := sb.buildRotateBindingRequest(data, oid, newUUID)
@@ -306,42 +314,9 @@ func (sb *ServiceBinding) TriggerRotation(osb osbClient.Client, data BindingData
 	return nil, nil
 }
 
-// HasInstanceRef returns true if the ServiceBindingParameters has an associated InstanceRef.
-func (sbp *ServiceBindingParameters) HasInstanceRef() bool {
-	return sbp.InstanceRef != nil
-}
-
-// HasNoInstanceRef returns true if the ServiceBindingParameters does NOT have an associated InstanceRef.
-func (sb *ServiceBinding) HasNoInstanceRef() bool {
-	return sb.Spec.ForProvider.InstanceRef == nil
-}
-
-// GetInstanceRef returns the reference to the ServiceInstance that this
-// ServiceBinding is associated with. The returned value is a pointer to a
-// NamespacedName, containing the name and namespace of the referenced instance.
-func (sbp *ServiceBindingParameters) GetInstanceRef() *common.NamespacedName {
-	return sbp.InstanceRef
-}
-
-// IsBoundToInstance returns true if the ServiceBinding is linked to the ServiceInstance
-// with the given name.
-func (sb *ServiceBinding) IsBoundToInstance(instanceName string) bool {
-	if sb.Spec.ForProvider.InstanceRef == nil {
-		return false
-	}
-	return sb.Spec.ForProvider.InstanceRef.Name == instanceName
-}
-
 // IsNotBeingDeleted returns true if the ServiceBinding has not been marked for deletion.
 func (sb *ServiceBinding) IsNotBeingDeleted() bool {
 	return sb.DeletionTimestamp.IsZero()
-}
-
-// HasInstanceData returns true if the ServiceBindingParameters contains InstanceData.
-// This indicates whether the binding has been associated with a ServiceInstance
-// and has stored instance-specific information.
-func (sbp *ServiceBindingParameters) HasInstanceData() bool {
-	return sbp.InstanceData != nil
 }
 
 // HasApplicationRef returns true if the ServiceBindingParameters has an associated ApplicationRef.
@@ -374,7 +349,7 @@ func (sb *ServiceBinding) EnsureBindingUUID() string {
 
 // buildBindRequest creates an OSB BindRequest from the ServiceBinding spec and related data.
 func (sb *ServiceBinding) BuildBindRequest(
-	bindingData BindingData,
+	bindingData ServiceBindingParameters,
 	oid osbClient.OriginatingIdentity,
 	ctxMap, params map[string]any,
 ) (osbClient.BindRequest, error) {
@@ -387,10 +362,10 @@ func (sb *ServiceBinding) BuildBindRequest(
 	bindRequest := osbClient.BindRequest{
 		BindingID:           bindingID,
 		OriginatingIdentity: &oid,
-		InstanceID:          bindingData.InstanceData.InstanceId,
+		InstanceID:          bindingData.InstanceId,
 		AcceptsIncomplete:   true, // TODO: make configurable
-		PlanID:              bindingData.InstanceData.PlanId,
-		ServiceID:           bindingData.InstanceData.ServiceId,
+		PlanID:              bindingData.PlanId,
+		ServiceID:           bindingData.ServiceId,
 	}
 
 	sb.addBindResource(&bindRequest, bindingData)
@@ -400,27 +375,27 @@ func (sb *ServiceBinding) BuildBindRequest(
 }
 
 // validateInputs handles all the simple validation checks.
-func validateInputs(bindingData BindingData, oid osbClient.OriginatingIdentity) error {
+func validateInputs(bindingData ServiceBindingParameters, oid osbClient.OriginatingIdentity) error {
 	if oid.Platform == "" {
 		return errOidPlatformIsEmpty
 	}
 	if oid.Value == "" {
 		return errOidValueIsEmpty
 	}
-	if bindingData.InstanceData.InstanceId == "" {
+	if bindingData.InstanceId == "" {
 		return errInstanceIdIsEmpty
 	}
-	if bindingData.InstanceData.PlanId == "" {
+	if bindingData.PlanId == "" {
 		return errPlanIdEmpty
 	}
-	if bindingData.InstanceData.ServiceId == "" {
+	if bindingData.ServiceId == "" {
 		return errServiceIdEmpty
 	}
 	return nil
 }
 
 // addBindResource sets the BindResource and AppGUID.
-func (sb *ServiceBinding) addBindResource(bindRequest *osbClient.BindRequest, bindingData BindingData) {
+func (sb *ServiceBinding) addBindResource(bindRequest *osbClient.BindRequest, bindingData ServiceBindingParameters) {
 	bindResource := &osbClient.BindResource{}
 
 	if bindingData.ApplicationData.Guid != "" {
@@ -448,7 +423,10 @@ func addContextAndParams(bindRequest *osbClient.BindRequest, ctxMap, params map[
 }
 
 // buildUnbindRequest constructs an OSB UnbindRequest for the given ServiceBinding.
-func (sb *ServiceBinding) BuildUnbindRequest(bindingData BindingData, oid osbClient.OriginatingIdentity) (*osbClient.UnbindRequest, error) {
+func (sb *ServiceBinding) BuildUnbindRequest(
+	bindingData ServiceBindingParameters,
+	oid osbClient.OriginatingIdentity,
+) (*osbClient.UnbindRequest, error) {
 	if oid.Platform == "" {
 		return &osbClient.UnbindRequest{}, errOidPlatformIsEmpty
 	}
@@ -457,15 +435,15 @@ func (sb *ServiceBinding) BuildUnbindRequest(bindingData BindingData, oid osbCli
 		return &osbClient.UnbindRequest{}, errOidValueIsEmpty
 	}
 
-	if bindingData.InstanceData.InstanceId == "" {
+	if bindingData.InstanceId == "" {
 		return &osbClient.UnbindRequest{}, errInstanceIdIsEmpty
 	}
 
-	if bindingData.InstanceData.PlanId == "" {
+	if bindingData.PlanId == "" {
 		return &osbClient.UnbindRequest{}, errPlanIdEmpty
 	}
 
-	if bindingData.InstanceData.ServiceId == "" {
+	if bindingData.ServiceId == "" {
 		return &osbClient.UnbindRequest{}, errServiceIdEmpty
 	}
 
@@ -475,17 +453,20 @@ func (sb *ServiceBinding) BuildUnbindRequest(bindingData BindingData, oid osbCli
 	}
 
 	return &osbClient.UnbindRequest{
-		InstanceID:          bindingData.InstanceData.InstanceId,
+		InstanceID:          bindingData.InstanceId,
 		BindingID:           bindingId,
 		AcceptsIncomplete:   true, // TODO: make configurable
-		ServiceID:           bindingData.InstanceData.ServiceId,
-		PlanID:              bindingData.InstanceData.PlanId,
+		ServiceID:           bindingData.ServiceId,
+		PlanID:              bindingData.PlanId,
 		OriginatingIdentity: &oid,
 	}, nil
 }
 
 // buildBindingLastOperationRequest constructs an OSB BindingLastOperationRequest for polling.
-func (sb *ServiceBinding) BuildBindingLastOperationRequest(bindingData BindingData, oid osbClient.OriginatingIdentity) (*osbClient.BindingLastOperationRequest, error) {
+func (sb *ServiceBinding) BuildBindingLastOperationRequest(
+	bindingData ServiceBindingParameters,
+	oid osbClient.OriginatingIdentity,
+) (*osbClient.BindingLastOperationRequest, error) {
 	if oid.Platform == "" {
 		return &osbClient.BindingLastOperationRequest{}, errOidPlatformIsEmpty
 	}
@@ -494,15 +475,15 @@ func (sb *ServiceBinding) BuildBindingLastOperationRequest(bindingData BindingDa
 		return &osbClient.BindingLastOperationRequest{}, errOidValueIsEmpty
 	}
 
-	if bindingData.InstanceData.InstanceId == "" {
+	if bindingData.InstanceId == "" {
 		return &osbClient.BindingLastOperationRequest{}, errInstanceIdIsEmpty
 	}
 
-	if bindingData.InstanceData.PlanId == "" {
+	if bindingData.PlanId == "" {
 		return &osbClient.BindingLastOperationRequest{}, errPlanIdEmpty
 	}
 
-	if bindingData.InstanceData.ServiceId == "" {
+	if bindingData.ServiceId == "" {
 		return &osbClient.BindingLastOperationRequest{}, errServiceIdEmpty
 	}
 
@@ -512,10 +493,10 @@ func (sb *ServiceBinding) BuildBindingLastOperationRequest(bindingData BindingDa
 	}
 
 	return &osbClient.BindingLastOperationRequest{
-		InstanceID:          bindingData.InstanceData.InstanceId,
+		InstanceID:          bindingData.InstanceId,
 		BindingID:           bindingId,
-		ServiceID:           &bindingData.InstanceData.ServiceId,
-		PlanID:              &bindingData.InstanceData.PlanId,
+		ServiceID:           &bindingData.ServiceId,
+		PlanID:              &bindingData.PlanId,
 		OriginatingIdentity: &oid,
 		OperationKey:        &sb.Status.AtProvider.LastOperationKey,
 	}, nil

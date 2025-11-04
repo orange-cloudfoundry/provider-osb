@@ -100,11 +100,9 @@ var (
 				},
 				Parameters: basicParameters,
 				Route:      "basic-route",
-				InstanceData: &common.InstanceData{
-					PlanId:     "basic-plan",
-					ServiceId:  "basic-service",
-					InstanceId: "basic-instance",
-				},
+				PlanId:     "basic-plan",
+				ServiceId:  "basic-service",
+				InstanceId: "basic-instance",
 				ApplicationData: &common.ApplicationData{
 					Name: "basic-application",
 				},

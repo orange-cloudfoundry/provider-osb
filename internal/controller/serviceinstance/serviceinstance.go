@@ -28,15 +28,12 @@ import (
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
-	"github.com/crossplane/crossplane-runtime/v2/pkg/logging"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/ratelimiter"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
-	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-	apishelpers "github.com/orange-cloudfoundry/provider-osb/apis/helpers/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
@@ -55,7 +52,6 @@ var (
 	errCannotUpdateServiceInstanceStatus     = errors.New("cannot update ServiceInstance status")
 	errOSBProvisionInstanceFailed            = errors.New("OSB ProvisionInstance request failed")
 	errOSBUpdateInstanceFailed               = errors.New("OSB UpdateInstance request failed")
-	errCannotListServiceBindings             = errors.New("cannot list ServiceBindings")
 	errCannotUpdateActiveBindingsStatus      = errors.New("cannot update active bindings status")
 	errCannotDeleteWithActiveBindings        = errors.New("cannot delete ServiceInstance, it has active bindings")
 	errOSBDeprovisionInstanceFailed          = errors.New("OSB DeprovisionInstance request failed")
@@ -185,11 +181,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	// Manage pending async operations (poll only for "in progress" state)
 	if instance.IsStateInProgress() || instance.IsStateDeleting() {
 		return c.handleLastOperationInProgress(ctx, instance)
-	}
-
-	// If the resource is being deleted, check for active bindings before allowing deletion.
-	if !instance.GetDeletionTimestamp().IsZero() {
-		return c.handleDeletionWithActiveBindings(ctx, instance)
 	}
 
 	// Build the GetInstanceRequest with the InstanceId from the ServiceInstance spec.
@@ -323,10 +314,6 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 	if instance.IsAlreadyDeleted() {
 		return managed.ExternalDelete{}, nil
 	}
-	// If there are active bindings, we cannot delete the ServiceInstance.
-	if instance.HasActiveBindings() {
-		return managed.ExternalDelete{}, errCannotDeleteWithActiveBindings
-	}
 
 	return c.deprovision(ctx, instance)
 }
@@ -394,45 +381,6 @@ func (c *external) handleLastOperationInProgress(ctx context.Context, instance *
 		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, fmt.Sprint(err))
 	}
 
-	return managed.ExternalObservation{
-		ResourceExists:   true,
-		ResourceUpToDate: true,
-	}, nil
-}
-
-// UpdateActiveBindingsStatus updates the ServiceInstance status to reflect whether
-// it has any active ServiceBindings in the same namespace.
-func (c *external) UpdateActiveBindingsStatus(ctx context.Context, instance *v1alpha1.ServiceInstance) error {
-	var bindingList apisbinding.ServiceBindingList
-	if err := c.kube.List(ctx, &bindingList, client.InNamespace(instance.GetNamespace())); err != nil {
-		return fmt.Errorf("%w: %s", errCannotListServiceBindings, fmt.Sprint(err))
-	}
-
-	if instance == nil {
-		return errServiceInstanceEmpty
-	}
-
-	apishelpers.SetActiveBindingsForInstance(instance, bindingList.Items)
-
-	return nil
-}
-
-// handleActiveBindings checks for active ServiceBindings before allowing deletion of the ServiceInstance.
-// If active bindings are found, it updates the ServiceInstance status to reflect this and prevents deletion.
-// If no active bindings are found, it allows the deletion process to proceed.
-// It returns an ExternalObservation indicating that the resource exists and is up to date,
-// along with any error encountered during the process.
-func (c *external) handleDeletionWithActiveBindings(ctx context.Context, instance *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
-	if err := c.UpdateActiveBindingsStatus(ctx, instance); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateActiveBindingsStatus, fmt.Sprint(err))
-	}
-
-	// Update the status of the ServiceInstance resource in Kubernetes.
-	if err := c.kube.Status().Update(ctx, instance); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotUpdateServiceInstanceStatus, fmt.Sprint(err))
-	}
-
-	// If the resource is being deleted, we consider it as existing and up to date.
 	return managed.ExternalObservation{
 		ResourceExists:   true,
 		ResourceUpToDate: true,

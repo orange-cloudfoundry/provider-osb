@@ -37,7 +37,6 @@ import (
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-	helpersv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/helpers/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 	"github.com/orange-cloudfoundry/provider-osb/internal/features"
@@ -221,14 +220,9 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return managed.ExternalObservation{}, fmt.Errorf("%w: expected *v1alpha1.ServiceBinding but got %T", errNotServiceBindingCR, mg)
 	}
 
-	bindingData, err := helpersv1alpha1.GetDataFromServiceBinding(ctx, c.kube, binding)
-	if err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotGetBindingData, fmt.Sprint(err))
-	}
-
 	// Manage pending async operations (poll only for "in progress" state)
 	if binding.IsStateInProgress() {
-		return c.handleLastOperationInProgress(ctx, binding, bindingData)
+		return c.handleLastOperationInProgress(ctx, binding, binding.Spec.ForProvider)
 	}
 
 	// If the resource has no external name, it does not exist
@@ -239,7 +233,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 	}
 
 	// get binding from broker
-	req, err := binding.BuildGetBindingRequest(bindingData)
+	req, err := binding.BuildGetBindingRequest(binding.Spec.ForProvider)
 	if err != nil {
 		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildGetBindingRequest, fmt.Sprint(err))
 	}
@@ -288,15 +282,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return managed.ExternalObservation{}, errStatusSpecMismatch
 	}
 
-	// Handle the ServiceInstance referenced by this binding, if there is one.
-	// We add a finalizer to prevent deletion of the ServiceInstance while the current
-	// ServiceBinding still exists.
-	// Doing so in the Observe() function enable adding a ServiceInstance
-	// resource after the creation of the ServiceBinding.
-	if err = c.addRefFinalizer(ctx, binding); err != nil {
-		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotAddFinalizer, fmt.Sprint(err))
-	}
-
 	return managed.ExternalObservation{
 		ResourceExists:    true,
 		ResourceUpToDate:  true,
@@ -313,12 +298,6 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	}
 
-	// Retrieve instance and application data for the binding.
-	bindingData, err := helpersv1alpha1.GetDataFromServiceBinding(ctx, c.kube, binding)
-	if err != nil {
-		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errRetrieveBindingDataFailed, fmt.Sprint(err))
-	}
-
 	// Convert OSB context and parameters from the spec.
 	requestContext, requestParams, err := binding.ConvertSpecsData()
 	if err != nil {
@@ -326,7 +305,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 	}
 
 	// Build OSB BindRequest.
-	req, err := binding.BuildBindRequest(bindingData, c.originatingIdentity, requestContext, requestParams)
+	req, err := binding.BuildBindRequest(binding.Spec.ForProvider, c.originatingIdentity, requestContext, requestParams)
 	if err != nil {
 		return managed.ExternalCreation{}, fmt.Errorf("%w, %s", errFailedToBuildBindRequest, fmt.Sprint(err))
 	}
@@ -368,15 +347,9 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalUpdate{}, fmt.Errorf("%w: expected *v1alpha1.ServiceBinding but got %T", errNotServiceBindingCR, mg)
 	}
 
-	// Prepare binding rotation request
-	bindingData, err := helpersv1alpha1.GetDataFromServiceBinding(ctx, c.kube, binding)
-	if err != nil {
-		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errCannotGetBindingData, fmt.Sprint(err))
-	}
-
 	// Trigger binding rotation.
 	// We count on the next reconciliation to update renew_before and expires_at (Observe)
-	creds, err := binding.TriggerRotation(c.osb, bindingData, c.originatingIdentity)
+	creds, err := binding.TriggerRotation(c.osb, binding.Spec.ForProvider, c.originatingIdentity)
 	if err != nil {
 		return managed.ExternalUpdate{}, fmt.Errorf("%w: %s", errOSBRotatingRequestFailed, fmt.Sprint(err))
 	}
@@ -397,13 +370,7 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalDelete{}, fmt.Errorf("%w: expected *v1alpha1.ServiceBinding but got %T", errNotServiceBindingCR, mg)
 	}
 
-	// Fetch binding data (instance & application)
-	bindingData, err := helpersv1alpha1.GetDataFromServiceBinding(ctx, c.kube, binding)
-	if err != nil {
-		return managed.ExternalDelete{}, fmt.Errorf("%w: %s", errRetrieveBindingDataFailed, fmt.Sprint(err))
-	}
-
-	req, err := binding.BuildUnbindRequest(bindingData, c.originatingIdentity)
+	req, err := binding.BuildUnbindRequest(binding.Spec.ForProvider, c.originatingIdentity)
 	if err != nil {
 		return managed.ExternalDelete{}, fmt.Errorf("%w, %s", errFailedToBuildUnbindRequest, fmt.Sprint(err))
 	}
@@ -441,7 +408,7 @@ func (c *external) Disconnect(ctx context.Context) error {
 // handleLastOperationInProgress polls the last operation for a ServiceBinding that is currently in progress.
 // It updates the binding status based on the OSB response, handles async finalizers, and returns
 // a managed.ExternalObservation indicating whether the resource still exists.
-func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData v1alpha1.BindingData) (managed.ExternalObservation, error) {
+func (c *external) handleLastOperationInProgress(ctx context.Context, binding *v1alpha1.ServiceBinding, bindingData v1alpha1.ServiceBindingParameters) (managed.ExternalObservation, error) {
 	req, err := binding.BuildBindingLastOperationRequest(bindingData, c.originatingIdentity)
 	if err != nil {
 		return managed.ExternalObservation{}, fmt.Errorf("%w: %s", errFailedToBuildBindingLastOperationRequest, fmt.Sprint(err))
@@ -475,10 +442,6 @@ func (c *external) handlePollError(ctx context.Context, binding *v1alpha1.Servic
 		// Remove async finalizer from binding
 		if err := c.handleFinalizer(ctx, binding, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
 			return true, managed.ExternalObservation{}, fmt.Errorf("%w: %s", errTechnicalEncountered, fmt.Sprint(err))
-		}
-		// Remove reference finalizer from the referenced ServiceInstance
-		if err := c.removeRefFinalizer(ctx, binding); err != nil {
-			return true, managed.ExternalObservation{}, fmt.Errorf("%w: %s", errCannotRemoveFinalizer, fmt.Sprint(err))
 		}
 		// Return that resource no longer exists
 		return true, managed.ExternalObservation{
@@ -566,30 +529,6 @@ func handleBindRequest(
 
 	// Synchronous response: return the OSB response for further processing
 	return resp, managed.ExternalCreation{}, nil, false
-}
-
-// removeRefFinalizer adds removes the reference finalizer to the ServiceInstance object referenced by the binding
-// (if there is one)
-func (c *external) removeRefFinalizer(ctx context.Context, binding *v1alpha1.ServiceBinding) error {
-	// Remove finalizer from referenced ServiceInstance
-	instanceRef := binding.Spec.ForProvider.InstanceRef
-	if instanceRef != nil {
-		finalizerName := fmt.Sprintf("%s-%s", referenceFinalizerName, binding.Name)
-		return c.handleFinalizer(ctx, binding, finalizerName, util.RemoveFinalizerIfExists)
-	}
-	return nil
-}
-
-// addRefFinalizer adds the reference finalizer to the ServiceInstance object referenced by the binding
-// (if there is one)
-func (c *external) addRefFinalizer(ctx context.Context, binding *v1alpha1.ServiceBinding) error {
-	// Add finalizer to referenced ServiceInstance
-	instanceRef := binding.Spec.ForProvider.InstanceRef
-	if instanceRef != nil {
-		finalizerName := fmt.Sprintf("%s-%s", referenceFinalizerName, binding.Name)
-		return c.handleFinalizer(ctx, binding, finalizerName, util.AddFinalizerIfNotExists)
-	}
-	return nil
 }
 
 type finalizerModFn func(metav1.Object, string) bool

@@ -126,119 +126,24 @@ spec:
                     - namespace
                     - platform
                     type: object
-                  instance:
-                    description: |-
-                      NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
-                      And it makes `make generate` fail
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  instanceData:
-                    description: Instance Data represents the schema for a ServiceInstance
-                      MR
-                    properties:
-                      application:
-                        description: |-
-                          NamespacedName is a re-implementation from k8s.io/apimachinery/pkg/types since it does not have json tags
-                          And it makes `make generate` fail
-                        properties:
-                          name:
-                            type: string
-                          namespace:
-                            type: string
-                        required:
-                        - name
-                        type: object
-                      applicationData:
-                        description: ApplicationData represents the schema for an
-                          Application MR
-                        properties:
-                          guid:
-                            type: string
-                          name:
-                            type: string
-                          providerConfigRef:
-                            description: |-
-                              ProviderConfigReference is a typed reference to a ProviderConfig
-                              object, with a known api group.
-                            properties:
-                              kind:
-                                description: Kind of the referenced object.
-                                type: string
-                              name:
-                                description: Name of the referenced object.
-                                type: string
-                            required:
-                            - kind
-                            - name
-                            type: object
-                        required:
-                        - guid
-                        - name
-                        type: object
-                      context:
-                        description: |-
-                          KubernetesOSBContext represents the context object for kubernetes in the OSB spec
-                          cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
-                        properties:
-                          clusterId:
-                            type: string
-                          instanceAnnotations:
-                            additionalProperties:
-                              type: string
-                            type: object
-                          instanceName:
-                            type: string
-                          namespace:
-                            type: string
-                          namespaceAnnotations:
-                            additionalProperties:
-                              type: string
-                            type: object
-                          platform:
-                            type: string
-                        required:
-                        - clusterId
-                        - instanceName
-                        - namespace
-                        - platform
-                        type: object
-                      instanceId:
-                        type: string
-                      organizationGuid:
-                        type: string
-                      parameters:
-                        description: |-
-                          SerializableParameters represents a JSON-encoded map of arbitrary parameters.
-                          Stored as a string because slices and maps are not directly serializable in Go
-                          It is stored as a string but can be converted back to a Go map.
-                        type: string
-                      planId:
-                        type: string
-                      serviceId:
-                        type: string
-                      spaceGuid:
-                        type: string
-                    required:
-                    - instanceId
-                    - organizationGuid
-                    - planId
-                    - serviceId
-                    - spaceGuid
-                    type: object
+                  instanceId:
+                    type: string
                   parameters:
                     description: |-
                       SerializableParameters represents a JSON-encoded map of arbitrary parameters.
                       Stored as a string because slices and maps are not directly serializable in Go
                       It is stored as a string but can be converted back to a Go map.
                     type: string
+                  planId:
+                    type: string
                   route:
                     type: string
+                  serviceId:
+                    type: string
+                required:
+                - instanceId
+                - planId
+                - serviceId
                 type: object
               managementPolicies:
                 default:

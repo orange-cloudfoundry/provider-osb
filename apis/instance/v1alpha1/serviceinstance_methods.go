@@ -7,7 +7,6 @@ import (
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
-	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 )
 
 var (
@@ -53,11 +52,9 @@ func (si *ServiceInstance) SetLastOperationKey(operationKey osbClient.OperationK
 	si.Status.AtProvider.LastOperationKey = operationKey
 }
 
-// IsDeletable returns true if the ServiceInstance is in deleting state
-// and has no active bindings.
+// IsDeletable returns true if the ServiceInstance is in deleting state.
 func (si *ServiceInstance) IsDeletable() bool {
-	return si.Status.AtProvider.LastOperationState == osbClient.StateDeleting &&
-		!si.Status.AtProvider.HasActiveBindings
+	return si.Status.AtProvider.LastOperationState == osbClient.StateDeleting
 }
 
 // IsStateInProgress checks if the ServiceInstance's last operation state
@@ -90,16 +87,6 @@ func (si *ServiceInstance) IsStateDeleting() bool {
 func (si *ServiceInstance) IsAlreadyDeleted() bool {
 	// If the InstanceId is empty, the resource does not exist externally
 	return si.Spec.ForProvider.InstanceId == ""
-}
-
-// HasActiveBindings checks if the ServiceInstance currently has active bindings.
-//
-// If true, the ServiceInstance cannot be deleted because bindings are still referencing it.
-//
-// Returns:
-// - bool: true if there are active bindings, false otherwise
-func (si *ServiceInstance) HasActiveBindings() bool {
-	return si.Status.AtProvider.HasActiveBindings
 }
 
 // HasPlanID checks if the ServiceInstance has a PlanID set.
@@ -394,17 +381,4 @@ func (si *ServiceInstance) BuildDeprovisionRequest(oid osbClient.OriginatingIden
 		AcceptsIncomplete:   true,
 		OriginatingIdentity: &oid,
 	}, nil
-}
-
-// GetSpecForProvider returns a copy of the ForProvider spec.
-// Useful for read-only operations or when you do not want to modify the original.
-func (si *ServiceInstance) GetSpecForProvider() common.InstanceData {
-	return si.Spec.ForProvider
-}
-
-// GetSpecForProviderPtr returns a pointer to the ForProvider spec.
-// Useful for passing to functions that expect a pointer receiver
-// or an interface implemented on *InstanceData.
-func (si *ServiceInstance) GetSpecForProviderPtr() *common.InstanceData {
-	return &si.Spec.ForProvider
 }

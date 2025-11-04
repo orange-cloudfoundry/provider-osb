@@ -52,19 +52,6 @@ type ApplicationData struct {
 	ProviderConfigReference *common.ProviderConfigReference `json:"providerConfigRef,omitempty"`
 }
 
-// Instance Data represents the schema for a ServiceInstance MR
-type InstanceData struct {
-	ApplicationRef   *NamespacedName        `json:"application,omitempty"`
-	ApplicationData  *ApplicationData       `json:"applicationData,omitempty"`
-	InstanceId       string                 `json:"instanceId"`
-	PlanId           string                 `json:"planId"`
-	ServiceId        string                 `json:"serviceId"`
-	Context          KubernetesOSBContext   `json:"context,omitempty"`
-	Parameters       SerializableParameters `json:"parameters,omitempty"`
-	OrganizationGuid string                 `json:"organizationGuid"`
-	SpaceGuid        string                 `json:"spaceGuid"`
-}
-
 // SerializableParameters represents a JSON-encoded map of arbitrary parameters.
 // Stored as a string because slices and maps are not directly serializable in Go
 // It is stored as a string but can be converted back to a Go map.

@@ -35,8 +35,9 @@ import (
 type ServiceBindingParameters struct {
 	ApplicationRef  *common.NamespacedName        `json:"application,omitempty"`
 	ApplicationData *common.ApplicationData       `json:"applicationData,omitempty"`
-	InstanceRef     *common.NamespacedName        `json:"instance,omitempty"`
-	InstanceData    *common.InstanceData          `json:"instanceData,omitempty"`
+	InstanceId      string                        `json:"instanceId"`
+	ServiceId       string                        `json:"serviceId"`
+	PlanId          string                        `json:"planId"`
 	Context         common.KubernetesOSBContext   `json:"context,omitempty"`
 	Parameters      common.SerializableParameters `json:"parameters,omitempty"`
 	Route           string                        `json:"route,omitempty"`
@@ -167,6 +168,5 @@ type responseData struct {
 }
 
 type BindingData struct {
-	InstanceData    common.InstanceData
 	ApplicationData common.ApplicationData
 }

@@ -28,12 +28,22 @@ import (
 	common "github.com/orange-cloudfoundry/provider-osb/apis/common"
 )
 
+type ServiceInstanceParameters struct {
+	ApplicationRef   *common.NamespacedName        `json:"application,omitempty"`
+	ApplicationData  *common.ApplicationData       `json:"applicationData,omitempty"`
+	InstanceId       string                        `json:"instanceId"`
+	PlanId           string                        `json:"planId"`
+	ServiceId        string                        `json:"serviceId"`
+	Context          common.KubernetesOSBContext   `json:"context,omitempty"`
+	Parameters       common.SerializableParameters `json:"parameters,omitempty"`
+	OrganizationGuid string                        `json:"organizationGuid"`
+	SpaceGuid        string                        `json:"spaceGuid"`
+}
+
 type ServiceInstanceSpec struct {
 	xpv2.ManagedResourceSpec `json:",inline"`
 
-	ForProvider common.InstanceData `json:"forProvider"`
-
-	InitProvider common.InstanceData `json:"initProvider,omitempty"`
+	ForProvider ServiceInstanceParameters `json:"forProvider"`
 }
 
 type ServiceInstanceStatus struct {
@@ -42,15 +52,16 @@ type ServiceInstanceStatus struct {
 }
 
 type ServiceInstanceObservation struct {
-	ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
-	ApplicationData          *common.ApplicationData `json:"applicationData,omitempty"`
-	common.InstanceData      `json:",inline"`
+	ApplicationRef           *common.NamespacedName       `json:"application,omitempty"`
+	ApplicationData          *common.ApplicationData      `json:"applicationData,omitempty"`
+	InstanceId               string                       `json:"instanceId"`
+	ServiceId                string                       `json:"serviceId"`
+	PlanId                   string                       `json:"planId"`
 	Context                  common.KubernetesOSBContext  `json:"context,omitempty"`
 	DashboardURL             *string                      `json:"dashboardURL,omitempty"`
 	LastOperationState       osbClient.LastOperationState `json:"lastOperationState,omitempty"`
 	LastOperationKey         osbClient.OperationKey       `json:"lastOperationKey,omitempty"`
 	LastOperationDescription string                       `json:"lastOperationDescription,omitempty"`
-	HasActiveBindings        bool                         `json:"hasActiveBindings,omitempty"`
 }
 
 // +kubebuilder:object:root=true
