@@ -232,6 +232,9 @@ jobs:
       - name: Download Go Modules
         run: make modules.download modules.check
 
+      - name: Setup Crossplane CLI
+        run: make crossplane.install_cli
+
       - name: Build Artifacts
         run: make -j2 build.all
         env:
