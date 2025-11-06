@@ -4,19 +4,18 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"reflect"
-	"slices"
 	"time"
 
-	"github.com/crossplane/crossplane-runtime/pkg/meta"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
-	"github.com/pkg/errors"
+	"github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -26,116 +25,141 @@ const (
 	AsyncAnnotation                 = MetadataPrefix + "/async"
 	Iso8601dateFormat               = "2006-01-02T15:04:05.9Z"
 	OriginatingIdentityPlatformName = "kubernetes"
-	errRequestFailed                = "OSB %s request failed"
 )
 
-// func AddFinalizer(ctx context.Context, mg resource.Managed) error {
-// 	obj, ok := mg.(*v1alpha1.ServiceBinding)
-// 	if !ok {
-// 		return errors.New(errNotKubernetesServiceBinding)
-// 	}
+var (
+	errCannotDecodeBasicAuth          = errors.New("cannot decode string into basic auth struct")
+	errCannotGetResource              = errors.New("cannot get latest version of resource")
+	errUnsupportedProviderType        = errors.New("unsupported provider config type")
+	errMarshalCredential              = errors.New("failed to marshal credential from response")
+	errMarshalMapValue                = errors.New("cannot marshal map value")
+	errParseISO8601Time               = errors.New("cannot parse ISO8601 time")
+	errNoProviderConfigReference      = errors.New("object has no provider config reference")
+	errCannotGetProviderConfig        = errors.New("cannot get provider config")
+	errCannotGetClusterProviderConfig = errors.New("cannot get cluster provider config")
+	errUnknownProviderConfigKind      = errors.New("unknown provider config kind")
+	errBase64StringCannotBeEmpty      = errors.New("base64 string cannot be empty")
+)
 
-// 	if meta.FinalizerExists(obj, objFinalizerName) {
-// 		return nil
-// 	}
-// 	meta.AddFinalizer(obj, objFinalizerName)
-
-// 	err := c.kube.Update(ctx, obj)
-// 	if err != nil {
-// 		return errors.Wrap(err, errAddFinalizer)
-// 	}
-
-// 	// Add finalizer to referenced resources if not exists
-// 	err = c.handleRefFinalizer(ctx, obj, func(
-// 		ctx context.Context, res *unstructured.Unstructured, finalizer string,
-// 	) error {
-// 		if !meta.FinalizerExists(res, finalizer) {
-// 			meta.AddFinalizer(res, finalizer)
-// 		}
-// 		return nil
-// 	}, false)
-// 	return errors.Wrap(err, errAddFinalizer)
-// }
-
-func EndpointEqual(e1, e2 osb.Endpoint) bool {
-	// Use sorted copies of the endpoint's ports slices
-	// to ignore elements order
-	sortedPorts1 := slices.Clone(e1.Ports)
-	sortedPorts2 := slices.Clone(e2.Ports)
-
-	slices.Sort(sortedPorts1)
-	slices.Sort(sortedPorts2)
-
-	return e1.Host == e2.Host && *e1.Protocol == *e2.Protocol && slices.Equal(sortedPorts1, sortedPorts2)
-}
-
-func VolumeMountEqual(e1, e2 osb.VolumeMount) bool {
-	return reflect.DeepEqual(e1, e2)
-}
-
+// TimeNow returns the current time formatted as an ISO 8601 string.
+//
+// The function returns a pointer to the formatted string.
+//
+// Returns:
+// - *string: pointer to the current time in ISO 8601 format
 func TimeNow() *string {
 	res := time.Now().Format(Iso8601dateFormat)
 	return &res
 }
 
-func decodeB64StringToBasicAuthConfig(s string) (osb.BasicAuthConfig, error) {
+// decodeB64StringToBasicAuthConfig decodes a base64-encoded JSON string
+// into an OSB BasicAuthConfig containing a username and password.
+//
+// The expected input is a base64-encoded JSON object with the fields:
+//
+//	{
+//	  "user": "<username>",
+//	  "password": "<password>"
+//	}
+//
+// Parameters:
+// - s: the base64-encoded string
+//
+// Returns:
+// - osb.BasicAuthConfig: struct containing Username and Password
+// - error: any error encountered during decoding or unmarshalling
+func decodeB64StringToBasicAuthConfig(s string) (osbClient.BasicAuthConfig, error) {
+	if s == "" {
+		return osbClient.BasicAuthConfig{}, errBase64StringCannotBeEmpty
+	}
+
+	// Decode the base64 string into bytes
 	data, err := base64.StdEncoding.DecodeString(s)
 	if err != nil {
-		return osb.BasicAuthConfig{}, err
+		return osbClient.BasicAuthConfig{}, err
 	}
+
+	// Temporary struct to unmarshal JSON into
 	jsonDecode := struct {
 		User     string `json:"user"`
 		Password string `json:"password"`
 	}{}
+
+	// Unmarshal the JSON data into the temporary struct
 	err = json.Unmarshal(data, &jsonDecode)
 	if err != nil {
-		return osb.BasicAuthConfig{}, err
+		return osbClient.BasicAuthConfig{}, err
 	}
-	return osb.BasicAuthConfig{
+
+	// Convert to osb.BasicAuthConfig and return
+	return osbClient.BasicAuthConfig{
 		Username: jsonDecode.User,
 		Password: jsonDecode.Password,
-	}, err
+	}, nil
+}
+
+type OsbConfig interface {
+	GetBrokerURL() string
+	GetOSBVersion() string
+	GetTimeout() int
 }
 
 // TODO: take into account controller.options:
 // - to enable OSB client alpha features
-func NewOsbClient(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error) {
-	config := osb.DefaultClientConfiguration()
-	config.URL = conf.Spec.BrokerURL
-	apiVersions := osb.APIVersions()
-	config.APIVersion = apiVersions[conf.Spec.OSBVersion]
-	config.TimeoutSeconds = conf.Spec.Timeout
+func NewOsbClient(pc resource.ProviderConfig, creds []byte) (osbClient.Client, error) {
+	var conf OsbConfig
 
-	if len(creds) > 0 {
-		credsString := string(creds)
-		basicAuth, err := decodeB64StringToBasicAuthConfig(credsString)
-		if err != nil {
-			return nil, errors.Wrap(err, "error : can't decode string into basic auth struct")
-		}
-		authConfig := osb.AuthConfig{
-			BasicAuthConfig: &basicAuth,
-		}
-		config.AuthConfig = &authConfig
+	switch c := pc.(type) {
+	case *v1alpha1.ProviderConfig:
+		conf = c
+	case *v1alpha1.ClusterProviderConfig:
+		conf = c
+	default:
+		return nil, fmt.Errorf("%w: %s", errUnsupportedProviderType, pc)
 	}
 
-	return osb.NewClient(config)
+	config := osbClient.DefaultClientConfiguration()
+	config.URL = conf.GetBrokerURL()
+	apiVersions := osbClient.APIVersions()
+	config.APIVersion = apiVersions[conf.GetOSBVersion()]
+	config.TimeoutSeconds = conf.GetTimeout()
+
+	// auth
+	if len(creds) > 0 {
+		basicAuth, err := decodeB64StringToBasicAuthConfig(string(creds))
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", errCannotDecodeBasicAuth, fmt.Sprint(err))
+		}
+		config.AuthConfig = &osbClient.AuthConfig{BasicAuthConfig: &basicAuth}
+	}
+
+	return osbClient.NewClient(config)
 }
 
 // MakeOriginatingIdentityFromValue returns an osb.OriginatingIdentity object by combining:
 //   - the Platform attribute ("kubernetes")
 //   - the Value attribute, generated by marshalling the common.KubernetesOSBOriginatingIdentityValue in parameter
-func MakeOriginatingIdentityFromValue(val common.KubernetesOSBOriginatingIdentityValue) (*osb.OriginatingIdentity, error) {
+func MakeOriginatingIdentityFromValue(val common.KubernetesOSBOriginatingIdentityValue) (*osbClient.OriginatingIdentity, error) {
 	value, err := json.Marshal(val)
 	if err != nil {
 		return nil, err
 	}
 
-	return &osb.OriginatingIdentity{
+	return &osbClient.OriginatingIdentity{
 		Platform: OriginatingIdentityPlatformName,
 		Value:    string(value),
 	}, nil
 }
 
+// AddFinalizerIfNotExists adds the specified finalizer to a Kubernetes object
+// if it does not already exist.
+//
+// Parameters:
+// - obj: the Kubernetes object to update (implements metav1.Object)
+// - finalizerName: the name of the finalizer to add
+//
+// Returns:
+// - bool: true if the finalizer was added, false if it already existed
 func AddFinalizerIfNotExists(obj metav1.Object, finalizerName string) bool {
 	if !meta.FinalizerExists(obj, finalizerName) {
 		meta.AddFinalizer(obj, finalizerName)
@@ -144,6 +168,15 @@ func AddFinalizerIfNotExists(obj metav1.Object, finalizerName string) bool {
 	return false
 }
 
+// RemoveFinalizerIfExists removes the specified finalizer from a Kubernetes object
+// if it exists.
+//
+// Parameters:
+// - obj: the Kubernetes object to update (implements metav1.Object)
+// - finalizerName: the name of the finalizer to remove
+//
+// Returns:
+// - bool: true if the finalizer was removed, false if it did not exist
 func RemoveFinalizerIfExists(obj metav1.Object, finalizerName string) bool {
 	if meta.FinalizerExists(obj, finalizerName) {
 		meta.RemoveFinalizer(obj, finalizerName)
@@ -152,18 +185,22 @@ func RemoveFinalizerIfExists(obj metav1.Object, finalizerName string) bool {
 	return false
 }
 
-func HandleHttpError(err error, errorType string) (managed.ExternalObservation, error, bool) {
-	// Manage errors, if it's http error and 404 , then it means that the resource does not exist
-	if err != nil {
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr && httpErr.StatusCode == http.StatusNotFound {
-			return managed.ExternalObservation{
-				ResourceExists: false,
-			}, nil, true
+// IsResourceGoneError checks if the provided error is an OSB HTTP error indicating
+// that the resource no longer exists (HTTP 404 Not Found or 410 Gone).
+//
+// Parameters:
+// - err: the error returned by an OSB request
+//
+// Returns:
+// - bool: true if the resource is gone, false otherwise
+func IsResourceGone(err error) bool {
+	if httpErr, isHTTP := osbClient.IsHTTPError(err); isHTTP {
+		if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
+			// Resource is already gone
+			return true
 		}
-		// Other errors are unexpected
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, errorType)), true
 	}
-	return managed.ExternalObservation{}, nil, false
+	return false
 }
 
 // TODO: actually implement an no op client, since the osb.fake client
@@ -174,12 +211,213 @@ type NoOpOsbClient fake.FakeClient
 // 	return nil, nil
 // }
 
-func GetProviderConfig(ctx context.Context, kube client.Client, ref common.ProviderConfigRef) (*apisv1alpha1.ProviderConfig, error) {
-	pc := &apisv1alpha1.ProviderConfig{}
-	key := client.ObjectKey{Name: ref.Name}
-	if err := kube.Get(ctx, key, pc); err != nil {
+// GetLatestKubeObject retrieves the latest version of a Kubernetes object.
+// obj should be a pointer to a Kubernetes object (implements client.Object).
+func GetLatestKubeObject[T client.Object](ctx context.Context, kube client.Client, obj T) (T, error) {
+	key := client.ObjectKeyFromObject(obj)
+	if err := kube.Get(ctx, key, obj); err != nil {
+		return obj, fmt.Errorf("%w: %s", errCannotGetResource, fmt.Sprint(err))
+	}
+	return obj, nil
+}
+
+// LastOperationStatusSetter defines the interface for Kubernetes objects
+// whose status can be updated based on the last OSB operation.
+// Any object implementing this interface must provide methods to set
+// the last operation state, description, and conditions.
+type LastOperationStatusSetter interface {
+	client.Object
+	SetLastOperationState(osbClient.LastOperationState)
+	SetLastOperationDescription(desc string)
+	SetConditions(conds ...xpv1.Condition)
+}
+
+// UpdateStatusFromLastOp updates the status of any Kubernetes object
+// implementing LastOperationStatusSetter based on the response from the OSB last operation.
+// It sets the LastOperationState, LastOperationDescription, and updates conditions
+// according to the operation state (Succeeded / Failed).
+func UpdateStatusFromLastOp[T LastOperationStatusSetter](obj T, resp *osbClient.LastOperationResponse) {
+	obj.SetLastOperationState(resp.State)
+	if resp.Description != nil {
+		obj.SetLastOperationDescription(*resp.Description)
+	}
+
+	switch resp.State {
+	case osbClient.StateSucceeded:
+		obj.SetConditions(xpv1.Available())
+	case osbClient.StateInProgress:
+		obj.SetConditions(xpv1.Unavailable())
+	case osbClient.StateDeleting:
+		obj.SetConditions(xpv1.Unavailable())
+	case osbClient.StateFailed:
+		obj.SetConditions(xpv1.Unavailable())
+	}
+}
+
+// HandleAsyncStatusSetter is an interface for objects that can have their asynchronous
+// operation status updated. Any type implementing this interface must also implement
+// client.Object and provide methods to set the last operation state and key.
+type HandleAsyncStatusSetter interface {
+	client.Object
+	SetLastOperationState(osbClient.LastOperationState)
+	SetLastOperationKey(*osbClient.OperationKey)
+}
+
+// HandleAsyncStatus updates the status of an object when the request is asynchronous.
+//
+// It sets the LastOperationKey if provided and updates the LastOperationState to "InProgress".
+//
+// Type parameter T must implement the HandleAsyncStatusSetter interface.
+func HandleAsyncStatus[T HandleAsyncStatusSetter](obj T, operationKey *osbClient.OperationKey) {
+	// If an operation key is provided, update the object with it
+	if operationKey != nil {
+		obj.SetLastOperationKey(operationKey)
+	}
+
+	// Mark the object's last operation as in progress
+	obj.SetLastOperationState(osbClient.StateInProgress)
+}
+
+// MarshalMapValues marshals all values of a map into JSON bytes.
+// Returns a map of the same keys with marshaled byte slices as values.
+func MarshalMapValues(input map[string]any) (map[string][]byte, error) {
+	output := make(map[string][]byte, len(input))
+	for k, v := range input {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalMapValue, k, fmt.Sprint(err))
+		}
+		output[k] = b
+	}
+	return output, nil
+}
+
+// getCredsFromResponse serializes the credentials from an OSB BindResponse
+// into a map[string][]byte suitable for Crossplane connection details.
+// Returns an error if any credential cannot be marshaled to JSON.
+func GetCredsFromResponse(resp *osbClient.BindResponse) (map[string][]byte, error) {
+	creds := make(map[string][]byte, len(resp.Credentials))
+
+	for key, value := range resp.Credentials {
+		data, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s, %v", errMarshalCredential, key, fmt.Sprint(err))
+		}
+		creds[key] = data
+	}
+
+	return creds, nil
+}
+
+// parseISO8601Time parses a string in ISO8601 format into a time.Time.
+// Returns a wrapped error if parsing fails.
+func ParseISO8601Time(value, field string) (time.Time, error) {
+	t, err := time.Parse(Iso8601dateFormat, value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%w: %s, %v", errParseISO8601Time, field, fmt.Sprint(err))
+	}
+	return t, nil
+}
+
+// ProviderReferencer is an interface that represents a Kubernetes object
+// which has a reference to a ProviderConfig. Any object implementing
+// this interface must also implement client.Object and provide
+// GetProviderConfigReference method.
+type ProviderReferencer interface {
+	client.Object
+	GetProviderConfigReference() *xpv1.ProviderConfigReference
+}
+
+// ResolveProviderConfig resolves the provider configuration for a given
+// Kubernetes object that implements ProviderReferencer. It fetches the
+// actual ProviderConfig or ClusterProviderConfig from the Kubernetes API
+// based on the reference kind.
+//
+// Parameters:
+// - ctx: The context for API calls.
+// - kube: The Kubernetes client used to fetch resources.
+// - obj: The object that contains a reference to a provider config.
+//
+// Returns:
+// - resource.ProviderConfig: The resolved provider config object.
+// - *v1alpha1.ProviderConfigSpec: The specification part of the provider config.
+// - error: Any error encountered during resolution.
+func ResolveProviderConfig(
+	ctx context.Context,
+	kube client.Client,
+	obj ProviderReferencer,
+) (resource.ProviderConfig, *v1alpha1.ProviderConfigSpec, error) {
+
+	ref := obj.GetProviderConfigReference()
+	if ref == nil {
+		return nil, nil, fmt.Errorf("%w: %s/%s", errNoProviderConfigReference, obj.GetNamespace(), obj.GetName())
+	}
+
+	var pc resource.ProviderConfig
+	var pcSpec *v1alpha1.ProviderConfigSpec
+
+	switch ref.Kind {
+	case v1alpha1.ProviderConfigKind:
+		npc := &v1alpha1.ProviderConfig{}
+		if err := kube.Get(ctx, client.ObjectKey{
+			Name:      ref.Name,
+			Namespace: obj.GetNamespace(),
+		}, npc); err != nil {
+			return nil, nil, fmt.Errorf("%w: with name: %s, in namespace: %s : %s", errCannotGetProviderConfig, ref.Name, obj.GetNamespace(), fmt.Sprint(err))
+		}
+		pcSpec = &npc.Spec
+		pc = npc
+
+	case v1alpha1.ClusterProviderConfigKind:
+		cpc := &v1alpha1.ClusterProviderConfig{}
+		if err := kube.Get(ctx, client.ObjectKey{Name: ref.Name}, cpc); err != nil {
+			return nil, nil, fmt.Errorf("%w: %s", errCannotGetClusterProviderConfig, fmt.Sprint(err))
+		}
+		pcSpec = &cpc.Spec
+		pc = cpc
+
+	default:
+		return nil, nil, fmt.Errorf("%w: %s", errUnknownProviderConfigKind, ref.Kind)
+	}
+
+	return pc, pcSpec, nil
+}
+
+// TODO: these should better go into crossplane-runtime
+// A modernTracker tracks modern managed resources.
+type ModernTracker interface {
+	// Track the supplied modern managed resource.
+	Track(ctx context.Context, mg resource.ModernManaged) error
+}
+
+// A modernTrackerFn is a function that tracks managed resources.
+type ModernTrackerFn func(ctx context.Context, mg resource.ModernManaged) error
+
+// Track the supplied managed resource.
+func (fn ModernTrackerFn) Track(ctx context.Context, mg resource.ModernManaged) error {
+	return fn(ctx, mg)
+}
+
+type finalizerModFn func(metav1.Object, string) bool
+
+// handleFinalizer runs kube.Update(ctx, obj) if the finalizerMod function returns true with finalizerName
+func HandleFinalizer(ctx context.Context, kube client.Client, obj client.Object, finalizerName string, finalizerMod finalizerModFn) error {
+	// Get referenced service instance, if exists
+	if finalizerMod(obj, finalizerName) {
+		return kube.Update(ctx, obj)
+	}
+	return nil
+}
+
+func MarshalBindingCredentials(resp *osbClient.GetBindingResponse) (map[string][]byte, error) {
+	if resp.Credentials == nil {
+		return nil, nil
+	}
+
+	credentialsJson, err := MarshalMapValues(resp.Credentials)
+	if err != nil {
 		return nil, err
 	}
 
-	return pc, nil
+	return credentialsJson, nil
 }

@@ -16,7 +16,7 @@
 
 package features
 
-import "github.com/crossplane/crossplane-runtime/pkg/feature"
+import "github.com/crossplane/crossplane-runtime/v2/pkg/feature"
 
 // Feature flags.
 const (
@@ -33,4 +33,9 @@ const (
 	// EnableAlphaRotateBindings enables alpha support for
 	// Rotating Bindings.
 	EnableAlphaRotateBindings feature.Flag = "EnableAlphaRotateBindings"
+
+	// EnableBetaManagementPolicies enables beta support for
+	// Management Policies. See the below design for more details.
+	// https://github.com/crossplane/crossplane/pull/3531
+	EnableBetaManagementPolicies feature.Flag = "EnableBetaManagementPolicies"
 )

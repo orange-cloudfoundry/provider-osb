@@ -14,10 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package namespaced
 
 import (
-	"github.com/crossplane/crossplane-runtime/pkg/controller"
+	"errors"
+	"fmt"
+
+	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/application"
@@ -26,18 +29,23 @@ import (
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/serviceinstance"
 )
 
+var errFailedToSetupNamespacedController = errors.New("failed to set up cluster controller ")
+
 // Setup creates all OSB controllers with the supplied logger and adds them to
 // the supplied manager.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
-	for _, setup := range []func(ctrl.Manager, controller.Options) error{
-		config.Setup,
-		application.Setup,
-		servicebinding.Setup,
-		serviceinstance.Setup,
-	} {
+	controllers := map[string]func(ctrl.Manager, controller.Options) error{
+		"config":          config.Setup,
+		"application":     application.Setup,
+		"servicebinding":  servicebinding.Setup,
+		"serviceinstance": serviceinstance.Setup,
+	}
+
+	for name, setup := range controllers {
 		if err := setup(mgr, o); err != nil {
-			return err
+			return fmt.Errorf("%w '%s': %s", errFailedToSetupNamespacedController, name, fmt.Sprint(err))
 		}
 	}
+
 	return nil
 }

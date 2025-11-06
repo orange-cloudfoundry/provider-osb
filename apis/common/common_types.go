@@ -19,6 +19,7 @@ package common
 import (
 	"encoding/json"
 
+	"github.com/crossplane/crossplane-runtime/v2/apis/common"
 	apiextensions "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -35,6 +36,8 @@ func (n *NamespacedName) String() string {
 	return n.Namespace + "/" + n.Name
 }
 
+// ToObjectKey converts a NamespacedName into a Kubernetes client.ObjectKey,
+// which can be used to retrieve or manipulate Kubernetes objects.
 func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 	return client.ObjectKey{
 		Name:      n.Name,
@@ -42,15 +45,11 @@ func (n *NamespacedName) ToObjectKey() client.ObjectKey {
 	}
 }
 
-type ProviderConfigRef struct {
-	Name string `json:"name"`
-}
-
 // ApplicationData represents the schema for an Application MR
 type ApplicationData struct {
-	Name           string            `json:"name"`
-	Guid           string            `json:"guid"`
-	ProviderConfig ProviderConfigRef `json:"providerConfigRef"`
+	Name                    string                          `json:"name"`
+	Guid                    string                          `json:"guid"`
+	ProviderConfigReference *common.ProviderConfigReference `json:"providerConfigRef,omitempty"`
 }
 
 // Instance Data represents the schema for a ServiceInstance MR
@@ -65,8 +64,14 @@ type InstanceData struct {
 	OrganizationGuid string                 `json:"organizationGuid"`
 	SpaceGuid        string                 `json:"spaceGuid"`
 }
+
+// SerializableParameters represents a JSON-encoded map of arbitrary parameters.
+// Stored as a string because slices and maps are not directly serializable in Go
+// It is stored as a string but can be converted back to a Go map.
 type SerializableParameters string
 
+// ToParameters deserializes the JSON string into a map[string]any.
+// Returns an empty map if the string is nil or empty.
 func (v *SerializableParameters) ToParameters() (map[string]any, error) {
 	if v == nil || len([]byte(*v)) == 0 {
 		return map[string]any{}, nil
@@ -81,10 +86,10 @@ func (v *SerializableParameters) ToParameters() (map[string]any, error) {
 type KubernetesOSBContext struct {
 	Platform             string            `json:"platform"`
 	Namespace            string            `json:"namespace"`
-	NamespaceAnnotations map[string]string `json:"namespace_annotations,omitempty"`
-	InstanceAnnotations  map[string]string `json:"instance_annotations,omitempty"`
-	ClusterId            string            `json:"cluster_id"`
-	InstanceName         string            `json:"instance_name"`
+	NamespaceAnnotations map[string]string `json:"namespaceAnnotations,omitempty"`
+	InstanceAnnotations  map[string]string `json:"instanceAnnotations,omitempty"`
+	ClusterId            string            `json:"clusterId"`
+	InstanceName         string            `json:"instanceName"`
 }
 
 // KubernetesOSBOriginatingIdentityExtra represents the "extra" attribute in the
@@ -115,18 +120,26 @@ type KubernetesOSBOriginatingIdentityValue struct {
 	Username string                                 `json:"username"`
 	UID      string                                 `json:"uid"`
 	Groups   []string                               `json:"groups"`
-	Extra    *KubernetesOSBOriginatingIdentityExtra `json:"extra"`
+	Extra    *KubernetesOSBOriginatingIdentityExtra `json:"extra,omitempty"`
 }
 
-// ToMap converts the KubernetesOSBContext into a map[string]interface{}.
-func (c *KubernetesOSBContext) ToMap() (map[string]interface{}, error) {
+// ToMap converts the KubernetesOSBContext into a map[string]any.
+func (c *KubernetesOSBContext) ToMap() (map[string]any, error) {
 	// Convert struct - > json
 	b, err := json.Marshal(c)
 	if err != nil {
 		return nil, err
 	}
-	// Convert json -> map[string]interface{}
-	var res map[string]interface{}
+	// Convert json -> map[string]any
+	var res map[string]any
 	err = json.Unmarshal(b, &res)
 	return res, err
 }
+
+type Action int
+
+const (
+	NothingToDo Action = iota
+	NeedToCreate
+	NeedToUpdate
+)

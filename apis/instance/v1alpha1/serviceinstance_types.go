@@ -22,47 +22,47 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
-	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	common "github.com/orange-cloudfoundry/provider-osb/apis/common"
 )
 
-// ServiceInstanceObservation are the observable fields of a ServiceInstance.
-// TODO manage observations
-type ServiceInstanceObservation struct {
-	ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
-	ApplicationData          *common.ApplicationData `json:"applicationData,omitempty"`
-	common.InstanceData      `json:",inline"`
-	Context                  common.KubernetesOSBContext `json:"context,omitempty"`
-	DashboardURL             *string                     `json:"dashboardURL,omitempty"`
-	LastOperationState       osb.LastOperationState      `json:"last_operation_state,omitempty"`
-	LastOperationKey         osb.OperationKey            `json:"last_operation_key,omitempty"`
-	LastOperationDescription string                      `json:"last_operation_description,omitempty"`
-	HasActiveBindings        bool                        `json:"hasActiveBindings,omitempty"`
-}
-
-// A ServiceInstanceSpec defines the desired state of a ServiceInstance.
 type ServiceInstanceSpec struct {
-	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       common.InstanceData `json:"forProvider"`
+	xpv2.ManagedResourceSpec `json:",inline"`
+
+	ForProvider common.InstanceData `json:"forProvider"`
+
+	InitProvider common.InstanceData `json:"initProvider,omitempty"`
 }
 
-// A ServiceInstanceStatus represents the observed state of a ServiceInstance.
 type ServiceInstanceStatus struct {
 	xpv1.ResourceStatus `json:",inline"`
 	AtProvider          ServiceInstanceObservation `json:"atProvider,omitempty"`
 }
 
-// +kubebuilder:object:root=true
+type ServiceInstanceObservation struct {
+	ApplicationRef           *common.NamespacedName  `json:"application,omitempty"`
+	ApplicationData          *common.ApplicationData `json:"applicationData,omitempty"`
+	common.InstanceData      `json:",inline"`
+	Context                  common.KubernetesOSBContext  `json:"context,omitempty"`
+	DashboardURL             *string                      `json:"dashboardURL,omitempty"`
+	LastOperationState       osbClient.LastOperationState `json:"lastOperationState,omitempty"`
+	LastOperationKey         osbClient.OperationKey       `json:"lastOperationKey,omitempty"`
+	LastOperationDescription string                       `json:"lastOperationDescription,omitempty"`
+	HasActiveBindings        bool                         `json:"hasActiveBindings,omitempty"`
+}
 
-// A ServiceInstance is an example API type.
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:storageversion
+
+// ServiceInstance is the managed OSB resource
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
 // +kubebuilder:printcolumn:name="EXTERNAL-NAME",type="string",JSONPath=".metadata.annotations.crossplane\\.io/external-name"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,osb}
+// +kubebuilder:resource:scope=Namespaced,categories={crossplane,managed,osb}
 type ServiceInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -73,7 +73,7 @@ type ServiceInstance struct {
 
 // +kubebuilder:object:root=true
 
-// ServiceInstanceList contains a list of ServiceInstance
+// ServiceInstanceList contains a list of ServiceInstances
 type ServiceInstanceList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

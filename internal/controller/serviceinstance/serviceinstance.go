@@ -19,66 +19,67 @@ package serviceinstance
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"reflect"
 
-	"github.com/pkg/errors"
+	"errors"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
-	"github.com/crossplane/crossplane-runtime/pkg/connection"
-	"github.com/crossplane/crossplane-runtime/pkg/controller"
-	"github.com/crossplane/crossplane-runtime/pkg/event"
-	"github.com/crossplane/crossplane-runtime/pkg/ratelimiter"
-	"github.com/crossplane/crossplane-runtime/pkg/reconciler/managed"
-	"github.com/crossplane/crossplane-runtime/pkg/resource"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/ratelimiter"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
+	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
-
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
-	apisbinding "github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 	"github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	apisv1alpha1 "github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
-	"github.com/orange-cloudfoundry/provider-osb/internal/features"
 )
 
-// todo : add constants in a util package to be used by serviceinstance and servicebinding
-const (
-	errNotServiceInstance = "managed resource is not a ServiceInstance custom resource"
-	errTrackPCUsage       = "cannot track ProviderConfig usage"
-	errGetPC              = "cannot get ProviderConfig"
-	errGetCreds           = "cannot get credentials"
-
-	errNewClient     = "cannot create new Service"
-	errRequestFailed = "OSB %s request failed"
-	errParseMarshall = "error while marshalling or parsing %s"
-	errListBindings  = "cannot list ServiceBindings"
-	errUpdateStatus  = "cannot update ServiceInstance status"
-	errGetLatest     = "cannot get latest version of ServiceInstance"
+var (
+	errNotServiceInstanceCR           = errors.New("managed resource is not a ServiceInstance custom resource")
+	errCannotTrackProviderConfig      = errors.New("cannot track ProviderConfig usage")
+	errCannotCreateNewOsbClient       = errors.New("cannot create new OSB client")
+	errCannotMakeOriginatingIdentity  = errors.New("cannot make originating identity from value")
+	errInstanceIDNotSet               = errors.New("InstanceId must be set in the ServiceInstance spec")
+	errCannotTrackProviderConfigUsage = errors.New("cannot track ProviderConfig usage")
+	errFailedToDeprovision            = errors.New("failed to deprovisionning service instance")
+	errFailedToProvision              = errors.New("failed to provison service instance")
+	errFailedToUpdate                 = errors.New("failed to update service instance")
+	errFailedToObserveState           = errors.New("failed to observe state of service instance")
 )
 
 // Setup adds a controller that reconciles ServiceInstance managed resources.
 func Setup(mgr ctrl.Manager, o controller.Options) error {
 	name := managed.ControllerName(v1alpha1.ServiceInstanceGroupKind)
+	log := o.Logger.WithValues("controller", name)
 
-	cps := []managed.ConnectionPublisher{managed.NewAPISecretPublisher(mgr.GetClient(), mgr.GetScheme())}
-	if o.Features.Enabled(features.EnableAlphaExternalSecretStores) {
-		cps = append(cps, connection.NewDetailsManager(mgr.GetClient(), apisv1alpha1.StoreConfigGroupVersionKind))
+	extra := &common.KubernetesOSBOriginatingIdentityExtra{}
+	if err := extra.FromMap(mgr.GetConfig().Impersonate.Extra); err != nil {
+		log.Info("Failed to parse KubernetesOSBOriginatingIdentityExtra from Impersonate.Extra")
+	} else {
+		log.Info("Successfully parsed KubernetesOSBOriginatingIdentityExtra")
+		log.Debug("Successfully parsed KubernetesOSBOriginatingIdentityExtra", "extra", extra)
 	}
 
 	r := managed.NewReconciler(mgr,
 		resource.ManagedKind(v1alpha1.ServiceInstanceGroupVersionKind),
 		managed.WithExternalConnecter(&connector{
-			kube:         mgr.GetClient(),
-			usage:        resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
+			kube:  mgr.GetClient(),
+			usage: resource.NewProviderConfigUsageTracker(mgr.GetClient(), &apisv1alpha1.ProviderConfigUsage{}),
+			originatingIdentityValue: common.KubernetesOSBOriginatingIdentityValue{
+				Username: mgr.GetConfig().Impersonate.UserName,
+				UID:      mgr.GetConfig().Impersonate.UID,
+				Groups:   mgr.GetConfig().Impersonate.Groups,
+				Extra:    extra,
+			},
 			newOsbClient: util.NewOsbClient}),
-		managed.WithLogger(o.Logger.WithValues("controller", name)),
+		managed.WithLogger(log),
 		managed.WithPollInterval(o.PollInterval),
-		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))),
-		managed.WithConnectionPublishers(cps...))
+		managed.WithManagementPolicies(),
+		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))))
 
 	return ctrl.NewControllerManagedBy(mgr).
 		Named(name).
@@ -92,8 +93,8 @@ func Setup(mgr ctrl.Manager, o controller.Options) error {
 // is called.
 type connector struct {
 	kube                     client.Client
-	usage                    resource.Tracker
-	newOsbClient             func(conf apisv1alpha1.ProviderConfig, creds []byte) (osb.Client, error)
+	usage                    util.ModernTracker
+	newOsbClient             func(config resource.ProviderConfig, creds []byte) (osbClient.Client, error)
 	originatingIdentityValue common.KubernetesOSBOriginatingIdentityValue
 }
 
@@ -103,45 +104,44 @@ type connector struct {
 // 3. Getting the credentials specified by the ProviderConfig.
 // 4. Using the credentials to form a client.
 func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.ExternalClient, error) {
-	// Assert that the managed resource is of type ServiceInstance.
-	cr, ok := mg.(*v1alpha1.ServiceInstance)
+	obj, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return nil, errors.New(errNotServiceInstance)
+		return nil, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
-	// Track usage of the ProviderConfig by this managed resource.
-	if err := c.usage.Track(ctx, mg); err != nil {
-		return nil, errors.Wrap(err, errTrackPCUsage)
+	if err := c.usage.Track(ctx, mg.(resource.ModernManaged)); err != nil {
+		return nil, fmt.Errorf("%w: %s", errCannotTrackProviderConfigUsage, fmt.Sprint(err))
 	}
 
-	// Retrieve the ProviderConfig referenced by the managed resource.
-	pc, err := util.GetProviderConfig(ctx, c.kube, cr.Spec.ForProvider.ApplicationData.ProviderConfig)
+	pc, pcSpec, err := util.ResolveProviderConfig(ctx, c.kube, obj)
 	if err != nil {
-		return nil, errors.Wrap(err, errGetPC)
+		return nil, err
 	}
 
-	// Extract credentials from the ProviderConfig.
-	cd := pc.Spec.Credentials
-	creds, err := resource.CommonCredentialExtractor(ctx, cd.Source, c.kube, cd.CommonCredentialSelectors)
+	// Extract credentials from the ProviderConfig
+	creds, err := resource.CommonCredentialExtractor(ctx, pcSpec.Credentials.Source, c.kube, pcSpec.Credentials.CommonCredentialSelectors)
 	if err != nil {
-		return nil, errors.Wrap(err, errGetCreds)
+		return nil, fmt.Errorf("%w: %s", errCannotTrackProviderConfig, fmt.Sprint(err))
 	}
 
-	// Create a new OSB client using the broker URL and credentials.
-	osbclient, err := c.newOsbClient(*pc, creds)
+	// Create a new OSB client using the resolved ProviderConfig and extracted credentials
+	osbClient, err := util.NewOsbClient(pc, creds)
 	if err != nil {
-		return nil, errors.Wrap(err, errNewClient)
+		return nil, fmt.Errorf("%w: %s", errCannotCreateNewOsbClient, fmt.Sprint(err))
 	}
 
-	// Build originating identity for the OSB client.
-	c.originatingIdentityValue.Extra = &pc.Spec.OriginatingIdentityExtraData
+	// Create the originating identity object
 	oid, err := util.MakeOriginatingIdentityFromValue(c.originatingIdentityValue)
 	if err != nil {
-		return nil, errors.Wrap(err, errNewClient)
+		return nil, fmt.Errorf("%w: %s", errCannotMakeOriginatingIdentity, fmt.Sprint(err))
 	}
 
 	// Return an external client with the OSB client, Kubernetes client, and originating identity.
-	return &external{client: osbclient, kube: c.kube, originatingIdentity: *oid}, nil
+	return &external{
+		osb:                 osbClient,
+		kube:                c.kube,
+		originatingIdentity: *oid,
+	}, nil
 }
 
 // An ExternalClient observes, then either creates, updates, or deletes an
@@ -149,412 +149,99 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 type external struct {
 	// A 'client' used to connect to the external resource API. In practice this
 	// would be something like an AWS SDK client.
-	client              osb.Client
+	osb                 osbClient.Client
 	kube                client.Client
-	originatingIdentity osb.OriginatingIdentity
+	originatingIdentity osbClient.OriginatingIdentity
 }
 
-// Observe checks the current state of the external ServiceInstance resource and determines
-// whether it exists and is up to date with the desired managed resource state. It returns
-// an ExternalObservation indicating the existence and up-to-date status of the resource,
-// along with any connection details required to connect to the external resource.
-// If the provided managed resource is not a ServiceInstance, an error is returned.
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
-	// Assert that the managed resource is of type ServiceInstance.
-	si, ok := mg.(*v1alpha1.ServiceInstance)
+	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalObservation{}, errors.New(errNotServiceInstance)
+		return managed.ExternalObservation{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
-	// Ensure the InstanceId is set in the ServiceInstance spec before proceeding.
-	if si.Spec.ForProvider.InstanceId == "" {
-		return managed.ExternalObservation{}, errors.New("InstanceId must be set in ServiceInstance spec")
+	if instance.IsInstanceIDEmpty() {
+		return managed.ExternalObservation{}, errInstanceIDNotSet
 	}
 
-	// Manage pending async operations (poll only for "in progress" state)
-	if si.Status.AtProvider.LastOperationState == osb.StateInProgress || si.Status.AtProvider.LastOperationState == "deleting" {
-		return c.handleLastOperationInProgress(ctx, si)
-	}
-
-	// If the resource is being deleted, check for active bindings before allowing deletion.
-	if !si.GetDeletionTimestamp().IsZero() {
-		return c.handleDeletionWithActiveBindings(ctx, si)
-	}
-
-	// Build the GetInstanceRequest using the InstanceId from the ServiceInstance spec.
-	req := &osb.GetInstanceRequest{
-		InstanceID: si.Spec.ForProvider.InstanceId,
-		//ServiceID:  si.Spec.ForProvider.ServiceId,
-		//PlanID:     si.Spec.ForProvider.PlanId,
-	}
-
-	// Call the OSB client's GetInstance method to retrieve the current state of the instance.
-	instance, err := c.client.GetInstance(req)
-	// Manage errors from the GetInstance call.
+	action, osbInstance, err := instance.ObserveState(ctx, c.kube, c.osb, c.originatingIdentity)
 	if err != nil {
-		// Check if the error is an HTTP error returned by the OSB client.
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			// If the HTTP status code is 404, the resource does not exist in the external system.
-			if httpErr.StatusCode == http.StatusNotFound {
-				return managed.ExternalObservation{
-					ResourceExists: false,
-				}, nil
-			}
-		}
-		// For all other errors, wrap and return them as unexpected errors.
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "GetInstance"))
+		return managed.ExternalObservation{}, fmt.Errorf("%w, %s", errFailedToObserveState, fmt.Sprint(err))
 	}
 
-	// Compare the desired spec from the ServiceInstance with the actual instance returned from OSB.
-	// This determines if the external resource is up to date with the desired state.
-	upToDate, err := compareSpecWithOsb(*si, instance)
-	if err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, "cannot compare ServiceInstance spec with OSB instance")
+	switch action {
+	case common.NeedToCreate:
+		return managed.ExternalObservation{
+			ResourceExists: false,
+		}, nil
+
+	case common.NothingToDo:
+		return managed.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: true,
+		}, nil
+
+	case common.NeedToUpdate:
+		return managed.ExternalObservation{
+			ResourceExists:   true,
+			ResourceUpToDate: false,
+			ConnectionDetails: managed.ConnectionDetails{
+				"dashboardURL": []byte(osbInstance.DashboardURL),
+			},
+		}, nil
+
+	default:
+		return managed.ExternalObservation{}, nil
 	}
-	// These fmt statements should be removed in the real implementation.
-	return managed.ExternalObservation{
-		// Return false when the external resource does not exist. This lets
-		// the managed resource reconciler know that it needs to call Create to
-		// (re)create the resource, or that it has successfully been deleted.
-		ResourceExists: true,
-
-		// Return false when the external resource exists, but it not up to date
-		// with the desired managed resource state. This lets the managed
-		// resource reconciler know that it needs to call Update.
-		ResourceUpToDate: upToDate,
-
-		// Return any details that may be required to connect to the external
-		// resource. These will be stored as the connection secret.
-		ConnectionDetails: managed.ConnectionDetails{
-			"dashboardURL": []byte(instance.DashboardURL),
-		},
-	}, nil
 }
 
+// Create provisions a new ServiceInstance through the OSB client
+// and updates its status accordingly.
 func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.ExternalCreation, error) {
-
-	// Assert that the managed resource is of type ServiceInstance.
-	si, ok := mg.(*v1alpha1.ServiceInstance)
+	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalCreation{}, errors.New(errNotServiceInstance)
+		return managed.ExternalCreation{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
-	// Convert parameters from the ServiceInstance spec to the format required by OSB.
-	params, err := si.Spec.ForProvider.Parameters.ToParameters()
-	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceInstance"))
+	if err := instance.Provision(ctx, c.kube, c.osb); err != nil {
+		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errFailedToProvision, fmt.Sprint(err))
 	}
 
-	// Convert context from the ServiceInstance spec to a map for OSB.
-	context, err := si.Spec.ForProvider.Context.ToMap()
-	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to map from ServiceInstance"))
-	}
-
-	// Build the ProvisionRequest for the OSB client using the ServiceInstance spec.
-	req := &osb.ProvisionRequest{
-		InstanceID:        si.Spec.ForProvider.InstanceId,
-		ServiceID:         si.Spec.ForProvider.ServiceId,
-		PlanID:            si.Spec.ForProvider.PlanId,
-		OrganizationGUID:  si.Spec.ForProvider.OrganizationGuid,
-		SpaceGUID:         si.Spec.ForProvider.SpaceGuid,
-		Parameters:        params,
-		AcceptsIncomplete: true,
-		Context:           context,
-	}
-	// Call the OSB client's ProvisionInstance method to create the external resource.
-	resp, err := c.client.ProvisionInstance(req)
-	if err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "ProvisionInstance"))
-	}
-
-	// Always update the context, DashboardURL in the status to reflect the spec.
-	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
-	si.Status.AtProvider.DashboardURL = resp.DashboardURL
-	// Update the ServiceInstance status based on the response from the OSB client.
-	if resp.Async {
-		si.Status.SetConditions(xpv1.Creating())
-		si.Status.AtProvider.LastOperationState = osb.StateInProgress
-		if resp.OperationKey != nil {
-			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-	} else {
-		si.Status.SetConditions(xpv1.Available())
-		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
-	}
-	// Update the status of the ServiceInstance resource in Kubernetes.
-	if err := c.kube.Status().Update(ctx, si); err != nil {
-		return managed.ExternalCreation{}, errors.Wrap(err, "cannot update ServiceInstance status")
-	}
 	return managed.ExternalCreation{}, nil
 }
 
+// Update sends an update request to the OSB broker for the given ServiceInstance
+// and updates its status in Kubernetes accordingly.
 func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.ExternalUpdate, error) {
-
-	si, ok := mg.(*v1alpha1.ServiceInstance)
+	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalUpdate{}, errors.New(errNotServiceInstance)
-	}
-	// Convert parameters from the ServiceInstance spec to the format required by OSB.
-	params, err := si.Spec.ForProvider.Parameters.ToParameters()
-	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to bytes from ServiceBinding"))
-	}
-	// Convert context from the ServiceInstance spec to a map for OSB.
-	context, err := si.Spec.ForProvider.Context.ToMap()
-	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "context to map from ServiceInstance"))
-	}
-	// Build the UpdateInstanceRequest for the OSB client using the ServiceInstance spec.
-	req := &osb.UpdateInstanceRequest{
-		InstanceID:        si.Spec.ForProvider.InstanceId,
-		ServiceID:         si.Spec.ForProvider.ServiceId,
-		PlanID:            &si.Spec.ForProvider.PlanId,
-		Parameters:        params,
-		AcceptsIncomplete: true,
-		Context:           context,
+		return managed.ExternalUpdate{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
-	resp, err := c.client.UpdateInstance(req)
+	err := instance.Update(ctx, c.kube, c.osb, c.originatingIdentity)
 	if err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "UpdateInstance"))
+		return managed.ExternalUpdate{}, fmt.Errorf("%w, %s", errFailedToUpdate, fmt.Sprint(err))
 	}
-	// Always update the context, DashboardURL in the status to reflect the spec.
-	si.Status.AtProvider.Context = si.Spec.ForProvider.Context
-	si.Status.AtProvider.DashboardURL = resp.DashboardURL
-	if resp.Async {
-		si.Status.AtProvider.LastOperationState = osb.StateInProgress
-		if resp.OperationKey != nil {
-			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-	}
-	// Update the status of the ServiceInstance resource in Kubernetes.
-	if err := c.kube.Status().Update(ctx, si); err != nil {
-		return managed.ExternalUpdate{}, errors.Wrap(err, "cannot update ServiceInstance status")
-	}
+
 	return managed.ExternalUpdate{
-		// Optionally return any details that may be required to connect to the
-		// external resource. These will be stored as the connection secret.
 		ConnectionDetails: managed.ConnectionDetails{},
 	}, nil
 }
 
 func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.ExternalDelete, error) {
-	si, ok := mg.(*v1alpha1.ServiceInstance)
+	instance, ok := mg.(*v1alpha1.ServiceInstance)
 	if !ok {
-		return managed.ExternalDelete{}, errors.New(errNotServiceInstance)
+		return managed.ExternalDelete{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
-	// If the InstanceId is not set, there is nothing to delete.
-	// We consider the resource as already deleted.
-	if si.Spec.ForProvider.InstanceId == "" {
-		return managed.ExternalDelete{}, nil
-	}
-	// If there are active bindings, we cannot delete the ServiceInstance.
-	if si.Status.AtProvider.HasActiveBindings {
-		return managed.ExternalDelete{}, errors.New("cannot delete ServiceInstance, it has active bindings")
+	err := instance.Deprovision(ctx, c.kube, c.osb, c.originatingIdentity)
+	if err != nil {
+		return managed.ExternalDelete{}, fmt.Errorf("%w, %s", errFailedToDeprovision, fmt.Sprint(err))
 	}
 
-	return c.deprovision(ctx, si)
+	return managed.ExternalDelete{}, nil
 }
 
 func (c *external) Disconnect(ctx context.Context) error {
 	return nil
-}
-
-func compareSpecWithOsb(si v1alpha1.ServiceInstance, instance *osb.GetInstanceResponse) (bool, error) {
-	if instance == nil {
-		return false, nil
-	}
-
-	if si.Spec.ForProvider.PlanId != "" && si.Spec.ForProvider.PlanId != instance.PlanID {
-		return false, nil
-	}
-
-	if len(si.Spec.ForProvider.Parameters) > 0 {
-		// Parse parameters from the ServiceInstance spec for comparison.
-		params, err := si.Spec.ForProvider.Parameters.ToParameters()
-		if err != nil {
-			return false, errors.Wrap(err, fmt.Sprintf(errParseMarshall, "parameters to map from ServiceInstance"))
-		}
-
-		if !reflect.DeepEqual(params, instance.Parameters) {
-			return false, nil
-		}
-	}
-
-	if !reflect.DeepEqual(si.Spec.ForProvider.Context, si.Status.AtProvider.Context) {
-		return false, nil
-	}
-
-	return true, nil
-}
-
-func (c *external) handleLastOperationInProgress(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
-	// Build the LastOperationRequest using the InstanceId and LastOperationKey from the ServiceInstance status.
-
-	req := &osb.LastOperationRequest{
-		InstanceID:          si.Spec.ForProvider.InstanceId,
-		ServiceID:           &si.Spec.ForProvider.ServiceId,
-		PlanID:              &si.Spec.ForProvider.PlanId,
-		OriginatingIdentity: &c.originatingIdentity,
-		OperationKey:        &si.Status.AtProvider.LastOperationKey,
-	}
-	resp, err := c.client.PollLastOperation(req)
-	if err != nil {
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
-				// The resource is gone, we consider it as not existing.
-				return managed.ExternalObservation{
-					ResourceExists: false,
-				}, nil
-			}
-		}
-		return managed.ExternalObservation{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "LastOperation"))
-	}
-
-	// Get the latest version of the ServiceInstance to avoid conflicts during status update.
-	latest, err := c.getLatestInstance(ctx, si)
-	if err != nil {
-		return managed.ExternalObservation{}, err
-	}
-	// Update the ServiceInstance status based on the response from the OSB client.
-	c.updateInstanceStatusFromLastOp(latest, resp)
-	// If the last operation was a deletion and it has succeeded, we can remove the finalizer.
-	// We also check if there are active bindings before removing the finalizer.
-	if si.Status.AtProvider.LastOperationState == "deleting" && !si.Status.AtProvider.HasActiveBindings {
-		return c.removeFinalizer(ctx, si)
-	}
-	// Update the status of the ServiceInstance resource in Kubernetes.
-	if err := c.kube.Status().Update(ctx, latest); err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errUpdateStatus)
-	}
-
-	return managed.ExternalObservation{
-		ResourceExists:   true,
-		ResourceUpToDate: true,
-	}, nil
-}
-
-// handleActiveBindings checks for active ServiceBindings before allowing deletion of the ServiceInstance.
-// If active bindings are found, it updates the ServiceInstance status to reflect this and prevents deletion.
-// If no active bindings are found, it allows the deletion process to proceed.
-// It returns an ExternalObservation indicating that the resource exists and is up to date,
-// along with any error encountered during the process.
-func (c *external) handleDeletionWithActiveBindings(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
-	// List all ServiceBindings in the same namespace as the ServiceInstance.
-	var bindings apisbinding.ServiceBindingList
-	if err := c.kube.List(ctx, &bindings, client.InNamespace(si.GetNamespace())); err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errListBindings)
-	}
-	// Check if there are any existing ServiceBindings associated with this ServiceInstance.
-	// If there are, we cannot delete the ServiceInstance until they are removed.
-	hasActiveBindings := false
-	for _, b := range bindings.Items {
-		//	A binding is considered active if it references this ServiceInstance and is not marked for deletion.
-		if b.Spec.ForProvider.InstanceRef != nil && b.Spec.ForProvider.InstanceRef.Name == si.GetName() && b.DeletionTimestamp.IsZero() {
-			hasActiveBindings = true
-			break
-		}
-	}
-	if hasActiveBindings {
-		// Active bindings exist, we cannot delete the ServiceInstance.
-		si.Status.AtProvider.HasActiveBindings = true
-	} else {
-		// No active bindings, we can proceed with deletion.
-		si.Status.AtProvider.HasActiveBindings = false
-	}
-	// Update the status of the ServiceInstance resource in Kubernetes.
-	if err := c.kube.Status().Update(ctx, si); err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errUpdateStatus)
-	}
-	// If the resource is being deleted, we consider it as existing and up to date.
-	return managed.ExternalObservation{
-		ResourceExists:   true,
-		ResourceUpToDate: true,
-	}, nil
-}
-
-// deprovision handles the deprovisioning of the ServiceInstance in the external system.
-// It constructs a DeprovisionRequest and calls the OSB client's DeprovisionInstance method.
-// If the instance is successfully deprovisioned or does not exist, it returns without error.
-// If the operation is asynchronous, it updates the ServiceInstance status accordingly.
-func (c *external) deprovision(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalDelete, error) {
-	// Build the DeprovisionRequest using the InstanceId from the ServiceInstance spec.
-	req := &osb.DeprovisionRequest{
-		InstanceID:          si.Spec.ForProvider.InstanceId,
-		AcceptsIncomplete:   true,
-		ServiceID:           si.Spec.ForProvider.ServiceId,
-		PlanID:              si.Spec.ForProvider.PlanId,
-		OriginatingIdentity: &c.originatingIdentity,
-	}
-	// Call the OSB client's DeprovisionInstance method to delete the external resource.
-	resp, err := c.client.DeprovisionInstance(req)
-	if err != nil {
-		if httpErr, isHttpErr := osb.IsHTTPError(err); isHttpErr {
-			if httpErr.StatusCode == http.StatusGone || httpErr.StatusCode == http.StatusNotFound {
-				return managed.ExternalDelete{}, nil
-			}
-		}
-		return managed.ExternalDelete{}, errors.Wrap(err, fmt.Sprintf(errRequestFailed, "DeprovisionInstance"))
-	}
-	// Update the ServiceInstance status based on the response from the OSB client.
-	// If the operation is asynchronous, update the last operation state.
-	if resp.Async {
-		si.Status.AtProvider.LastOperationState = "deleting"
-		if resp.OperationKey != nil {
-			si.Status.AtProvider.LastOperationKey = *resp.OperationKey
-		}
-		// Update the status of the ServiceInstance resource in Kubernetes.
-		if err := c.kube.Status().Update(ctx, si); err != nil {
-			return managed.ExternalDelete{}, errors.Wrap(err, "cannot update ServiceInstance status")
-		}
-	}
-	return managed.ExternalDelete{}, nil
-}
-
-// removeFinalizer removes the specified finalizer from the ServiceInstance if it exists.
-func (c *external) removeFinalizer(ctx context.Context, si *v1alpha1.ServiceInstance) (managed.ExternalObservation, error) {
-	// Get the latest version of the ServiceInstance to avoid conflicts during finalizer removal.
-	latest := &v1alpha1.ServiceInstance{}
-	if err := c.kube.Get(ctx, client.ObjectKey{Name: si.Name, Namespace: si.Namespace}, latest); err != nil {
-		return managed.ExternalObservation{}, errors.New(errGetLatest)
-	}
-	// Remove the specified finalizer if it exists.
-	for _, f := range latest.GetFinalizers() {
-		controllerutil.RemoveFinalizer(latest, f)
-	}
-	// Update the status of the ServiceInstance resource in Kubernetes.
-	if err := c.kube.Status().Update(ctx, latest); err != nil {
-		return managed.ExternalObservation{}, errors.Wrap(err, errUpdateStatus)
-	}
-	// If the last operation was a deletion and it has succeeded, we consider the resource as deleted.
-	return managed.ExternalObservation{
-		ResourceExists: false,
-	}, nil
-}
-
-// todo : add getLatestInstance in a util package to be used by serviceinstance and servicebinding
-func (c *external) getLatestInstance(ctx context.Context, si *v1alpha1.ServiceInstance) (*v1alpha1.ServiceInstance, error) {
-	latest := &v1alpha1.ServiceInstance{}
-	if err := c.kube.Get(ctx, client.ObjectKey{Name: si.Name, Namespace: si.Namespace}, latest); err != nil {
-		return nil, errors.New(errGetLatest)
-	}
-	return latest, nil
-}
-
-// todo : add updateInstanceStatusFromLastOp in a util package to be used by serviceinstance and servicebinding
-func (c *external) updateInstanceStatusFromLastOp(si *v1alpha1.ServiceInstance, resp *osb.LastOperationResponse) {
-	// Update the ServiceInstance status based on the response from the OSB client.
-	si.Status.AtProvider.LastOperationState = resp.State
-	if resp.Description != nil {
-		si.Status.AtProvider.LastOperationDescription = *resp.Description
-	}
-	if resp.State == osb.StateSucceeded {
-		si.Status.SetConditions(xpv1.Available())
-		si.Status.AtProvider.LastOperationState = osb.StateSucceeded
-	}
-	if resp.State == osb.StateFailed {
-		si.Status.SetConditions(xpv1.Unavailable())
-	}
 }

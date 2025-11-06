@@ -25,9 +25,10 @@ import (
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 
-	osb "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
@@ -46,39 +47,55 @@ type ServiceBindingParameters struct {
 type ServiceBindingObservation struct {
 	// TODO add context and route to test if these were updated and return error if so
 	Parameters               common.SerializableParameters `json:"parameters,omitempty"`
-	RouteServiceURL          *string                       `json:"route_service_url,omitempty"`
+	RouteServiceURL          *string                       `json:"routeServiceUrl,omitempty"`
 	Endpoints                SerializableEndpoints         `json:"endpoints,omitempty"`
-	VolumeMounts             SerializableVolumeMounts      `json:"volume_mounts,omitempty"`
-	SyslogDrainURL           *string                       `json:"syslog_drain_url,omitempty"`
-	Metadata                 *osb.BindingMetadata          `json:"metadata,omitempty"`
-	LastOperationState       osb.LastOperationState        `json:"last_operation_state,omitempty"`
-	LastOperationKey         osb.OperationKey              `json:"last_operation_key,omitempty"`
-	LastOperationDescription string                        `json:"last_operation_description,omitempty"`
-	LastOperationPolledTime  string                        `json:"last_operation_polled_time,omitempty"`
+	VolumeMounts             SerializableVolumeMounts      `json:"volumeMounts,omitempty"`
+	SyslogDrainURL           *string                       `json:"syslogDrainUrl,omitempty"`
+	Metadata                 *osbClient.BindingMetadata    `json:"metadata,omitempty"`
+	LastOperationState       osbClient.LastOperationState  `json:"lastOperationState,omitempty"`
+	LastOperationKey         osbClient.OperationKey        `json:"lastOperationKey,omitempty"`
+	LastOperationDescription string                        `json:"lastOperationDescription,omitempty"`
+	LastOperationPolledTime  string                        `json:"lastOperationPolled_time,omitempty"`
 }
 
+// SerializableVolumeMounts represents a JSON-encoded slice of osb.VolumeMount.
+// Stored as a string because slices are not directly serializable in Go.
+// It is stored as a string but can be converted back to a slice of VolumeMounts.
 type SerializableVolumeMounts string
 
-func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osb.VolumeMount, error) {
+// ToVolumeMounts deserializes the JSON string into a slice of osb.VolumeMount.
+// Returns an empty slice if the string is nil or empty.
+func (v *SerializableVolumeMounts) ToVolumeMounts() (*[]osbClient.VolumeMount, error) {
 	if v == nil || len([]byte(*v)) == 0 {
-		return &[]osb.VolumeMount{}, nil
+		empty := []osbClient.VolumeMount{}
+		return &empty, nil
 	}
-	res := &[]osb.VolumeMount{}
+
+	res := []osbClient.VolumeMount{}
 	err := json.Unmarshal([]byte(*v), &res)
-	return res, err
+	return &res, err
 }
 
+// SerializableEndpoints represents a JSON-encoded slice of endpoints.
+// Stored as a string because slices are not directly serializable in Go.
+// It is stored as a string but can be converted back to a slice of Endpoints.
 type SerializableEndpoints string
 
-func (v *SerializableEndpoints) ToEndpoints() (*[]osb.Endpoint, error) {
+// ToEndpoints deserializes the JSON string into a slice of osb.Endpoint.
+// Returns an empty slice if the string is nil or empty.
+func (v *SerializableEndpoints) ToEndpoints() (*[]osbClient.Endpoint, error) {
 	if v == nil || len([]byte(*v)) == 0 {
-		return &[]osb.Endpoint{}, nil
+		empty := []osbClient.Endpoint{}
+		return &empty, nil
 	}
-	res := &[]osb.Endpoint{}
+
+	res := []osbClient.Endpoint{}
 	err := json.Unmarshal([]byte(*v), &res)
-	return res, err
+	return &res, err
 }
 
+// String returns the underlying string representation of SerializableEndpoints.
+// Returns an empty string if the receiver is nil.
 func (v *SerializableEndpoints) String() string {
 	if v == nil {
 		return ""
@@ -88,8 +105,8 @@ func (v *SerializableEndpoints) String() string {
 
 // A ServiceBindingSpec defines the desired state of a ServiceBinding.
 type ServiceBindingSpec struct {
-	xpv1.ResourceSpec `json:",inline"`
-	ForProvider       ServiceBindingParameters `json:"forProvider"`
+	xpv2.ManagedResourceSpec `json:",inline"`
+	ForProvider              ServiceBindingParameters `json:"forProvider"`
 }
 
 // A ServiceBindingStatus represents the observed state of a ServiceBinding.
@@ -99,14 +116,15 @@ type ServiceBindingStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
+// +kubebuilder:subresource:status
 
 // A ServiceBinding is an example API type.
 // +kubebuilder:printcolumn:name="READY",type="string",JSONPath=".status.conditions[?(@.type=='Ready')].status"
 // +kubebuilder:printcolumn:name="SYNCED",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status"
 // +kubebuilder:printcolumn:name="EXTERNAL-NAME",type="string",JSONPath=".metadata.annotations.crossplane\\.io/external-name"
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
-// +kubebuilder:subresource:status
-// +kubebuilder:resource:scope=Cluster,categories={crossplane,managed,osb}
+// +kubebuilder:resource:scope=Namespaced,categories={crossplane,managed,osb}
 type ServiceBinding struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -137,3 +155,18 @@ func init() {
 }
 
 // TODO add GetName() function returning the observed uuid
+
+// Custom Response Type for OSB
+type responseData struct {
+	Parameters      map[string]any
+	Endpoints       *[]osbClient.Endpoint
+	VolumeMounts    *[]osbClient.VolumeMount
+	RouteServiceURL *string
+	SyslogDrainURL  *string
+	Metadata        *osbClient.BindingMetadata
+}
+
+type BindingData struct {
+	InstanceData    common.InstanceData
+	ApplicationData common.ApplicationData
+}

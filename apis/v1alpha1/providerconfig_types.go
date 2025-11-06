@@ -22,8 +22,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	xpv1 "github.com/crossplane/crossplane-runtime/apis/common/v1"
-	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 )
 
 // A ProviderConfigSpec defines the desired state of a ProviderConfig.
@@ -33,17 +32,13 @@ type ProviderConfigSpec struct {
 
 	// BrokerURL to send OSB requests to
 	// TODO add kubebuilder validation annotation for URI format
-	BrokerURL string `json:"broker_url"`
+	BrokerURL string `json:"brokerUrl"`
 
 	// OSB version is used to add error management
-	OSBVersion string `json:"osb_version,omitempty"`
+	OSBVersion string `json:"osbVersion,omitempty"`
 
 	// Timeout to replace the default one when creating client
 	Timeout int `json:"timeout,omitempty"`
-
-	// OriginatingIdentityExtraData represents the extra data present in the Originating-Identity header
-	// from the OSB spec.
-	OriginatingIdentityExtraData common.KubernetesOSBOriginatingIdentityExtra `json:"originating_identity_extra_data,omitempty"`
 }
 
 // ProviderCredentials required to authenticate.
@@ -61,12 +56,13 @@ type ProviderConfigStatus struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
+// +kubebuilder:subresource:status
 
 // A ProviderConfig configures a OSB provider.
-// +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
 // +kubebuilder:printcolumn:name="SECRET-NAME",type="string",JSONPath=".spec.credentials.secretRef.name",priority=1
-// +kubebuilder:resource:scope=Cluster
+// +kubebuilder:resource:scope=Namespaced
 type ProviderConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -85,6 +81,31 @@ type ProviderConfigList struct {
 	Items           []ProviderConfig `json:"items"`
 }
 
+// +kubebuilder:object:root=true
+
+// A ClusterProviderConfig configures a Kubernetes provider.
+// +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=".metadata.creationTimestamp"
+// +kubebuilder:printcolumn:name="SECRET-NAME",type="string",JSONPath=".spec.credentials.secretRef.name",priority=1
+// +kubebuilder:resource:scope=Cluster,categories={crossplane,provider,kubernetes}
+type ClusterProviderConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec         ProviderConfigSpec   `json:"spec"`
+	Status       ProviderConfigStatus `json:"status,omitempty"`
+	DisableAsync bool                 `json:"disable_async"`
+}
+
+// +kubebuilder:object:root=true
+
+// ClusterProviderConfigList contains a list of ClusterProviderConfig.
+type ClusterProviderConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []ClusterProviderConfig `json:"items"`
+}
+
 // ProviderConfig type metadata.
 var (
 	ProviderConfigKind             = reflect.TypeOf(ProviderConfig{}).Name()
@@ -93,6 +114,15 @@ var (
 	ProviderConfigGroupVersionKind = SchemeGroupVersion.WithKind(ProviderConfigKind)
 )
 
+// ClusterProviderConfig type metadata.
+var (
+	ClusterProviderConfigKind             = reflect.TypeOf(ClusterProviderConfig{}).Name()
+	ClusterProviderConfigGroupKind        = schema.GroupKind{Group: Group, Kind: ClusterProviderConfigKind}.String()
+	ClusterProviderConfigKindAPIVersion   = ClusterProviderConfigKind + "." + SchemeGroupVersion.String()
+	ClusterProviderConfigGroupVersionKind = SchemeGroupVersion.WithKind(ClusterProviderConfigKind)
+)
+
 func init() {
 	SchemeBuilder.Register(&ProviderConfig{}, &ProviderConfigList{})
+	SchemeBuilder.Register(&ClusterProviderConfig{}, &ClusterProviderConfigList{})
 }
