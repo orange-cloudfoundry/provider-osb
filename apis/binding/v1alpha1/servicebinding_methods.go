@@ -79,6 +79,7 @@ var (
 	errStatusSpecCompareFailed                    = errors.New("failed to compare status and spec provider")
 	errStatusSpecMismatch                         = errors.New("status and spec provider parameters differ")
 	errCannotAddFinalizer                         = errors.New("cannot add finalizer to referenced resource")
+	errCannotHandleUnknowAction                   = errors.New("cannot handle unknown action")
 )
 
 // SetConditions sets the Conditions field in the ServiceBinding status.
@@ -478,17 +479,23 @@ func (sb *ServiceBinding) ObserveState(ctx context.Context,
 	}
 
 	// Manage binding rotation
-	noRenewalData, rotateBinding, err := sb.HandleRenewalBindings(resp, rotate)
+	action, err := sb.HandleRenewalBindings(resp, rotate)
 	if err != nil {
 		return common.NothingToDo, nil, fmt.Errorf("%w: %s", errFailedToHandleRenewalBindings, fmt.Sprint(err))
 	}
 
-	if noRenewalData {
+	switch action {
+	case RenewalData:
 		return common.NothingToDo, credentialsJson, nil
-	}
-
-	if rotateBinding {
+	case RotateBinding:
 		return common.NeedToUpdate, credentialsJson, nil
+	case NothingToDo:
+		// Broker response is valid but missing metadata; cannot process renewal
+		// or
+		// Metadata present, but no renewal data
+		// break
+	default:
+		return common.NothingToDo, nil, errCannotHandleUnknowAction
 	}
 
 	// Compare observed to response
@@ -1080,6 +1087,14 @@ func (sb *ServiceBinding) UpdateBindingStatusFromResponse(resp *osbClient.GetBin
 	return nil
 }
 
+type BindingAction int
+
+const (
+	RenewalData BindingAction = iota
+	RotateBinding
+	NothingToDo
+)
+
 // HandleRenewalBindings evaluates the renewal and expiration status of a ServiceBinding
 // based on the provided GetBindingResponse from the OSB broker.
 //
@@ -1102,43 +1117,43 @@ func (sb *ServiceBinding) UpdateBindingStatusFromResponse(resp *osbClient.GetBin
 //   - Returns (false, true, nil) if rotateBinding is true.
 //   - Otherwise, marks the binding as expiring soon.
 //   - Returns (false, false, nil) if no action is required.
-func (sb *ServiceBinding) HandleRenewalBindings(resp *osbClient.GetBindingResponse, rotateBinding bool) (bool, bool, error) {
+func (sb *ServiceBinding) HandleRenewalBindings(resp *osbClient.GetBindingResponse, rotateBinding bool) (BindingAction, error) {
 	if resp == nil {
 		// Defensive: should never happen, but prevents future panics
-		return false, false, fmt.Errorf("%w:  %s/%s", errNilBindingResponse, sb.GetNamespace(), sb.GetName())
+		return NothingToDo, fmt.Errorf("%w:  %s/%s", errNilBindingResponse, sb.GetNamespace(), sb.GetName())
 	}
 
 	if resp.Metadata == nil {
 		// Broker response is valid but missing metadata; cannot process renewal
-		return false, false, nil
+		return NothingToDo, nil
 	}
 
 	if resp.Metadata.RenewBefore == "" {
 		// Metadata present, but no renewal data
-		return true, false, nil
+		return RenewalData, nil
 	}
 
 	renewBeforeTime, err := util.ParseISO8601Time(resp.Metadata.RenewBefore, "renewBefore")
 	if err != nil {
-		return false, false, err
+		return NothingToDo, err
 	}
 
 	if renewBeforeTime.Before(time.Now()) {
 		expireAtTime, err := util.ParseISO8601Time(resp.Metadata.ExpiresAt, "expiresAt")
 		if err != nil {
-			return false, false, err
+			return NothingToDo, err
 		}
 
 		expired := sb.MarkBindingIfExpired(expireAtTime)
 
 		if rotateBinding {
-			return false, true, nil
+			return RotateBinding, nil
 		} else if !expired {
 			sb.MarkBindingAsExpiringSoon(expireAtTime)
 		}
 	}
 
-	return false, false, nil
+	return NothingToDo, nil
 }
 
 // addRefFinalizer adds the reference finalizer to the ServiceInstance object referenced by the binding
