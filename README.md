@@ -12,21 +12,16 @@ It declaratively manages, within Kubernetes, the lifecycle of **ServiceInstances
 * Support for both synchronous and asynchronous operations
 * Automatic injection of credentials into Kubernetes Secrets, matching those provided during the binding process
 
-## Prerequisites
-
-* A Kubernetes cluster (v1.20+ recommended)
-* [Crossplane](https://crossplane.io/) installed
-* Access to an OSB-compliant broker
-
 ## Installation
 
 ### Installation Prerequisites
 
 Before installing **provider-osb**, ensure you have:
 
-* A running Kubernetes cluster
+* A Kubernetes cluster (v1.20+ recommended)
+* [Crossplane](https://crossplane.io/) installed
+* Access to an OSB-compliant broker
 * `kubectl` configured to access your cluster
-* Crossplane installed in your cluster
 * `make` installed on your system
 * Access to the necessary Git repositories
 
