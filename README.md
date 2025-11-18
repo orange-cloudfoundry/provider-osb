@@ -3,14 +3,115 @@
 ## Overview
 
 The **provider-osb** is a [Crossplane](https://crossplane.io/) provider that enables interaction with brokers compliant with the [Open Service Broker API (OSB API)](https://github.com/cloudfoundry/servicebroker) [specification](https://github.com/cloudfoundry/servicebroker/blob/v2.17/spec.md) to manage external services.
-It declaratively manages, within Kubernetes, the lifecycle of **ServiceInstances** (provisioning, updating, deletion) and **ServiceBindings** (binding and rotation) through the Custom Resource Definitions (CRDs) provided by the provider.
+It declaratively manages, within Kubernetes, the lifecycle of **ServiceInstances** (provisioning, updating, deprovisioning) and **ServiceBindings** (binding, rotation and unbinding) through this provider's managed resources (instead of "through the Custom Resource Definitions (CRDs) provided by the provider").
 
 ## Features
 
 * Declarative management of services through brokers compliant with the OSB specification
-* Provisioning, updating, binding, and deletion of services
+* Provisioning, updating, binding, deprovisioning and add unbinding
 * Support for both synchronous and asynchronous operations
 * Automatic injection of credentials into Kubernetes Secrets, matching those provided during the binding process
+
+## Concrete Usage Examples
+
+### Example ProviderConfig for Connecting to an OSB Broker
+
+**ProviderConfig**: A configuration resource that defines the connection and authentication parameters for the OSB broker. It is referenced by all other provider resources.
+
+```yaml
+apiVersion: osb.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: my-osb-provider-config
+spec:
+  broker_url: http://0.0.0.0:5000
+  osb_version: "2.13"
+  credentials:
+    source: Secret
+    secretRef:
+      namespace: my-osb-provider
+      name: osb-creds
+      key: creds
+  disable_async: false
+```
+
+### Provisioning a Service (Example: Database)
+
+**ServiceInstance**: A resource representing a provisioned instance of an external service, such as a database, cache, or other cloud service.
+
+```yaml
+apiVersion: instance.m.osb.crossplane.io/v1alpha1
+kind: ServiceInstance
+metadata:
+  name: my-db-instance
+  namespace: my-osb-provider
+spec:
+  providerConfigRef:
+    name: my-osb-provider
+    kind: ProviderConfig
+  forProvider:
+    appGuid: my-app-guid
+    instanceId: 123e4567-e89b-12d3-a456-426614174000
+    serviceId: mysql-service-id
+    planId: 123e4567-e89b-12d3-a456-426614174000
+    organizationGuid: 123e4567-e89b-12d3-a456-426614174000
+    spaceGuid: 123e4567-e89b-12d3-a456-426614174000
+    parameters: |
+      {
+        "version": "2.13",
+        "configuration": {
+          "worker_processes": "string",
+          "worker_connections": 0
+        }
+      }
+    context:
+      platform: kubernetes
+      clusterId: my-cluster-id
+      namespace: my-osb-provider
+      instanceName: my-db-instance
+```
+
+### Creating a Binding to Access the Service
+
+**ServiceBinding**: A resource that establishes a connection between an Application and a ServiceInstance. It provides the application with the necessary information (such as credentials or secrets) to access the external service.
+
+```yaml
+apiVersion:  binding.m.osb.crossplane.io/v1alpha1
+kind: ServiceBinding
+metadata:
+  name: my-db-binding
+  namespace: my-osb-provider
+spec:
+  providerConfigRef:
+    name: my-osb-provider
+    kind: ProviderConfig
+  forProvider:
+    parameters: |
+      {
+        "backend_ip": "10.0.0.5",
+        "server_name": "example.com",
+        "ssl_certificate": "-----BEGIN CERTIFICATE----- ... -----END CERTIFICATE-----",
+        "ssl_certificate_key": "-----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----"
+      }
+    context:
+      clusterId: my-cluster-id
+      instanceName: my-db-instance
+      namespace: my-app-namespace
+      platform: kubernetes
+    appGuid: my-app-guid
+    instanceData:
+      appGuid: my-app-guid
+      instanceId: 123e4567-e89b-12d3-a456-426614174000
+      serviceId: mysql-service-id
+      planId: 123e4567-e89b-12d3-a456-426614174000
+      organizationGuid: 123e4567-e89b-12d3-a456-426614174000
+      spaceGuid: 123e4567-e89b-12d3-a456-426614174000
+      context:
+        clusterId: my-cluster-id
+        instanceName: my-db-instance
+        namespace: my-osb-provider
+        platform: kubernetes
+```
 
 ## Installation
 
@@ -171,105 +272,6 @@ Process of renewing access credentials for the service:
 Process of deleting an existing binding:
 
 <img src="/docs/images/ServiceBinding_delete.png" alt="ServiceBinding Deletion" style="width: 65%; max-width: 700px;">
-
-## Concrete Usage Examples
-
-### Example ProviderConfig for Connecting to an OSB Broker
-
-**ProviderConfig**: A configuration resource that defines the connection and authentication parameters for the OSB broker. It is referenced by all other provider resources.
-
-```yaml
-apiVersion: osb.crossplane.io/v1alpha1
-kind: ProviderConfig
-metadata:
-  name: my-osb-provider-config
-spec:
-  broker_url: http://0.0.0.0:5000
-  osb_version: "2.13"
-  credentials:
-    source: Secret
-    secretRef:
-      namespace: my-osb-provider
-      name: osb-creds
-      key: creds
-  disable_async: false
-```
-
-### Provisioning a Service (Example: Database)
-
-**ServiceInstance**: A resource representing a provisioned instance of an external service, such as a database, cache, or other cloud service.
-
-```yaml
-apiVersion: instance.m.osb.crossplane.io/v1alpha1
-kind: ServiceInstance
-metadata:
-  name: my-db-instance
-  namespace: my-osb-provider
-spec:
-  providerConfigRef:
-    name: my-osb-provider
-    kind: ProviderConfig
-  forProvider:
-    instanceId: 123e4567-e89b-12d3-a456-426614174000
-    serviceId: mysql-service-id
-    planId: 123e4567-e89b-12d3-a456-426614174000
-    organizationGuid: 123e4567-e89b-12d3-a456-426614174000
-    spaceGuid: 123e4567-e89b-12d3-a456-426614174000
-    parameters: |
-      {
-        "version": "2.13",
-        "configuration": {
-          "worker_processes": "string",
-          "worker_connections": 0
-        }
-      }
-    context:
-      platform: kubernetes
-      clusterId: my-cluster-id
-      namespace: my-osb-provider
-      instanceName: my-db-instance
-```
-
-### Creating a Binding to Access the Service
-
-**ServiceBinding**: A resource that establishes a connection between an Application and a ServiceInstance. It provides the application with the necessary information (such as credentials or secrets) to access the external service.
-
-```yaml
-apiVersion:  binding.m.osb.crossplane.io/v1alpha1
-kind: ServiceBinding
-metadata:
-  name: my-db-binding
-  namespace: my-osb-provider
-spec:
-  providerConfigRef:
-    name: my-osb-provider
-    kind: ProviderConfig
-  forProvider:
-    parameters: |
-      {
-        "backend_ip": "10.0.0.5",
-        "server_name": "example.com",
-        "ssl_certificate": "-----BEGIN CERTIFICATE----- ... -----END CERTIFICATE-----",
-        "ssl_certificate_key": "-----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----"
-      }
-    context:
-      clusterId: my-cluster-id
-      instanceName: my-db-instance
-      namespace: my-app-namespace
-      platform: kubernetes
-    appGuid: my-app-guid
-    instanceData:
-      instanceId: 123e4567-e89b-12d3-a456-426614174000
-      serviceId: mysql-service-id
-      planId: 123e4567-e89b-12d3-a456-426614174000
-      organizationGuid: 123e4567-e89b-12d3-a456-426614174000
-      spaceGuid: 123e4567-e89b-12d3-a456-426614174000
-      context:
-        clusterId: my-cluster-id
-        instanceName: my-db-instance
-        namespace: my-osb-provider
-        platform: kubernetes
-```
 
 ## Contribution Guidelines
 
