@@ -53,15 +53,6 @@ func (sb *ServiceInstance) SetConditions(c ...xpv1.Condition) {
 	sb.Status.Conditions = c
 }
 
-// GetProviderConfigReference of this ServiceInstance.
-func (si *ServiceInstance) GetProviderConfigReference() *xpv1.ProviderConfigReference {
-	if si.Spec.ForProvider.ApplicationData == nil {
-		return nil
-	}
-
-	return si.Spec.ForProvider.ApplicationData.ProviderConfigReference
-}
-
 // SetLastOperationState sets the LastOperationState in the ServiceInstance status.
 // This is used to track the state of the last operation performed on the instance.
 func (si *ServiceInstance) SetLastOperationState(state osbClient.LastOperationState) {

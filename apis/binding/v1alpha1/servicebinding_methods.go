@@ -800,24 +800,6 @@ func (sbp *ServiceBindingParameters) HasInstanceData() bool {
 	return sbp.InstanceData != nil
 }
 
-// HasApplicationRef returns true if the ServiceBindingParameters has an associated ApplicationRef.
-func (sbp *ServiceBindingParameters) HasApplicationRef() bool {
-	return sbp.ApplicationRef != nil
-}
-
-// HasApplicationData returns true if the ServiceBindingParameters contains ApplicationData.
-// This indicates whether the binding has been associated with a ServiceInstance
-// and has stored instance-specific information.
-func (sbp *ServiceBindingParameters) HasApplicationData() bool {
-	return sbp.ApplicationData != nil
-}
-
-// GetApplicationData returns the inline ApplicationData stored in the
-// ServiceBindingParameters, if available. Returns nil if no inline data exists.
-func (sbp *ServiceBindingParameters) GetApplicationData() *common.ApplicationData {
-	return sbp.ApplicationData
-}
-
 // ensureBindingUUID returns the existing external name or generates a new UUID if missing.
 func (sb *ServiceBinding) EnsureBindingUUID() string {
 	if id := meta.GetExternalName(sb); id != "" {
@@ -849,7 +831,7 @@ func (sb *ServiceBinding) buildBindRequest(
 		ServiceID:           bindingData.InstanceData.ServiceId,
 	}
 
-	sb.addBindResource(&bindRequest, bindingData)
+	sb.addBindResource(&bindRequest)
 	addContextAndParams(&bindRequest, ctxMap, params)
 
 	return bindRequest, nil
@@ -876,11 +858,13 @@ func validateInputs(bindingData BindingData, oid osbClient.OriginatingIdentity) 
 }
 
 // addBindResource sets the BindResource and AppGUID.
-func (sb *ServiceBinding) addBindResource(bindRequest *osbClient.BindRequest, bindingData BindingData) {
+func (sb *ServiceBinding) addBindResource(bindRequest *osbClient.BindRequest) {
 	bindResource := &osbClient.BindResource{}
 
-	bindResource.AppGUID = &bindingData.ApplicationData.Guid
-	bindRequest.AppGUID = &bindingData.ApplicationData.Guid
+	if sb.Spec.ForProvider.AppGuid != "" {
+		bindResource.AppGUID = &sb.Spec.ForProvider.AppGuid
+		bindRequest.AppGUID = &sb.Spec.ForProvider.AppGuid
+	}
 
 	bindResource.Route = &sb.Spec.ForProvider.Route
 
@@ -1017,12 +1001,6 @@ func (sb *ServiceBinding) ConvertSpecsData() (map[string]any, map[string]any, er
 		return nil, nil, fmt.Errorf("%w: %s", errFailedUnMarshallingRequestParams, fmt.Sprint(err))
 	}
 	return requestContext, requestParams, nil
-}
-
-// GetApplicationRef returns the reference to the associated application
-// from the ServiceBindingParameters. It may return nil if no reference is set.
-func (sbp *ServiceBindingParameters) GetApplicationRef() *common.NamespacedName {
-	return sbp.ApplicationRef
 }
 
 // handleBindRequest sends a bind request to the OSB (Open Service Broker) client

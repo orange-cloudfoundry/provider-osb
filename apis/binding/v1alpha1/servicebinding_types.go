@@ -33,13 +33,12 @@ import (
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.
 type ServiceBindingParameters struct {
-	ApplicationRef  *common.NamespacedName        `json:"application,omitempty"`
-	ApplicationData *common.ApplicationData       `json:"applicationData,omitempty"`
-	InstanceRef     *common.NamespacedName        `json:"instance,omitempty"`
-	InstanceData    *common.InstanceData          `json:"instanceData,omitempty"`
-	Context         common.KubernetesOSBContext   `json:"context,omitempty"`
-	Parameters      common.SerializableParameters `json:"parameters,omitempty"`
-	Route           string                        `json:"route,omitempty"`
+	AppGuid      string                        `json:"appGuid,omitempty"`
+	InstanceRef  *common.NamespacedName        `json:"instance,omitempty"`
+	InstanceData *common.InstanceData          `json:"instanceData,omitempty"`
+	Context      common.KubernetesOSBContext   `json:"context,omitempty"`
+	Parameters   common.SerializableParameters `json:"parameters,omitempty"`
+	Route        string                        `json:"route,omitempty"`
 	// TODO manage additional attributes
 }
 
@@ -167,6 +166,5 @@ type responseData struct {
 }
 
 type BindingData struct {
-	InstanceData    common.InstanceData
-	ApplicationData common.ApplicationData
+	InstanceData common.InstanceData
 }
