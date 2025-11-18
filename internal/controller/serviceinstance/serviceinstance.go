@@ -174,13 +174,11 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 		return managed.ExternalObservation{
 			ResourceExists: false,
 		}, nil
-
 	case common.NothingToDo:
 		return managed.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: true,
 		}, nil
-
 	case common.NeedToUpdate:
 		return managed.ExternalObservation{
 			ResourceExists:   true,
@@ -189,7 +187,6 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 				"dashboardURL": []byte(osbInstance.DashboardURL),
 			},
 		}, nil
-
 	default:
 		return managed.ExternalObservation{}, nil
 	}
