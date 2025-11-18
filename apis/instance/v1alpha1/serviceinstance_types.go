@@ -31,25 +31,44 @@ import (
 type ServiceInstanceSpec struct {
 	xpv2.ManagedResourceSpec `json:",inline"`
 
+	// +kubebuilder:validation:Required
 	ForProvider common.InstanceData `json:"forProvider"`
-
-	InitProvider common.InstanceData `json:"initProvider,omitempty"`
 }
 
 type ServiceInstanceStatus struct {
 	xpv1.ResourceStatus `json:",inline"`
-	AtProvider          ServiceInstanceObservation `json:"atProvider,omitempty"`
+	// +kubebuilder:validation:Optional
+	AtProvider ServiceInstanceObservation `json:"atProvider,omitempty"`
 }
 
 type ServiceInstanceObservation struct {
-	AppGuid                  string `json:"appGuid,omitempty"`
-	common.InstanceData      `json:",inline"`
-	Context                  common.KubernetesOSBContext  `json:"context,omitempty"`
-	DashboardURL             *string                      `json:"dashboardURL,omitempty"`
-	LastOperationState       osbClient.LastOperationState `json:"lastOperationState,omitempty"`
-	LastOperationKey         osbClient.OperationKey       `json:"lastOperationKey,omitempty"`
-	LastOperationDescription string                       `json:"lastOperationDescription,omitempty"`
-	HasActiveBindings        bool                         `json:"hasActiveBindings,omitempty"`
+	// +kubebuilder:validation:Optional
+	AppGuid string `json:"appGuid,omitempty"`
+	// +kubebuilder:validation:Optional
+	InstanceId string `json:"instanceId"`
+	// +kubebuilder:validation:Optional
+	PlanId string `json:"planId"`
+	// +kubebuilder:validation:Optional
+	ServiceId string `json:"serviceId"`
+	// +kubebuilder:validation:Optional
+	Context common.KubernetesOSBContext `json:"context,omitempty"`
+	// +kubebuilder:validation:Optional
+	Parameters common.SerializableParameters `json:"parameters,omitempty"`
+	// +kubebuilder:validation:Optional
+	OrganizationGuid string `json:"organizationGuid"`
+	// +kubebuilder:validation:Optional
+	SpaceGuid string `json:"spaceGuid"`
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Pattern=`^https?://.+`
+	DashboardURL *string `json:"dashboardURL,omitempty"`
+	// +kubebuilder:validation:Optional
+	LastOperationState osbClient.LastOperationState `json:"lastOperationState,omitempty"`
+	// +kubebuilder:validation:Optional
+	LastOperationKey osbClient.OperationKey `json:"lastOperationKey,omitempty"`
+	// +kubebuilder:validation:Optional
+	LastOperationDescription string `json:"lastOperationDescription,omitempty"`
+	// +kubebuilder:validation:Optional
+	HasActiveBindings bool `json:"hasActiveBindings,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -66,7 +85,9 @@ type ServiceInstance struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   ServiceInstanceSpec   `json:"spec"`
+	// +kubebuilder:validation:Required
+	Spec ServiceInstanceSpec `json:"spec"`
+	// +kubebuilder:validation:Optional
 	Status ServiceInstanceStatus `json:"status,omitempty"`
 }
 
