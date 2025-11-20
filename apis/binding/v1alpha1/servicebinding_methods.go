@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-	instance "github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 )
 
@@ -49,13 +48,6 @@ var (
 	errBindingIdEmpty                             = errors.New("bindingID is empty")
 	errNewBindingUUIDEmpty                        = errors.New("new binding uuid is empty")
 	errFailedToBuildRotateBindingRequest          = errors.New("failed to build rotate binding request")
-	errCannotGetBindingData                       = errors.New("cannot get data from ServiceBinding")
-	errInstanceNotFound                           = errors.New("referenced service instance not found")
-	errInstanceFetchFailed                        = errors.New("failed to retrieve referenced service instance")
-	errMissingInstanceData                        = errors.New("missing instance data: no reference or inlined data provided")
-	errInstanceRefEmpty                           = errors.New("instance ref is empty")
-	errServiceBindingEmpty                        = errors.New("service binding is empty")
-	errRetrieveBindingDataFailed                  = errors.New("failed to retrieve binding data")
 	errFailedToBuildBindRequest                   = errors.New("failed to build bind request")
 	errConvertBindingSpecFailed                   = errors.New("failed to convert binding spec data")
 	errOSBBindRequestFailed                       = errors.New("OSB Bind request failed")
@@ -66,7 +58,6 @@ var (
 	errFailedToBuildUnbindRequest                 = errors.New("failed to build unbind request")
 	errFailedToHandleBindRequest                  = errors.New("failed to handle bind request")
 	errTechnicalEncountered                       = errors.New("technical error encountered")
-	errCannotRemoveFinalizer                      = errors.New("cannot remove finalizer from referenced resource")
 	errFailedToBuildBindingLastOperationRequest   = errors.New("failed to build binding last operation request")
 	errOSBPollBindingLastOperationRequestFailed   = errors.New("OSB PollBindingLastOperation request failed")
 	errFailedToBuildGetBindingRequest             = errors.New("failed to build get binding request")
@@ -77,7 +68,6 @@ var (
 	errFailedToHandleRenewalBindings              = errors.New("failed to handle renewal bindings")
 	errStatusSpecCompareFailed                    = errors.New("failed to compare status and spec provider")
 	errStatusSpecMismatch                         = errors.New("status and spec provider parameters differ")
-	errCannotAddFinalizer                         = errors.New("cannot add finalizer to referenced resource")
 	errCannotHandleUnknowAction                   = errors.New("cannot handle unknown action")
 )
 
@@ -250,8 +240,8 @@ func (sb *ServiceBinding) IsStatusParametersNotLikeSpecParameters() (bool, error
 // CreateGetBindingRequest constructs an OSB GetBindingRequest for the ServiceBinding.
 // It uses the external name of the binding as the BindingID and the associated
 // ServiceInstance's InstanceID.
-func (sb *ServiceBinding) buildGetBindingRequest(bindingData BindingData) (*osbClient.GetBindingRequest, error) {
-	if bindingData.InstanceData.InstanceId == "" {
+func (sb *ServiceBinding) buildGetBindingRequest() (*osbClient.GetBindingRequest, error) {
+	if sb.Spec.ForProvider.InstanceId == "" {
 		return &osbClient.GetBindingRequest{}, errInstanceIdIsEmpty
 	}
 
@@ -261,13 +251,13 @@ func (sb *ServiceBinding) buildGetBindingRequest(bindingData BindingData) (*osbC
 	}
 
 	return &osbClient.GetBindingRequest{
-		InstanceID: bindingData.InstanceData.InstanceId,
+		InstanceID: sb.Spec.ForProvider.InstanceId,
 		BindingID:  bindingId,
 	}, nil
 }
 
 // buildRotateBindingRequest constructs an OSB RotateBindingRequest for a binding.
-func (sb *ServiceBinding) buildRotateBindingRequest(bindingData BindingData, oid osbClient.OriginatingIdentity, newUUID string) (*osbClient.RotateBindingRequest, error) {
+func (sb *ServiceBinding) buildRotateBindingRequest(oid osbClient.OriginatingIdentity, newUUID string) (*osbClient.RotateBindingRequest, error) {
 	if oid.Platform == "" {
 		return &osbClient.RotateBindingRequest{}, errOidPlatformIsEmpty
 	}
@@ -276,7 +266,7 @@ func (sb *ServiceBinding) buildRotateBindingRequest(bindingData BindingData, oid
 		return &osbClient.RotateBindingRequest{}, errOidValueIsEmpty
 	}
 
-	if bindingData.InstanceData.InstanceId == "" {
+	if sb.Spec.ForProvider.InstanceId == "" {
 		return &osbClient.RotateBindingRequest{}, errInstanceIdIsEmpty
 	}
 
@@ -290,24 +280,12 @@ func (sb *ServiceBinding) buildRotateBindingRequest(bindingData BindingData, oid
 	}
 
 	return &osbClient.RotateBindingRequest{
-		InstanceID:           bindingData.InstanceData.InstanceId,
+		InstanceID:           sb.Spec.ForProvider.InstanceId,
 		BindingID:            newUUID,
 		AcceptsIncomplete:    true, // TODO: make configurable
 		PredecessorBindingID: predecessorBindingID,
 		OriginatingIdentity:  &oid,
 	}, nil
-}
-
-// removeRefFinalizer adds removes the reference finalizer to the ServiceInstance object referenced by the binding
-// (if there is one)
-func (sb *ServiceBinding) removeRefFinalizer(ctx context.Context, kube client.Client) error {
-	// Remove finalizer from referenced ServiceInstance
-	instanceRef := sb.Spec.ForProvider.InstanceRef
-	if instanceRef != nil {
-		finalizerName := fmt.Sprintf("%s-%s", referenceFinalizerName, sb.Name)
-		return util.HandleFinalizer(ctx, kube, sb, finalizerName, util.RemoveFinalizerIfExists)
-	}
-	return nil
 }
 
 // handlePollError processes errors returned during polling of a ServiceBinding's last operation.
@@ -335,11 +313,6 @@ func (sb *ServiceBinding) handlePollError(ctx context.Context, kube client.Clien
 		// Remove async finalizer from the binding
 		if err := util.HandleFinalizer(ctx, kube, sb, asyncDeletionFinalizer, util.RemoveFinalizerIfExists); err != nil {
 			return true, common.NothingToDo, fmt.Errorf("%w: %s", errTechnicalEncountered, fmt.Sprint(err))
-		}
-
-		// Remove reference finalizer from the related ServiceInstance
-		if err := sb.removeRefFinalizer(ctx, kube); err != nil {
-			return true, common.NothingToDo, fmt.Errorf("%w: %s", errCannotRemoveFinalizer, fmt.Sprint(err))
 		}
 
 		return true, common.NeedToCreate, nil
@@ -375,9 +348,8 @@ func (sb *ServiceBinding) handleLastOperationInProgress(
 	ctx context.Context,
 	kube client.Client,
 	osb osbClient.Client,
-	bindingData BindingData,
 	oid osbClient.OriginatingIdentity) (common.Action, error) {
-	req, err := sb.buildBindingLastOperationRequest(bindingData, oid)
+	req, err := sb.buildBindingLastOperationRequest(oid)
 	if err != nil {
 		return common.NothingToDo, fmt.Errorf("%w: %s", errFailedToBuildBindingLastOperationRequest, fmt.Sprint(err))
 	}
@@ -432,14 +404,9 @@ func (sb *ServiceBinding) ObserveState(ctx context.Context,
 	rotate bool,
 	oid osbClient.OriginatingIdentity) (common.Action, map[string][]byte, error) {
 
-	bindingData, err := sb.GetDataFromServiceBinding(ctx, kube)
-	if err != nil {
-		return common.NothingToDo, nil, fmt.Errorf("%w: %s", errCannotGetBindingData, fmt.Sprint(err))
-	}
-
 	// Manage pending async operations (poll only for "in progress" state)
 	if sb.IsStateInProgress() {
-		action, err := sb.handleLastOperationInProgress(ctx, kube, osb, bindingData, oid)
+		action, err := sb.handleLastOperationInProgress(ctx, kube, osb, oid)
 		if err != nil {
 			return common.NothingToDo, nil, err
 		}
@@ -453,7 +420,7 @@ func (sb *ServiceBinding) ObserveState(ctx context.Context,
 	}
 
 	// get binding from broker
-	req, err := sb.buildGetBindingRequest(bindingData)
+	req, err := sb.buildGetBindingRequest()
 	if err != nil {
 		return common.NothingToDo, nil, fmt.Errorf("%w: %s", errFailedToBuildGetBindingRequest, fmt.Sprint(err))
 	}
@@ -508,10 +475,6 @@ func (sb *ServiceBinding) ObserveState(ctx context.Context,
 		return common.NothingToDo, nil, errStatusSpecMismatch
 	}
 
-	if err = sb.AddRefFinalizer(ctx, kube); err != nil {
-		return common.NothingToDo, nil, fmt.Errorf("%w: %s", errCannotAddFinalizer, fmt.Sprint(err))
-	}
-
 	return common.NothingToDo, credentialsJson, nil
 }
 
@@ -521,12 +484,6 @@ func (sb *ServiceBinding) ObserveState(ctx context.Context,
 // the Bind request to the broker. It returns the broker’s BindResponse,
 // a boolean indicating whether the operation is asynchronous, and any error encountered.
 func (sb *ServiceBinding) Bind(ctx context.Context, kube client.Client, osb osbClient.Client, oid osbClient.OriginatingIdentity) (*osbClient.BindResponse, bool, error) {
-	// Retrieve instance and application data for the binding.
-	bindingData, err := sb.GetDataFromServiceBinding(ctx, kube)
-	if err != nil {
-		return nil, false, fmt.Errorf("%w: %s", errRetrieveBindingDataFailed, fmt.Sprint(err))
-	}
-
 	// Convert OSB context and parameters from the spec.
 	requestContext, requestParams, err := sb.ConvertSpecsData()
 	if err != nil {
@@ -534,7 +491,7 @@ func (sb *ServiceBinding) Bind(ctx context.Context, kube client.Client, osb osbC
 	}
 
 	// Build OSB BindRequest.
-	req, err := sb.buildBindRequest(bindingData, oid, requestContext, requestParams)
+	req, err := sb.buildBindRequest(oid, requestContext, requestParams)
 	if err != nil {
 		return nil, false, fmt.Errorf("%w, %s", errFailedToBuildBindRequest, fmt.Sprint(err))
 	}
@@ -604,13 +561,7 @@ func (sb *ServiceBinding) handleUnBindRequest(
 //  3. Executes the unbind request via handleUnBindRequest, handling asynchronous responses if necessary.
 //  4. Returns true if the operation is asynchronous, false otherwise, along with any errors encountered.
 func (sb *ServiceBinding) UnBind(ctx context.Context, kube client.Client, osb osbClient.Client, oid osbClient.OriginatingIdentity) (bool, error) {
-	// Fetch binding data (instance & application)
-	bindingData, err := sb.GetDataFromServiceBinding(ctx, kube)
-	if err != nil {
-		return false, fmt.Errorf("%w: %s", errRetrieveBindingDataFailed, fmt.Sprint(err))
-	}
-
-	req, err := sb.BuildUnbindRequest(bindingData, oid)
+	req, err := sb.BuildUnbindRequest(oid)
 	if err != nil {
 		return false, fmt.Errorf("%w: %s", errFailedToBuildUnbindRequest, fmt.Sprint(err))
 	}
@@ -637,79 +588,6 @@ func extractCredentials(resp *osbClient.BindResponse) (map[string][]byte, error)
 	return creds, nil
 }
 
-// ResolveServiceInstance retrieves a ServiceInstance object from Kubernetes
-// based on the InstanceRef provided in the ServiceBindingParameters spec.
-// It returns an error if the referenced ServiceInstance does not exist
-// or if any other Kubernetes client error occurs.
-func (sbp *ServiceBindingParameters) resolveServiceInstance(ctx context.Context, kube client.Client) (instance.ServiceInstance, error) {
-	if sbp.InstanceRef == nil {
-		return instance.ServiceInstance{}, errInstanceRefEmpty
-	}
-
-	serviceInstance := instance.ServiceInstance{}
-	if err := kube.Get(ctx, sbp.InstanceRef.ToObjectKey(), &serviceInstance); err != nil {
-		if kerrors.IsNotFound(err) {
-			return instance.ServiceInstance{}, err
-		}
-		return instance.ServiceInstance{}, err
-	}
-	return serviceInstance, nil
-}
-
-// resolveInstanceData handles fetching instance data either from reference or inlined.
-func (sb *ServiceBinding) resolveInstanceData(
-	ctx context.Context,
-	kube client.Client,
-	sbp ServiceBindingParameters,
-) (*common.InstanceData, error) {
-	if sbp.HasInstanceRef() {
-		instance, err := sbp.resolveServiceInstance(ctx, kube)
-		if err != nil {
-			if kerrors.IsNotFound(err) {
-				return nil, fmt.Errorf("%w: %s/%s", errInstanceNotFound, sb.Namespace, sb.Name)
-			}
-			return nil, fmt.Errorf("%w: %s", errInstanceFetchFailed, fmt.Sprint(err))
-		}
-
-		instanceData := &common.InstanceData{}
-		instanceData.Set(instance.GetSpecForProvider())
-
-		return instanceData, nil
-	}
-
-	if sbp.HasInstanceData() {
-		return sbp.InstanceData, nil
-	}
-
-	return nil, errMissingInstanceData
-}
-
-// GetDataFromServiceBinding retrieves instance data required
-// for handling a ServiceBinding. It supports fetching from either a direct reference
-// (InstanceRef) or inlined InstanceData in the spec, and similarly for application data.
-// Returns a BindingData struct containing both instance and application data,
-// or an error if any required data is missing or cannot be retrieved.
-func (sb *ServiceBinding) GetDataFromServiceBinding(
-	ctx context.Context,
-	kube client.Client,
-) (BindingData, error) {
-
-	if sb == nil {
-		return BindingData{}, errServiceBindingEmpty
-	}
-
-	spec := sb.Spec.ForProvider
-
-	instanceData, err := sb.resolveInstanceData(ctx, kube, spec)
-	if err != nil {
-		return BindingData{}, err
-	}
-
-	return BindingData{
-		InstanceData: *instanceData,
-	}, nil
-}
-
 // TriggerRotation initiates a rotation of the ServiceBinding's credentials with the OSB (Open Service Broker) service.
 //
 // Parameters:
@@ -734,13 +612,7 @@ func (sb *ServiceBinding) GetDataFromServiceBinding(
 func (sb *ServiceBinding) TriggerRotation(ctx context.Context, kube client.Client, osb osbClient.Client, oid osbClient.OriginatingIdentity) (map[string][]byte, error) {
 	newUUID := string(uuid.NewUUID())
 
-	// Prepare binding rotation request
-	bindingData, err := sb.GetDataFromServiceBinding(ctx, kube)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s", errCannotGetBindingData, fmt.Sprint(err))
-	}
-
-	req, err := sb.buildRotateBindingRequest(bindingData, oid, newUUID)
+	req, err := sb.buildRotateBindingRequest(oid, newUUID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", errFailedToBuildRotateBindingRequest, fmt.Sprint(err))
 	}
@@ -768,42 +640,9 @@ func (sb *ServiceBinding) TriggerRotation(ctx context.Context, kube client.Clien
 	return nil, nil
 }
 
-// HasInstanceRef returns true if the ServiceBindingParameters has an associated InstanceRef.
-func (sbp *ServiceBindingParameters) HasInstanceRef() bool {
-	return sbp.InstanceRef != nil
-}
-
-// HasNoInstanceRef returns true if the ServiceBindingParameters does NOT have an associated InstanceRef.
-func (sb *ServiceBinding) HasNoInstanceRef() bool {
-	return sb.Spec.ForProvider.InstanceRef == nil
-}
-
-// GetInstanceRef returns the reference to the ServiceInstance that this
-// ServiceBinding is associated with. The returned value is a pointer to a
-// NamespacedName, containing the name and namespace of the referenced instance.
-func (sbp *ServiceBindingParameters) GetInstanceRef() *common.NamespacedName {
-	return sbp.InstanceRef
-}
-
-// IsBoundToInstance returns true if the ServiceBinding is linked to the ServiceInstance
-// with the given name.
-func (sb *ServiceBinding) IsBoundToInstance(instanceName string) bool {
-	if sb.Spec.ForProvider.InstanceRef == nil {
-		return false
-	}
-	return sb.Spec.ForProvider.InstanceRef.Name == instanceName
-}
-
 // IsNotBeingDeleted returns true if the ServiceBinding has not been marked for deletion.
 func (sb *ServiceBinding) IsNotBeingDeleted() bool {
 	return sb.DeletionTimestamp.IsZero()
-}
-
-// HasInstanceData returns true if the ServiceBindingParameters contains InstanceData.
-// This indicates whether the binding has been associated with a ServiceInstance
-// and has stored instance-specific information.
-func (sbp *ServiceBindingParameters) HasInstanceData() bool {
-	return sbp.InstanceData != nil
 }
 
 // ensureBindingUUID returns the existing external name or generates a new UUID if missing.
@@ -818,12 +657,11 @@ func (sb *ServiceBinding) EnsureBindingUUID() string {
 
 // buildBindRequest creates an OSB BindRequest from the ServiceBinding spec and related data.
 func (sb *ServiceBinding) buildBindRequest(
-	bindingData BindingData,
 	oid osbClient.OriginatingIdentity,
 	ctxMap, params map[string]any,
 ) (osbClient.BindRequest, error) {
 
-	if err := validateInputs(bindingData, oid); err != nil {
+	if err := validateInputs(sb.Spec.ForProvider, oid); err != nil {
 		return osbClient.BindRequest{}, err
 	}
 
@@ -831,10 +669,10 @@ func (sb *ServiceBinding) buildBindRequest(
 	bindRequest := osbClient.BindRequest{
 		BindingID:           bindingID,
 		OriginatingIdentity: &oid,
-		InstanceID:          bindingData.InstanceData.InstanceId,
+		InstanceID:          sb.Spec.ForProvider.InstanceId,
 		AcceptsIncomplete:   true, // TODO: make configurable
-		PlanID:              bindingData.InstanceData.PlanId,
-		ServiceID:           bindingData.InstanceData.ServiceId,
+		PlanID:              sb.Spec.ForProvider.PlanId,
+		ServiceID:           sb.Spec.ForProvider.ServiceId,
 	}
 
 	sb.addBindResource(&bindRequest)
@@ -844,20 +682,20 @@ func (sb *ServiceBinding) buildBindRequest(
 }
 
 // validateInputs handles all the simple validation checks.
-func validateInputs(bindingData BindingData, oid osbClient.OriginatingIdentity) error {
+func validateInputs(bindingParams ServiceBindingParameters, oid osbClient.OriginatingIdentity) error {
 	if oid.Platform == "" {
 		return errOidPlatformIsEmpty
 	}
 	if oid.Value == "" {
 		return errOidValueIsEmpty
 	}
-	if bindingData.InstanceData.InstanceId == "" {
+	if bindingParams.InstanceId == "" {
 		return errInstanceIdIsEmpty
 	}
-	if bindingData.InstanceData.PlanId == "" {
+	if bindingParams.PlanId == "" {
 		return errPlanIdEmpty
 	}
-	if bindingData.InstanceData.ServiceId == "" {
+	if bindingParams.ServiceId == "" {
 		return errServiceIdEmpty
 	}
 	return nil
@@ -888,7 +726,7 @@ func addContextAndParams(bindRequest *osbClient.BindRequest, ctxMap, params map[
 }
 
 // buildUnbindRequest constructs an OSB UnbindRequest for the given ServiceBinding.
-func (sb *ServiceBinding) BuildUnbindRequest(bindingData BindingData, oid osbClient.OriginatingIdentity) (*osbClient.UnbindRequest, error) {
+func (sb *ServiceBinding) BuildUnbindRequest(oid osbClient.OriginatingIdentity) (*osbClient.UnbindRequest, error) {
 	if oid.Platform == "" {
 		return &osbClient.UnbindRequest{}, errOidPlatformIsEmpty
 	}
@@ -897,15 +735,15 @@ func (sb *ServiceBinding) BuildUnbindRequest(bindingData BindingData, oid osbCli
 		return &osbClient.UnbindRequest{}, errOidValueIsEmpty
 	}
 
-	if bindingData.InstanceData.InstanceId == "" {
+	if sb.Spec.ForProvider.InstanceId == "" {
 		return &osbClient.UnbindRequest{}, errInstanceIdIsEmpty
 	}
 
-	if bindingData.InstanceData.PlanId == "" {
+	if sb.Spec.ForProvider.PlanId == "" {
 		return &osbClient.UnbindRequest{}, errPlanIdEmpty
 	}
 
-	if bindingData.InstanceData.ServiceId == "" {
+	if sb.Spec.ForProvider.ServiceId == "" {
 		return &osbClient.UnbindRequest{}, errServiceIdEmpty
 	}
 
@@ -915,17 +753,17 @@ func (sb *ServiceBinding) BuildUnbindRequest(bindingData BindingData, oid osbCli
 	}
 
 	return &osbClient.UnbindRequest{
-		InstanceID:          bindingData.InstanceData.InstanceId,
+		InstanceID:          sb.Spec.ForProvider.InstanceId,
 		BindingID:           bindingId,
 		AcceptsIncomplete:   true, // TODO: make configurable
-		ServiceID:           bindingData.InstanceData.ServiceId,
-		PlanID:              bindingData.InstanceData.PlanId,
+		ServiceID:           sb.Spec.ForProvider.ServiceId,
+		PlanID:              sb.Spec.ForProvider.PlanId,
 		OriginatingIdentity: &oid,
 	}, nil
 }
 
 // buildBindingLastOperationRequest constructs an OSB BindingLastOperationRequest for polling.
-func (sb *ServiceBinding) buildBindingLastOperationRequest(bindingData BindingData, oid osbClient.OriginatingIdentity) (*osbClient.BindingLastOperationRequest, error) {
+func (sb *ServiceBinding) buildBindingLastOperationRequest(oid osbClient.OriginatingIdentity) (*osbClient.BindingLastOperationRequest, error) {
 	if oid.Platform == "" {
 		return &osbClient.BindingLastOperationRequest{}, errOidPlatformIsEmpty
 	}
@@ -934,15 +772,15 @@ func (sb *ServiceBinding) buildBindingLastOperationRequest(bindingData BindingDa
 		return &osbClient.BindingLastOperationRequest{}, errOidValueIsEmpty
 	}
 
-	if bindingData.InstanceData.InstanceId == "" {
+	if sb.Spec.ForProvider.InstanceId == "" {
 		return &osbClient.BindingLastOperationRequest{}, errInstanceIdIsEmpty
 	}
 
-	if bindingData.InstanceData.PlanId == "" {
+	if sb.Spec.ForProvider.PlanId == "" {
 		return &osbClient.BindingLastOperationRequest{}, errPlanIdEmpty
 	}
 
-	if bindingData.InstanceData.ServiceId == "" {
+	if sb.Spec.ForProvider.ServiceId == "" {
 		return &osbClient.BindingLastOperationRequest{}, errServiceIdEmpty
 	}
 
@@ -952,10 +790,10 @@ func (sb *ServiceBinding) buildBindingLastOperationRequest(bindingData BindingDa
 	}
 
 	return &osbClient.BindingLastOperationRequest{
-		InstanceID:          bindingData.InstanceData.InstanceId,
+		InstanceID:          sb.Spec.ForProvider.InstanceId,
 		BindingID:           bindingId,
-		ServiceID:           &bindingData.InstanceData.ServiceId,
-		PlanID:              &bindingData.InstanceData.PlanId,
+		ServiceID:           &sb.Spec.ForProvider.ServiceId,
+		PlanID:              &sb.Spec.ForProvider.PlanId,
 		OriginatingIdentity: &oid,
 		OperationKey:        &sb.Status.AtProvider.LastOperationKey,
 	}, nil
@@ -1131,16 +969,4 @@ func (sb *ServiceBinding) HandleRenewalBindings(resp *osbClient.GetBindingRespon
 	}
 
 	return NothingToDo, nil
-}
-
-// addRefFinalizer adds the reference finalizer to the ServiceInstance object referenced by the binding
-// (if there is one)
-func (sb *ServiceBinding) AddRefFinalizer(ctx context.Context, kube client.Client) error {
-	// Add finalizer to referenced ServiceInstance
-	instanceRef := sb.Spec.ForProvider.InstanceRef
-	if instanceRef != nil {
-		finalizerName := fmt.Sprintf("%s-%s", referenceFinalizerName, sb.Name)
-		return util.HandleFinalizer(ctx, kube, sb, finalizerName, util.AddFinalizerIfNotExists)
-	}
-	return nil
 }
