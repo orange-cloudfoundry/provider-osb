@@ -36,9 +36,11 @@ type ServiceBindingParameters struct {
 	// +kubebuilder:validation:Optional
 	AppGuid string `json:"appGuid,omitempty"`
 	// +kubebuilder:validation:Optional
-	InstanceRef *common.NamespacedName `json:"instance,omitempty"`
+	InstanceId string `json:"instanceId"`
 	// +kubebuilder:validation:Optional
-	InstanceData *common.InstanceData `json:"instanceData,omitempty"`
+	PlanId string `json:"planId"`
+	// +kubebuilder:validation:Optional
+	ServiceId string `json:"serviceId"`
 	// +kubebuilder:validation:Optional
 	Context common.KubernetesOSBContext `json:"context,omitempty"`
 	// +kubebuilder:validation:Optional
@@ -187,8 +189,4 @@ type responseData struct {
 	RouteServiceURL *string
 	SyslogDrainURL  *string
 	Metadata        *osbClient.BindingMetadata
-}
-
-type BindingData struct {
-	InstanceData common.InstanceData
 }
