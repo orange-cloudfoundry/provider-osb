@@ -22,10 +22,10 @@ import (
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
-	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 )
 
 type ServiceInstanceSpec struct {
