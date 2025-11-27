@@ -19,13 +19,13 @@ package v1alpha1
 import (
 	"reflect"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
-	common "github.com/orange-cloudfoundry/provider-osb/apis/common"
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
 
 type ServiceInstanceSpec struct {

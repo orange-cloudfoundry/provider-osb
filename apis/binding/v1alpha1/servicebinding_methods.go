@@ -8,18 +8,16 @@ import (
 	"reflect"
 	"time"
 
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
-
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 	instance "github.com/orange-cloudfoundry/provider-osb/apis/instance/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
 	v1 "k8s.io/api/core/v1"
+	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
