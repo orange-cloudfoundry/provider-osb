@@ -36,13 +36,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
 	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 	"github.com/orange-cloudfoundry/provider-osb/internal/mymock"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 // Unlike many Kubernetes projects Crossplane does not use third party testing
