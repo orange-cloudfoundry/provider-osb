@@ -8,10 +8,11 @@ import (
 
 	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
-	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
 )
 
 var (

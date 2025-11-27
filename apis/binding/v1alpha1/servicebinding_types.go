@@ -20,15 +20,13 @@ import (
 	"encoding/json"
 	"reflect"
 
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
-	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
-
-	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 )
 
 // ServiceBindingParameters are the configurable fields of a ServiceBinding.

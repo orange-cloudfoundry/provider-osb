@@ -14,10 +14,11 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	"github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
-	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-	"github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+	"github.com/orange-cloudfoundry/provider-osb/apis/v1alpha1"
 )
 
 const (

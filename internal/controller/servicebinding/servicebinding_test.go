@@ -18,34 +18,32 @@ package servicebinding
 
 import (
 	"context"
+	b64 "encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
-	"github.com/google/go-cmp/cmp"
-	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
-	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
-	"github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
-	"github.com/orange-cloudfoundry/provider-osb/apis/common"
-	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
-	"github.com/orange-cloudfoundry/provider-osb/internal/mymock"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-
+	apiscommonv2 "github.com/crossplane/crossplane-runtime/v2/apis/common"
+	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
-
-	apiscommonv2 "github.com/crossplane/crossplane-runtime/v2/apis/common"
-	xpv1 "github.com/crossplane/crossplane-runtime/v2/apis/common/v1"
-	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common/v2"
+	"github.com/golang/mock/gomock"
+	"github.com/google/go-cmp/cmp"
+	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
+	osbfake "github.com/orange-cloudfoundry/go-open-service-broker-client/v2/fake"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	b64 "encoding/base64"
+	"github.com/orange-cloudfoundry/provider-osb/apis/binding/v1alpha1"
+	"github.com/orange-cloudfoundry/provider-osb/apis/common"
+	"github.com/orange-cloudfoundry/provider-osb/internal/controller/util"
+	"github.com/orange-cloudfoundry/provider-osb/internal/mymock"
 )
 
 // Unlike many Kubernetes projects Crossplane does not use third party testing
