@@ -99,11 +99,9 @@ var (
 				},
 				Parameters: basicParameters,
 				Route:      "basic-route",
-				InstanceData: &common.InstanceData{
-					PlanId:     "basic-plan",
-					ServiceId:  "basic-service",
-					InstanceId: "basic-instance",
-				},
+				PlanId:     "basic-plan",
+				ServiceId:  "basic-service",
+				InstanceId: "basic-instance",
 			},
 			ManagedResourceSpec: xpv2.ManagedResourceSpec{
 				ProviderConfigReference: &apiscommonv2.ProviderConfigReference{

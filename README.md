@@ -99,18 +99,8 @@ spec:
       namespace: my-app-namespace
       platform: kubernetes
     appGuid: my-app-guid
-    instanceData:
-      appGuid: my-app-guid
-      instanceId: 123e4567-e89b-12d3-a456-426614174000
-      serviceId: mysql-service-id
-      planId: 123e4567-e89b-12d3-a456-426614174000
-      organizationGuid: 123e4567-e89b-12d3-a456-426614174000
-      spaceGuid: 123e4567-e89b-12d3-a456-426614174000
-      context:
-        clusterId: my-cluster-id
-        instanceName: my-db-instance
-        namespace: my-osb-provider
-        platform: kubernetes
+    instanceId: 123e4567-e89b-12d3-a456-426614174000
+    serviceId: mysql-service-id
 ```
 
 ## Installation
