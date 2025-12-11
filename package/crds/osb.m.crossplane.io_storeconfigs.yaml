@@ -4,28 +4,35 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: providerconfigs.m.osb.crossplane.io
+  name: storeconfigs.osb.m.crossplane.io
 spec:
-  group: m.osb.crossplane.io
+  group: osb.m.crossplane.io
   names:
-    kind: ProviderConfig
-    listKind: ProviderConfigList
-    plural: providerconfigs
-    singular: providerconfig
+    categories:
+    - crossplane
+    - store
+    - osb
+    kind: StoreConfig
+    listKind: StoreConfigList
+    plural: storeconfigs
+    singular: storeconfig
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .metadata.creationTimestamp
       name: AGE
       type: date
-    - jsonPath: .spec.credentials.secretRef.name
-      name: SECRET-NAME
-      priority: 1
+    - jsonPath: .spec.type
+      name: TYPE
+      type: string
+    - jsonPath: .spec.defaultScope
+      name: DEFAULT-SCOPE
       type: string
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ProviderConfig configures a OSB provider.
+        description: A StoreConfig configures how osb controller should store connection
+          details.
         properties:
           apiVersion:
             description: |-
@@ -34,8 +41,6 @@ spec:
               may reject unrecognized values.
               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
-          disable_async:
-            type: boolean
           kind:
             description: |-
               Kind is a string value representing the REST resource this object represents.
@@ -47,81 +52,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: A ProviderConfigSpec defines the desired state of a ProviderConfig.
-            properties:
-              brokerUrl:
-                description: BrokerURL to send OSB requests to
-                pattern: ^https?://.+
-                type: string
-              credentials:
-                description: Credentials required to authenticate to this provider.
-                properties:
-                  env:
-                    description: |-
-                      Env is a reference to an environment variable that contains credentials
-                      that must be used to connect to the provider.
-                    properties:
-                      name:
-                        description: Name is the name of an environment variable.
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  fs:
-                    description: |-
-                      Fs is a reference to a filesystem location that contains credentials that
-                      must be used to connect to the provider.
-                    properties:
-                      path:
-                        description: Path is a filesystem path.
-                        type: string
-                    required:
-                    - path
-                    type: object
-                  secretRef:
-                    description: |-
-                      A SecretRef is a reference to a secret key that contains the credentials
-                      that must be used to connect to the provider.
-                    properties:
-                      key:
-                        description: The key to select.
-                        type: string
-                      name:
-                        description: Name of the secret.
-                        type: string
-                      namespace:
-                        description: Namespace of the secret.
-                        type: string
-                    required:
-                    - key
-                    - name
-                    - namespace
-                    type: object
-                  source:
-                    description: Source of the provider credentials.
-                    enum:
-                    - None
-                    - Secret
-                    - InjectedIdentity
-                    - Environment
-                    - Filesystem
-                    type: string
-                required:
-                - source
-                type: object
-              osbVersion:
-                description: OSB version is used to add error management
-                pattern: ^2\.\d{1,2}$
-                type: string
-              timeout:
-                description: Timeout to replace the default one when creating client
-                minimum: 0
-                type: integer
-            required:
-            - brokerUrl
+            description: A StoreConfigSpec defines the desired state of a ProviderConfig.
             type: object
           status:
-            description: A ProviderConfigStatus reflects the observed state of a ProviderConfig.
+            description: A StoreConfigStatus represents the status of a StoreConfig.
             properties:
               conditions:
                 description: Conditions of the resource.
@@ -169,13 +103,8 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              users:
-                description: Users of this provider configuration.
-                format: int64
-                type: integer
             type: object
         required:
-        - disable_async
         - spec
         type: object
     served: true

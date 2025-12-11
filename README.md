@@ -40,7 +40,7 @@ spec:
 **ServiceInstance**: A resource representing a provisioned instance of an external service, such as a database, cache, or other cloud service.
 
 ```yaml
-apiVersion: instance.m.osb.crossplane.io/v1alpha1
+apiVersion: instance.osb.m.crossplane.io/v1alpha1
 kind: ServiceInstance
 metadata:
   name: my-db-instance
@@ -76,7 +76,7 @@ spec:
 **ServiceBinding**: A resource that establishes a connection between an Application and a ServiceInstance. It provides the application with the necessary information (such as credentials or secrets) to access the external service.
 
 ```yaml
-apiVersion:  binding.m.osb.crossplane.io/v1alpha1
+apiVersion:  binding.osb.m.crossplane.io/v1alpha1
 kind: ServiceBinding
 metadata:
   name: my-db-binding

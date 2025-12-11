@@ -12,7 +12,6 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	osbClient "github.com/orange-cloudfoundry/go-open-service-broker-client/v2"
 	v1 "k8s.io/api/core/v1"
-	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 

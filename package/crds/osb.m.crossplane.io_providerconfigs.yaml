@@ -4,19 +4,15 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: clusterproviderconfigs.m.osb.crossplane.io
+  name: providerconfigs.osb.m.crossplane.io
 spec:
-  group: m.osb.crossplane.io
+  group: osb.m.crossplane.io
   names:
-    categories:
-    - crossplane
-    - provider
-    - kubernetes
-    kind: ClusterProviderConfig
-    listKind: ClusterProviderConfigList
-    plural: clusterproviderconfigs
-    singular: clusterproviderconfig
-  scope: Cluster
+    kind: ProviderConfig
+    listKind: ProviderConfigList
+    plural: providerconfigs
+    singular: providerconfig
+  scope: Namespaced
   versions:
   - additionalPrinterColumns:
     - jsonPath: .metadata.creationTimestamp
@@ -29,7 +25,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ClusterProviderConfig configures a Kubernetes provider.
+        description: A ProviderConfig configures a OSB provider.
         properties:
           apiVersion:
             description: |-
