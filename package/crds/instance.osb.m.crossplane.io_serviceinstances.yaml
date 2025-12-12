@@ -4,18 +4,18 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: servicebindings.binding.m.osb.crossplane.io
+  name: serviceinstances.instance.osb.m.crossplane.io
 spec:
-  group: binding.m.osb.crossplane.io
+  group: instance.osb.m.crossplane.io
   names:
     categories:
     - crossplane
     - managed
     - osb
-    kind: ServiceBinding
-    listKind: ServiceBindingList
-    plural: servicebindings
-    singular: servicebinding
+    kind: ServiceInstance
+    listKind: ServiceInstanceList
+    plural: serviceinstances
+    singular: serviceinstance
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -34,7 +34,7 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: A ServiceBinding is an example API type.
+        description: ServiceInstance is the managed OSB resource
         properties:
           apiVersion:
             description: |-
@@ -54,11 +54,10 @@ spec:
           metadata:
             type: object
           spec:
-            description: A ServiceBindingSpec defines the desired state of a ServiceBinding.
             properties:
               forProvider:
-                description: ServiceBindingParameters are the configurable fields
-                  of a ServiceBinding.
+                description: Instance Data represents the schema for a ServiceInstance
+                  MR
                 properties:
                   appGuid:
                     type: string
@@ -98,6 +97,10 @@ spec:
                     - platform
                     type: object
                   instanceId:
+                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                    type: string
+                  organizationGuid:
+                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                     type: string
                   parameters:
                     description: |-
@@ -106,12 +109,19 @@ spec:
                       It is stored as a string but can be converted back to a Go map.
                     type: string
                   planId:
-                    type: string
-                  route:
-                    pattern: ^https?://.+
+                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                     type: string
                   serviceId:
                     type: string
+                  spaceGuid:
+                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+                    type: string
+                required:
+                - instanceId
+                - organizationGuid
+                - planId
+                - serviceId
+                - spaceGuid
                 type: object
               managementPolicies:
                 default:
@@ -172,18 +182,52 @@ spec:
             - forProvider
             type: object
           status:
-            description: A ServiceBindingStatus represents the observed state of a
-              ServiceBinding.
             properties:
               atProvider:
-                description: ServiceBindingObservation are the observable fields of
-                  a ServiceBinding.
                 properties:
-                  endpoints:
+                  appGuid:
+                    type: string
+                  context:
                     description: |-
-                      SerializableEndpoints represents a JSON-encoded slice of endpoints.
-                      Stored as a string because slices are not directly serializable in Go.
-                      It is stored as a string but can be converted back to a slice of Endpoints.
+                      KubernetesOSBContext represents the context object for kubernetes in the OSB spec
+                      cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
+                    properties:
+                      clusterId:
+                        type: string
+                      instanceAnnotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      instanceName:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                      namespace:
+                        maxLength: 63
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                        type: string
+                      namespaceAnnotations:
+                        additionalProperties:
+                          type: string
+                        type: object
+                      platform:
+                        enum:
+                        - kubernetes
+                        type: string
+                    required:
+                    - clusterId
+                    - instanceName
+                    - namespace
+                    - platform
+                    type: object
+                  dashboardURL:
+                    pattern: ^https?://.+
+                    type: string
+                  hasActiveBindings:
+                    type: boolean
+                  instanceId:
                     type: string
                   lastOperationDescription:
                     type: string
@@ -192,37 +236,24 @@ spec:
                       OperationKey is an extra identifier from the broker in order to provide extra
                       identifiers for asynchronous operations.
                     type: string
-                  lastOperationPolled_time:
-                    type: string
                   lastOperationState:
                     description: |-
                       LastOperationState is a typedef representing the state of an ongoing
                       operation for an instance.
                     type: string
-                  metadata:
-                    properties:
-                      expires_at:
-                        type: string
-                      renew_before:
-                        type: string
-                    type: object
+                  organizationGuid:
+                    type: string
                   parameters:
                     description: |-
                       SerializableParameters represents a JSON-encoded map of arbitrary parameters.
                       Stored as a string because slices and maps are not directly serializable in Go
                       It is stored as a string but can be converted back to a Go map.
                     type: string
-                  routeServiceUrl:
-                    pattern: ^https?://.+
+                  planId:
                     type: string
-                  syslogDrainUrl:
-                    pattern: ^https?://.+
+                  serviceId:
                     type: string
-                  volumeMounts:
-                    description: |-
-                      SerializableVolumeMounts represents a JSON-encoded slice of osb.VolumeMount.
-                      Stored as a string because slices are not directly serializable in Go.
-                      It is stored as a string but can be converted back to a slice of VolumeMounts.
+                  spaceGuid:
                     type: string
                 type: object
               conditions:
