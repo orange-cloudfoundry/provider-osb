@@ -62,6 +62,14 @@ spec:
                 properties:
                   appGuid:
                     type: string
+                  bindResources:
+                    properties:
+                      appGuid:
+                        type: string
+                      route:
+                        pattern: ^https?://.+
+                        type: string
+                    type: object
                   context:
                     description: |-
                       KubernetesOSBContext represents the context object for kubernetes in the OSB spec
@@ -74,30 +82,18 @@ spec:
                           type: string
                         type: object
                       instanceName:
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespace:
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespaceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
                       platform:
-                        enum:
-                        - kubernetes
                         type: string
-                    required:
-                    - clusterId
-                    - instanceName
-                    - namespace
-                    - platform
                     type: object
                   instanceId:
+                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                     type: string
                   parameters:
                     description: |-
@@ -106,12 +102,14 @@ spec:
                       It is stored as a string but can be converted back to a Go map.
                     type: string
                   planId:
-                    type: string
-                  route:
-                    pattern: ^https?://.+
+                    pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
                     type: string
                   serviceId:
                     type: string
+                required:
+                - instanceId
+                - planId
+                - serviceId
                 type: object
               managementPolicies:
                 default:
@@ -192,7 +190,7 @@ spec:
                       OperationKey is an extra identifier from the broker in order to provide extra
                       identifiers for asynchronous operations.
                     type: string
-                  lastOperationPolled_time:
+                  lastOperationPolledTime:
                     type: string
                   lastOperationState:
                     description: |-

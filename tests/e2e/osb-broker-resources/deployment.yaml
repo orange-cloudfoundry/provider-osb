@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-osb-fake-broker
+  namespace: crossplane-system
+  labels:
+    test: "true"
+    app: osb-fake-broker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: osb-fake-broker
+      test: "true"
+  template:
+    metadata:
+      labels:
+        app: osb-fake-broker
+        test: "true"
+    spec:
+      containers:
+      - name: test-container
+        image: ghcr.io/orange-cloudfoundry/osb-broker:e2e
+        imagePullPolicy: IfNotPresent
+        resources:
+          limits:
+            cpu: 1
+            memory: 500M
+          requests:
+            cpu: 1
+            memory: 500M
+      restartPolicy: Always

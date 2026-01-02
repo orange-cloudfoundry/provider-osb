@@ -24,6 +24,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/feature"
@@ -169,6 +170,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		osb:                 osbClient,
 		kube:                c.kube,
 		originatingIdentity: *oid,
+		disableAsync:        pcSpec.DisableAsync,
 		rotateBinding:       c.rotateBinding,
 	}, nil
 }
@@ -181,6 +183,7 @@ type external struct {
 	osb                 osbClient.Client
 	kube                client.Client
 	originatingIdentity osbClient.OriginatingIdentity
+	disableAsync        bool
 	rotateBinding       bool
 }
 
@@ -207,6 +210,10 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			ResourceUpToDate: false,
 		}, nil
 	case common.NothingToDo:
+		binding.Status.SetConditions(xpv2.Available())
+		// if err := c.kube.Status().Update(ctx, binding); err != nil {
+		// 	return managed.ExternalObservation{}, fmt.Errorf("%w, %s", errFailedToObserveState, fmt.Sprint(err)) // TODO change error
+		// }
 		return managed.ExternalObservation{
 			ResourceExists:    true,
 			ResourceUpToDate:  true,
@@ -226,7 +233,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 
 	}
 
-	bindResponse, async, err := binding.Bind(ctx, c.kube, c.osb, c.originatingIdentity)
+	bindResponse, async, err := binding.Bind(ctx, c.kube, c.osb, c.originatingIdentity, c.disableAsync)
 	if err != nil {
 		return managed.ExternalCreation{}, fmt.Errorf("%w, %s", errFailedToBindServiceBinding, fmt.Sprint(err))
 	}
@@ -292,6 +299,8 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 	if !ok {
 		return managed.ExternalDelete{}, fmt.Errorf("%w: expected *v1alpha1.ServiceBinding but got %T", errNotServiceBindingCR, mg)
 	}
+
+	binding.Status.SetConditions(xpv2.Deleting())
 
 	isAsync, err := binding.UnBind(ctx, c.kube, c.osb, c.originatingIdentity)
 	if err != nil {

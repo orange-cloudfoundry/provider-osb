@@ -33,16 +33,25 @@ import (
 type ServiceBindingParameters struct {
 	// +kubebuilder:validation:Optional
 	AppGuid string `json:"appGuid,omitempty"`
-	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
 	InstanceId string `json:"instanceId"`
-	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`
 	PlanId string `json:"planId"`
-	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Required
 	ServiceId string `json:"serviceId"`
 	// +kubebuilder:validation:Optional
 	Context common.KubernetesOSBContext `json:"context,omitempty"`
 	// +kubebuilder:validation:Optional
 	Parameters common.SerializableParameters `json:"parameters,omitempty"`
+	// +kubebuilder:validation:Optional
+	BindResource BindResource `json:"bindResources,omitempty"`
+}
+
+type BindResource struct {
+	// +kubebuilder:validation:Optional
+	AppGuid string `json:"appGuid,omitempty"`
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Pattern=`^https?://.+`
 	Route string `json:"route,omitempty"`
@@ -73,7 +82,7 @@ type ServiceBindingObservation struct {
 	// +kubebuilder:validation:Optional
 	LastOperationDescription string `json:"lastOperationDescription,omitempty"`
 	// +kubebuilder:validation:Optional
-	LastOperationPolledTime string `json:"lastOperationPolled_time,omitempty"`
+	LastOperationPolledTime string `json:"lastOperationPolledTime,omitempty"`
 }
 
 // SerializableVolumeMounts represents a JSON-encoded slice of osb.VolumeMount.

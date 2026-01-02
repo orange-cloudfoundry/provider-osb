@@ -8,7 +8,8 @@ PLATFORMS ?= linux_amd64 linux_arm64
 
 # ====================================================================================
 # Setup crossplane cli
-CROSSPLANE_CLI_VERSION ?= v2.0.2
+CROSSPLANE_VERSION ?= 2.1.3
+CROSSPLANE_CLI_VERSION ?= v2.1.3
 CROSSPLANE_CLI := $(TOOLS_HOST_DIR)/crossplane-cli-$(CROSSPLANE_CLI_VERSION)
 
 # ====================================================================================
@@ -57,15 +58,39 @@ fallthrough: submodules
 	@echo Initial setup complete. Running make again . . .
 	@make
 
-# integration tests
-e2e.run: test-integration
 
-# Run integration tests.
-test-integration: $(KIND) $(KUBECTL) $(UP) $(HELM3)
-	@$(INFO) running integration tests using kind $(KIND_VERSION)
-	@KIND_NODE_IMAGE_TAG=${KIND_NODE_IMAGE_TAG} $(ROOT_DIR)/cluster/local/integration_tests.sh || $(FAIL)
-	@$(OK) integration tests passed
+-include build/makelib/controlplane.mk
+-include build/makelib/local.xpkg.mk
 
+define UPTEST_EXAMPLE_LIST
+examples/e2e/serviceinstance_noasync.yaml,
+examples/e2e/serviceinstance.yaml,
+examples/e2e/servicebinding.yaml,
+examples/e2e/servicebinding_noasync.yaml
+endef
+
+UPTEST_EXAMPLE_LIST := $(subst ${\n},,${UPTEST_EXAMPLE_LIST})
+
+uptest: $(KUBECTL) $(CHAINSAW) $(CROSSPLANE_CLI) $(KIND) $(UPTEST)
+	@$(INFO) running automated tests with following files: $(UPTEST_EXAMPLE_LIST)
+	@KUBECTL=$(KUBECTL) KIND=$(KIND) CHAINSAW=$(CHAINSAW) CROSSPLANE_CLI=$(CROSSPLANE_CLI) CROSSPLANE_NAMESPACE=$(CROSSPLANE_NAMESPACE) $(UPTEST) e2e "$(UPTEST_EXAMPLE_LIST)" --setup-script=cluster/test/setup.sh || $(FAIL)
+	@$(OK) running automated tests
+
+local-dev: controlplane.up
+local-deploy: build controlplane.up $(YQ)
+	@docker pull ghcr.io/orange-cloudfoundry/osb-broker:e2e
+	$(KIND) load docker-image ghcr.io/orange-cloudfoundry/osb-broker:e2e --name local-dev
+	$(KUBECTL) config set-context --current --namespace=crossplane-system
+	$(KUBECTL) apply -f tests/e2e/osb-broker-resources/deployment.yaml
+	$(KUBECTL) apply -f tests/e2e/osb-broker-resources/netpol.yaml
+	$(KUBECTL) apply -f tests/e2e/osb-broker-resources/service.yaml
+	$(MAKE) local.xpkg.deploy.provider.$(PROJECT_NAME) DRC_FILE="./examples/deploymentruntimeconfig.yaml" && \
+	$(INFO) running locally built provider && \
+	$(KUBECTL) wait provider.pkg $(PROJECT_NAME) --for condition=Healthy --timeout 5m && \
+	$(KUBECTL) -n $(CROSSPLANE_NAMESPACE) wait --for=condition=Available deployment --all --timeout=10m && \
+	$(OK) running locally built provider || $(KUBECTL) -n $(CROSSPLANE_NAMESPACE) logs deploy/crossplane
+
+e2e: crossplane.install_cli local-deploy uptest
 # Update the submodules, such as the common build scripts.
 submodules:
 	@git submodule sync

@@ -95,25 +95,18 @@ func (v *SerializableParameters) ToParameters() (map[string]any, error) {
 // KubernetesOSBContext represents the context object for kubernetes in the OSB spec
 // cf https://github.com/cloudfoundry/servicebroker/blob/master/profile.md#kubernetes-context-object
 type KubernetesOSBContext struct {
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=kubernetes
+	// +kubebuilder:validation:Optional
 	Platform string `json:"platform"`
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:Optional
 	Namespace string `json:"namespace"`
 	// +kubebuilder:validation:Optional
 	NamespaceAnnotations map[string]string `json:"namespaceAnnotations,omitempty"`
 	// +kubebuilder:validation:Optional
 	InstanceAnnotations map[string]string `json:"instanceAnnotations,omitempty"`
-	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Optional
 	ClusterId string `json:"clusterId"`
 
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=63
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
+	// +kubebuilder:validation:Optional
 	InstanceName string `json:"instanceName"`
 }
 

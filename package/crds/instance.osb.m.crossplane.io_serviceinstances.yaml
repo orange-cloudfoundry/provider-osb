@@ -73,28 +73,15 @@ spec:
                           type: string
                         type: object
                       instanceName:
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespace:
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespaceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
                       platform:
-                        enum:
-                        - kubernetes
                         type: string
-                    required:
-                    - clusterId
-                    - instanceName
-                    - namespace
-                    - platform
                     type: object
                   instanceId:
                     pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
@@ -199,28 +186,15 @@ spec:
                           type: string
                         type: object
                       instanceName:
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespace:
-                        maxLength: 63
-                        minLength: 1
-                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                         type: string
                       namespaceAnnotations:
                         additionalProperties:
                           type: string
                         type: object
                       platform:
-                        enum:
-                        - kubernetes
                         type: string
-                    required:
-                    - clusterId
-                    - instanceName
-                    - namespace
-                    - platform
                     type: object
                   dashboardURL:
                     pattern: ^https?://.+

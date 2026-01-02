@@ -24,15 +24,15 @@ kind: ProviderConfig
 metadata:
   name: my-osb-provider-config
 spec:
-  broker_url: http://0.0.0.0:5000
-  osb_version: "2.13"
+  brokerUrl: http://0.0.0.0:5000
+  osbVersion: "2.17"
   credentials:
     source: Secret
     secretRef:
       namespace: my-osb-provider
       name: osb-creds
       key: creds
-  disable_async: false
+  disableAsync: false
 ```
 
 ### Provisioning a Service (Example: Database)
@@ -58,7 +58,7 @@ spec:
     spaceGuid: 123e4567-e89b-12d3-a456-426614174000
     parameters: |
       {
-        "version": "2.13",
+        "version": "2.17",
         "configuration": {
           "worker_processes": "string",
           "worker_connections": 0
@@ -182,15 +182,15 @@ kind: ProviderConfig
 metadata:
   name: my-osb-provider-config
 spec:
-  broker_url: http://your-broker-url:5000
-  osb_version: "2.13"
+  brokerUrl: http://your-broker-url:5000
+  osbVersion: "2.17"
   credentials:
     source: Secret
     secretRef:
       namespace: my-osb-provider  # Same namespace as the secret
       name: osb-creds             # Name of the secret created above
       key: creds                  # Key containing the credentials
-  disable_async: false
+  disableAsync: false
 ```
 
 ## Architecture Diagrams

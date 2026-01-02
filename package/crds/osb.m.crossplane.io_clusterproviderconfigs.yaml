@@ -38,8 +38,6 @@ spec:
               may reject unrecognized values.
               More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
-          disable_async:
-            type: boolean
           kind:
             description: |-
               Kind is a string value representing the REST resource this object represents.
@@ -113,6 +111,9 @@ spec:
                 required:
                 - source
                 type: object
+              disableAsync:
+                description: Disable asynchronous calls
+                type: boolean
               osbVersion:
                 description: OSB version is used to add error management
                 pattern: ^2\.\d{1,2}$
@@ -179,7 +180,6 @@ spec:
                 type: integer
             type: object
         required:
-        - disable_async
         - spec
         type: object
     served: true
