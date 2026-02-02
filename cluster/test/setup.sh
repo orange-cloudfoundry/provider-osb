@@ -9,7 +9,7 @@ ${KUBECTL} create clusterrolebinding provider-osb-admin-binding --clusterrole cl
 
 echo "Creating the credentials secret to connect to the OSB broker"
 CREDS=$(echo -n '{"user":"user","password":"pass"}' | base64 -w 0)
-${KUBECTL} create secret generic osb-creds --from-literal=creds=${CREDS} -n crossplane-system --dry-run=client -oyaml | ${KUBECTL} apply -f -
+${KUBECTL} create secret generic osb-creds --from-literal=creds=${CREDS} -n crossplane-system --dry-run=client -o yaml | ${KUBECTL} apply -f -
 
 cat <<EOF | ${KUBECTL} apply -f -
 apiVersion: osb.m.crossplane.io/v1alpha1

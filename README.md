@@ -12,6 +12,16 @@ It declaratively manages, within Kubernetes, the lifecycle of **ServiceInstances
 * Support for both synchronous and asynchronous operations
 * Automatic injection of credentials into Kubernetes Secrets, matching those provided during the binding process
 
+## Integration (e2e) tests
+
+Integration tests are made using provider-template's default Makefile (although with some customization).
+
+To run e2e tests, make sure you have submodules installed (`git submodules`). Then, run `make e2e`.
+
+**Important note:** e2e tests use a custom docker image to emulate an OSB broker (`ghcr.io/orange-cloudfoundry/osb-broker:e2e`). You have to be ableto pull this image to run e2e tests.
+
+These tests are run automatically in this repository's actions.
+
 ## Concrete Usage Examples
 
 ### Example ProviderConfig for Connecting to an OSB Broker

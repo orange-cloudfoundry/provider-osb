@@ -2,7 +2,7 @@ apiVersion: instance.m.osb.crossplane.io/v1alpha1
 kind: ServiceInstance
 metadata:
   name: my-db-instance
-  namespace: test-crossplane-ns
+  namespace: crossplane-system
 spec:
   providerConfigRef:
     name: osb-provider
@@ -26,11 +26,4 @@ spec:
       platform: kubernetes
       clusterId: my-cluster-id
       namespace: crossplane-system
-      instanceName: e2e-test-instance
-status:
-  atProvider:
-    context:
-      platform: "kubernetes"
-      namespace: "MESCOUILLES"
-      clusterId: "OBORDELO"
-      instanceName: "SAFAIUNRADO"
+      instanceName: my-db-instance
