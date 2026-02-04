@@ -1,0 +1,29 @@
+apiVersion: instance.osb.m.crossplane.io/v1alpha1
+kind: ServiceInstance
+metadata:
+  name: e2e-test-instance
+  namespace: crossplane-system
+spec:
+  providerConfigRef:
+    name: osb-provider
+    kind: ProviderConfig
+  forProvider:
+    appGuid: my-app-guid
+    instanceId: 123e4567-e89b-12d3-a456-426614174000
+    serviceId: test-service-id
+    planId: 123e4567-e89b-12d3-a456-426614174000
+    organizationGuid: 123e4567-e89b-12d3-a456-426614174000
+    spaceGuid: 123e4567-e89b-12d3-a456-426614174000
+    parameters: |
+      {
+        "version": "2.17",
+        "configuration": {
+          "worker_processes": "string",
+          "worker_connections": 0
+        }
+      }
+    context:
+      platform: kubernetes
+      clusterId: my-cluster-id
+      namespace: crossplane-system
+      instanceName: e2e-test-instance

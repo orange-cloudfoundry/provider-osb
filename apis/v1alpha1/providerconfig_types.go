@@ -32,7 +32,6 @@ type ProviderConfigSpec struct {
 	Credentials ProviderCredentials `json:"credentials,omitempty"`
 
 	// BrokerURL to send OSB requests to
-	// TODO add kubebuilder validation annotation for URI format
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^https?://.+`
 	BrokerURL string `json:"brokerUrl"`
@@ -46,6 +45,10 @@ type ProviderConfigSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Minimum=0
 	Timeout int `json:"timeout,omitempty"`
+
+	// Disable asynchronous calls
+	// +kubebuilder:validation:Optional
+	DisableAsync bool `json:"disableAsync,omitempty"`
 }
 
 // ProviderCredentials required to authenticate.
@@ -79,8 +82,6 @@ type ProviderConfig struct {
 	Spec ProviderConfigSpec `json:"spec"`
 	// +kubebuilder:validation:Optional
 	Status ProviderConfigStatus `json:"status,omitempty"`
-	// +kubebuilder:validation:Required
-	DisableAsync bool `json:"disable_async"`
 }
 
 // +kubebuilder:object:root=true
@@ -103,9 +104,8 @@ type ClusterProviderConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec         ProviderConfigSpec   `json:"spec"`
-	Status       ProviderConfigStatus `json:"status,omitempty"`
-	DisableAsync bool                 `json:"disable_async"`
+	Spec   ProviderConfigSpec   `json:"spec"`
+	Status ProviderConfigStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true

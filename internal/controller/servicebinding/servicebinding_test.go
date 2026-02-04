@@ -98,7 +98,9 @@ var (
 					InstanceName:         "basic-instance",
 				},
 				Parameters: basicParameters,
-				Route:      "basic-route",
+				BindResource: v1alpha1.BindResource{
+					Route: "basic-route",
+				},
 				PlanId:     "basic-plan",
 				ServiceId:  "basic-service",
 				InstanceId: "basic-instance",
@@ -110,6 +112,7 @@ var (
 				ManagementPolicies: xpv1.ManagementPolicies{xpv1.ManagementActionAll},
 			},
 		},
+		Status: v1alpha1.ServiceBindingStatus{},
 	}
 	basicObservation = v1alpha1.ServiceBindingObservation{
 		Parameters:      common.SerializableParameters("{\"param1\":\"value1\"}"),
@@ -215,6 +218,13 @@ func newFakeKubeClient(t *testing.T) *mymock.MockClient {
 	mock.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 	mock.EXPECT().Delete(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
 
+	mockSubResourceWriter := mymock.NewMockSubResourceWriter(ctrl)
+	mockSubResourceWriter.EXPECT().Create(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	mockSubResourceWriter.EXPECT().Update(gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+	mockSubResourceWriter.EXPECT().Patch(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Return(nil)
+
+	mock.EXPECT().Status().AnyTimes().Return(mockSubResourceWriter)
+
 	return mock
 }
 
@@ -259,6 +269,7 @@ func TestObserve(t *testing.T) {
 			},
 
 			fields: fields{
+				kube: newFakeKubeClient(t),
 				osb: &osbfake.FakeClient{
 					GetBindingReaction: &osbfake.GetBindingReaction{
 						Error: osbClient.HTTPStatusCodeError{
@@ -279,6 +290,7 @@ func TestObserve(t *testing.T) {
 				mg: basicBinding,
 			},
 			fields: fields{
+				kube: newFakeKubeClient(t),
 				osb: &osbfake.FakeClient{
 					GetBindingReaction: &osbfake.GetBindingReaction{
 						Error: errPanic,
@@ -297,6 +309,7 @@ func TestObserve(t *testing.T) {
 				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osbClient.StateSucceeded),
 			},
 			fields: fields{
+				kube: newFakeKubeClient(t),
 				osb: &osbfake.FakeClient{
 					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
 						resp := &osbClient.GetBindingResponse{}
@@ -345,6 +358,7 @@ func TestObserve(t *testing.T) {
 				mg: withObservation(*basicBinding, basicObservation),
 			},
 			fields: fields{
+				kube: newFakeKubeClient(t),
 				osb: &osbfake.FakeClient{
 					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
 						resp := &osbClient.GetBindingResponse{}
@@ -372,6 +386,7 @@ func TestObserve(t *testing.T) {
 				mg: withObservation(*basicBinding, basicObservation),
 			},
 			fields: fields{
+				kube: newFakeKubeClient(t),
 				osb: &osbfake.FakeClient{
 					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
 						resp := &osbClient.GetBindingResponse{}
@@ -400,6 +415,7 @@ func TestObserve(t *testing.T) {
 				mg: withObservation(*basicBinding, basicObservation),
 			},
 			fields: fields{
+				kube: newFakeKubeClient(t),
 				osb: &osbfake.FakeClient{
 					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
 						resp := &osbClient.GetBindingResponse{}
@@ -429,6 +445,7 @@ func TestObserve(t *testing.T) {
 				mg: withLastOperationState(*withObservation(*basicBinding, basicObservation), osbClient.StateSucceeded),
 			},
 			fields: fields{
+				kube: newFakeKubeClient(t),
 				osb: &osbfake.FakeClient{
 					GetBindingReaction: osbfake.DynamicGetBindingReaction(func() (*osbClient.GetBindingResponse, error) {
 						resp := &osbClient.GetBindingResponse{}

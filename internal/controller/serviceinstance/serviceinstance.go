@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 
+	xpv2 "github.com/crossplane/crossplane-runtime/v2/apis/common"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/event"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/ratelimiter"
@@ -43,7 +44,7 @@ var (
 	errCannotMakeOriginatingIdentity  = errors.New("cannot make originating identity from value")
 	errInstanceIDNotSet               = errors.New("InstanceId must be set in the ServiceInstance spec")
 	errCannotTrackProviderConfigUsage = errors.New("cannot track ProviderConfig usage")
-	errFailedToDeprovision            = errors.New("failed to deprovisionning service instance")
+	errFailedToDeprovision            = errors.New("failed to deprovision service instance")
 	errFailedToProvision              = errors.New("failed to provison service instance")
 	errFailedToUpdate                 = errors.New("failed to update service instance")
 	errFailedToObserveState           = errors.New("failed to observe state of service instance")
@@ -139,6 +140,7 @@ func (c *connector) Connect(ctx context.Context, mg resource.Managed) (managed.E
 		osb:                 osbClient,
 		kube:                c.kube,
 		originatingIdentity: *oid,
+		disableAsync:        pcSpec.DisableAsync,
 	}, nil
 }
 
@@ -150,6 +152,7 @@ type external struct {
 	osb                 osbClient.Client
 	kube                client.Client
 	originatingIdentity osbClient.OriginatingIdentity
+	disableAsync        bool
 }
 
 func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.ExternalObservation, error) {
@@ -173,6 +176,7 @@ func (c *external) Observe(ctx context.Context, mg resource.Managed) (managed.Ex
 			ResourceExists: false,
 		}, nil
 	case common.NothingToDo:
+		instance.Status.SetConditions(xpv2.Available())
 		return managed.ExternalObservation{
 			ResourceExists:   true,
 			ResourceUpToDate: true,
@@ -198,7 +202,7 @@ func (c *external) Create(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalCreation{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
-	if err := instance.Provision(ctx, c.kube, c.osb); err != nil {
+	if err := instance.Provision(ctx, c.kube, c.osb, c.disableAsync); err != nil {
 		return managed.ExternalCreation{}, fmt.Errorf("%w: %s", errFailedToProvision, fmt.Sprint(err))
 	}
 
@@ -213,7 +217,7 @@ func (c *external) Update(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalUpdate{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
-	err := instance.Update(ctx, c.kube, c.osb, c.originatingIdentity)
+	err := instance.Update(ctx, c.kube, c.osb, c.originatingIdentity, c.disableAsync)
 	if err != nil {
 		return managed.ExternalUpdate{}, fmt.Errorf("%w, %s", errFailedToUpdate, fmt.Sprint(err))
 	}
@@ -229,7 +233,9 @@ func (c *external) Delete(ctx context.Context, mg resource.Managed) (managed.Ext
 		return managed.ExternalDelete{}, fmt.Errorf("%w: expected *v1alpha1.ServiceInstance but got %T", errNotServiceInstanceCR, mg)
 	}
 
-	err := instance.Deprovision(ctx, c.kube, c.osb, c.originatingIdentity)
+	instance.Status.SetConditions(xpv2.Deleting())
+
+	err := instance.Deprovision(ctx, c.kube, c.osb, c.originatingIdentity, c.disableAsync)
 	if err != nil {
 		return managed.ExternalDelete{}, fmt.Errorf("%w, %s", errFailedToDeprovision, fmt.Sprint(err))
 	}

@@ -12,6 +12,16 @@ It declaratively manages, within Kubernetes, the lifecycle of **ServiceInstances
 * Support for both synchronous and asynchronous operations
 * Automatic injection of credentials into Kubernetes Secrets, matching those provided during the binding process
 
+## Integration (e2e) tests
+
+Integration tests are made using provider-template's default Makefile (although with some customization).
+
+To run e2e tests, make sure you have submodules installed (`git submodules`). Then, run `make e2e`.
+
+**Important note:** e2e tests use a custom docker image to emulate an OSB broker (`ghcr.io/orange-cloudfoundry/osb-broker:e2e`). You have to be ableto pull this image to run e2e tests.
+
+These tests are run automatically in this repository's actions.
+
 ## Concrete Usage Examples
 
 ### Example ProviderConfig for Connecting to an OSB Broker
@@ -24,15 +34,15 @@ kind: ProviderConfig
 metadata:
   name: my-osb-provider-config
 spec:
-  broker_url: http://0.0.0.0:5000
-  osb_version: "2.13"
+  brokerUrl: http://0.0.0.0:5000
+  osbVersion: "2.17"
   credentials:
     source: Secret
     secretRef:
       namespace: my-osb-provider
       name: osb-creds
       key: creds
-  disable_async: false
+  disableAsync: false
 ```
 
 ### Provisioning a Service (Example: Database)
@@ -58,7 +68,7 @@ spec:
     spaceGuid: 123e4567-e89b-12d3-a456-426614174000
     parameters: |
       {
-        "version": "2.13",
+        "version": "2.17",
         "configuration": {
           "worker_processes": "string",
           "worker_connections": 0
@@ -182,15 +192,15 @@ kind: ProviderConfig
 metadata:
   name: my-osb-provider-config
 spec:
-  broker_url: http://your-broker-url:5000
-  osb_version: "2.13"
+  brokerUrl: http://your-broker-url:5000
+  osbVersion: "2.17"
   credentials:
     source: Secret
     secretRef:
       namespace: my-osb-provider  # Same namespace as the secret
       name: osb-creds             # Name of the secret created above
       key: creds                  # Key containing the credentials
-  disable_async: false
+  disableAsync: false
 ```
 
 ## Architecture Diagrams
